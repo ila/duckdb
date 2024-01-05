@@ -8,6 +8,7 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 		throw NotImplementedException("Cannot print logical plan with debug_print_bindings enabled");
 	}
 #endif
+	// this function is just to initialize the auxiliary data structures
 	// "table index . column index" -> column name
 	std::unordered_map<string, string> column_names;
 	string plan_string;
@@ -17,6 +18,7 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	// using trees or hash tables would not preserve the order
 	std::vector<std::pair<string, string>> column_aliases;
 	string insert_table_name;
+	// now we can call the recursive function
 	LogicalPlanToString(plan, plan_string, column_names, column_aliases, insert_table_name);
 	return plan_string;
 }
@@ -25,15 +27,11 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
                          std::vector<std::pair<string, string>> &column_aliases, string &insert_table_name) {
 
-	// remove the group by in the outer left join (group) query and just do +
-	// write that SQL-SQL involves multiple strategies to be applied and we choose upsert because it uses ART so it's sublinear
-
 	// we reached a root node
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_GET: { // projection
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 		auto table_name = node->GetTable().get()->name;
-		auto table_index = node->GetTableIndex();
 		auto scan_column_names = node->names;
 		// we don't need the table function here; we assume it is a simple scan
 		string from_string = "from " + table_name + "\n";
@@ -72,7 +70,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			// edge case: when we have a projection without group, the second element will be the placeholder
 			if (!select_all) {
 				for (auto &pair : column_aliases) {
-					if (pair.first == pair.second || pair.second == "ivm_placeholder_internal") {
+					if (pair.first == pair.second || pair.second == "duckdb_placeholder_internal") {
 						select_string = select_string + pair.first + ", ";
 					} else {
 						select_string = select_string + pair.second + " as " + pair.first + ", ";
@@ -196,8 +194,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 					auto table_index = column->binding.table_index;
 					auto column_name = column->alias;
 					column_names[std::to_string(table_index) + "." + std::to_string(column_index)] = column_name;
-					// 3.0, 3.1, 2.0
-					column_aliases.emplace_back(column_name, "ivm_placeholder_internal");
+					// we use a placeholder to figure out which column names have been aliased
+					column_aliases.emplace_back(column_name, "duckdb_placeholder_internal");
 				}
 			}
 		}
