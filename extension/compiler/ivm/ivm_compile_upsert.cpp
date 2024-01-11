@@ -6,7 +6,8 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
                               vector<string> column_names) {
 	// let's construct the query step by step
 	auto index_catalog_entry = dynamic_cast<IndexCatalogEntry *>(index_delta_view_catalog_entry.get());
-	auto key_ids = dynamic_cast<ART *>(index_catalog_entry)->column_ids;
+	auto index = index_catalog_entry->index.get();
+	auto key_ids = dynamic_cast<ART *>(index)->column_ids;
 
 	vector<string> keys;
 	vector<string> aggregates;

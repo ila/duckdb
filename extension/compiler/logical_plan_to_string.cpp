@@ -8,6 +8,9 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 		throw NotImplementedException("Cannot print logical plan with debug_print_bindings enabled");
 	}
 #endif
+
+	// we can assume that the query is lowercase and return a lowercase query
+
 	// this function is just to initialize the auxiliary data structures
 	// "table index . column index" -> column name
 	std::unordered_map<string, string> column_names;
@@ -134,6 +137,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 				if (!bound_aggregate->children.empty()) {
 					auto name = bound_aggregate->function.name;
 					auto column = dynamic_cast<BoundColumnRefExpression *>(bound_aggregate->children[0].get());
+					// we only support "sum" and "count" (this is because IVM is only implemented for these)
+					// but we should definitely extend this to all aggregate functions
 					if (name == "sum") {
 						aggregate_aliases.emplace_back(std::to_string(column->binding.table_index) + "." +
 						                                   std::to_string(column->binding.column_index),
@@ -204,11 +209,12 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// basically the same logic as the logical get
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
+		// ParamsToString() returns the filter expression
 		plan_string = "where " + node->ParamsToString() + "\n" + plan_string;
 		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
-		// this should be transformed into an upsert
+		// ignore inserts for now
 		auto node = dynamic_cast<LogicalInsert *>(plan.get());
 		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, node->table.name);
 	}

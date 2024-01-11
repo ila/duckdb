@@ -216,6 +216,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// add a parser extension
 	auto &db_config = duckdb::DBConfig::GetConfig(instance);
 	db_config.AddExtensionOption("ivm_files_path", "path for compiled files", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("ivm_system", "database for cross-system ivm", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("ivm_db_name", "database name", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("ivm_schema_name", "database name", LogicalType::VARCHAR);
 
 	Connection con(instance);
 	auto ivm_parser = duckdb::IVMParserExtension();

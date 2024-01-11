@@ -136,7 +136,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	} else if (found_filter && !found_aggregation) {
 		// SELECT stuff FROM table WHERE condition;
 		ivm_type = IVMType::SIMPLE_FILTER;
-	} else if (found_projection && !found_aggregation && !found_filter) {
+	} else if (found_projection && !found_aggregation) {
 		// SELECT stuff FROM table;
 		ivm_type = IVMType::SIMPLE_PROJECTION;
 	} else {
@@ -153,6 +153,8 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 
 	// now we insert the details in the ivm view lookup table
 	// firstly we need to serialize the plan to a string
+	// commenting because the Postgres scanner does not have a serializer yet
+	/*
 	MemoryStream target;
 	BinarySerializer serializer(target);
 	serializer.Begin();
@@ -160,7 +162,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	serializer.End();
 	auto data = target.GetData();
 	idx_t len = target.GetPosition();
-	string serialized_plan(data, data + len);
+	string serialized_plan(data, data + len); */
 
 	// do we need insert or replace here? insert or ignore? am I just overthinking?
 	// todo this does not work because of special characters
@@ -187,7 +189,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// todo schema (add a option like the path)
 		// todo also add the view name here (there can be multiple views?)
 		// todo exception handling
-		auto delta_table = "create table if not exists delta_" + table_name +
+		auto delta_table = "create table if not exists p.public.delta_" + table_name +
 		                   " as select *, true as _duckdb_ivm_multiplicity from " + table_name + " limit 0;\n";
 		CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 	}

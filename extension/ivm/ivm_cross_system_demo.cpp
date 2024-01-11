@@ -15,9 +15,10 @@
 namespace duckdb {
 
 void ReplaceTableName(string& query) {
-	// Regex pattern to match table names not followed by an alias
-	std::regex pattern(R"(\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+(\w+)\b(?! AS \w+))", std::regex_constants::icase);
-	std::regex_replace(query, pattern, "p.public.$1");
+	// regex pattern to match table names not followed by an alias
+	// todo test with alias
+	std::regex pattern(R"(\b((?:from|join)\s+)(\w+)(?![^(]*\))\b)", std::regex_constants::icase);
+	query = std::regex_replace(query, pattern, "$1p.public.$2");
 }
 
 void RunIVMCrossSystemDemo(string& path) {
@@ -33,29 +34,29 @@ void RunIVMCrossSystemDemo(string& path) {
 	// load '/home/ila/postgres_scanner.duckdb_extension';
 
 	auto query = CompilerExtension::ReadFile(path);
+	query = CompilerExtension::SQLToLowercase(query);
+	ReplaceTableName(query); // this is for the input query
 	// the materialized view is stored on DuckDB with data imported from PostgreSQL
 	auto table = CompilerExtension::ExtractViewName(query); // the table is on PostgreSQL
 
 	const char *user = std::getenv("USER");
-	string conn_info = "user=" + string(user);
+	string conn_info = "dbname=" + string(user) + " user=" + string(user);
 
-	DuckDB db(nullptr);
+	DuckDB db("/home/ila/Code/duckdb/postgres.db");
 	Connection con(db);
 
 	//auto res = con.Query("load '/home/ila/postgres_scanner.duckdb_extension'");
 	// ATTACH 'dbname=ila user=ila' as p (type postgres);
-
-	/*
-	auto attach_string = "ATTACH 'dbname=" + user + " user="+ user + "' as p (type postgres);";
-	auto res =  con.Query("ATTACH '" + conn_info + "' AS postgres_db;");
+	// todo monday: bug here when creating delta tables on postgres
+	// implement regex function to extract schema and alias and put it in front of delta tables
+	// will the postgres query plan work??
+	con.Query("load '/home/ila/postgres_scanner.duckdb_extension'");
+	con.Query("set ivm_files_path='/home/ila/Code/duckdb'");
+	auto res =  con.Query("ATTACH '" + conn_info + "' AS p (TYPE postgres);");
 	if (res->HasError()) {
 		throw Exception("Could not attach to PostgreSQL: " + res->GetError());
 	}
 
-	res = con.Query("select count(*) from groups");
-	res->Print(); */
-
-	/*
 	res = con.Query(query);
 	if (res->HasError()) {
 		throw Exception("Could not create materialized view: " + res->GetError());
@@ -63,12 +64,10 @@ void RunIVMCrossSystemDemo(string& path) {
 
 	// now triggering the IVM
 	// PRAGMA ivm_upsert('catalog', 'schema', 'result')
-	res = con.Query("PRAGMA ivm_upsert('memory', 'main', '" + table + "');");
+	res = con.Query("PRAGMA ivm_upsert('postgres', 'main', '" + table + "');");
 	if (res->HasError()) {
 		throw Exception("Could not complete IVM: " + res->GetError());
 	}
-	 */
-
 
 
 }
