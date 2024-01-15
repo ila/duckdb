@@ -24,8 +24,8 @@
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
 
 namespace duckdb {
-string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
-void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
+string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan);
+void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
                          std::vector<std::pair<string, string>> &column_aliases, string &insert_table_name);
 } // namespace duckdb

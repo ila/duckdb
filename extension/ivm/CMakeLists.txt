@@ -4,12 +4,15 @@ project(IvmExtension)
 
 add_extension_definitions()
 
-include_directories(include ../../extension/compiler/include)
+find_package(PostgreSQL REQUIRED)
+
+include_directories(include ../../extension/compiler/include ../../extension/postgres_scanner/include)
 
 add_library(
         ivm_extension STATIC
         ivm_extension.cpp ivm_parser.cpp ivm_benchmark.cpp ivm_lineitem_benchmark.cpp ivm_groups_benchmark.cpp ivm_cross_system_benchmark.cpp ivm_cross_system_demo.cpp ivm_upsert.cpp ../compiler/logical_plan_to_string.cpp
-        ../compiler/compiler_extension.cpp ../compiler/ivm/ivm_compile_upsert.cpp)
+        ../compiler/compiler_extension.cpp ../compiler/ivm/ivm_compile_upsert.cpp
+)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(
@@ -25,9 +28,9 @@ build_loadable_extension(
         ivm_upsert.cpp
         ../compiler/logical_plan_to_string.cpp
         ../compiler/compiler_extension.cpp
-        ../compiler/ivm/ivm_compile_upsert.cpp)
+        ../compiler/ivm/ivm_compile_upsert.cpp
+        )
 
-find_package(PostgreSQL REQUIRED)
 target_link_libraries(ivm_loadable_extension PostgreSQL::PostgreSQL)
 target_link_libraries(ivm_extension PostgreSQL::PostgreSQL)
 

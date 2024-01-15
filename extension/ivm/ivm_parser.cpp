@@ -186,10 +186,19 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	// the API does not support consecutive CREATE + ALTER instructions, so we rewrite it as one query
 	// CREATE TABLE IF NOT EXISTS delta_table AS SELECT *, TRUE AS _duckdb_ivm_multiplicity FROM my_table LIMIT 0;
 	for (const auto &table_name : table_names) {
-		// todo schema (add a option like the path)
 		// todo also add the view name here (there can be multiple views?)
 		// todo exception handling
-		auto delta_table = "create table if not exists p.public.delta_" + table_name +
+		Value catalog_value;
+		context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
+		Value schema_value;
+		context.TryGetCurrentSetting("ivm_schema_name", schema_value);
+
+		string catalog_schema;
+		if (!catalog_value.IsNull() && !schema_value.IsNull()) {
+			catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
+		}
+
+		auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
 		                   " as select *, true as _duckdb_ivm_multiplicity from " + table_name + " limit 0;\n";
 		CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 	}

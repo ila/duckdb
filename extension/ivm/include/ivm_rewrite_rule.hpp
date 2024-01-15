@@ -3,6 +3,7 @@
 #define DUCKDB_IVM_REWRITE_RULE_HPP
 
 #include "../../compiler/include/logical_plan_to_string.hpp"
+#include "../../postgres_scanner/include/postgres_scanner.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/main/connection.hpp"
@@ -48,7 +49,7 @@ public:
 		// generate bindings for the insert node using the top node of the plan
 		Value value;
 		unique_ptr<BoundConstantExpression> exp;
-		for (int i = 0; i < plan->expressions.size(); i++) {
+		for (size_t i = 0; i < plan->expressions.size(); i++) {
 			insert_node->expected_types.emplace_back(plan->expressions[i]->return_type);
 			value = Value(plan->expressions[i]->return_type);
 			exp = make_uniq<BoundConstantExpression>(std::move(value));
@@ -69,7 +70,7 @@ public:
 #ifdef DEBUG
 		printf("\nAdd the multiplicity column to the top projection node...\n");
 		printf("Plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
-		for (int i = 0; i < plan->GetColumnBindings().size(); i++) {
+		for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
 			printf("Top node CB before %d %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
 		}
 #endif
@@ -83,7 +84,7 @@ public:
 
 #ifdef DEBUG
 		printf("Modified plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
-		for (int i = 0; i < plan.get()->GetColumnBindings().size(); i++) {
+		for (size_t i = 0; i < plan.get()->GetColumnBindings().size(); i++) {
 			printf("Top node CB %d %s\n", i, plan.get()->GetColumnBindings()[i].ToString().c_str());
 		}
 #endif
@@ -109,9 +110,19 @@ public:
 #ifdef DEBUG
 			printf("Create replacement get node \n");
 #endif
-			string delta_table = "delta_" + child_get->GetTable().get()->name;
-			string delta_table_schema = child_get->GetTable().get()->schema.name;
-			string delta_table_catalog = child_get->GetTable().get()->catalog.GetName();
+			string delta_table;
+			string delta_table_schema;
+			string delta_table_catalog;
+			// checking if the table to be scanned exists in DuckDB
+			if (child_get->GetTable().get() == nullptr) {
+				delta_table = "delta_" + dynamic_cast<PostgresBindData *>(child_get->bind_data.get())->table_name;
+				delta_table_schema = "public";
+				delta_table_catalog = "p"; // todo
+			} else {
+				delta_table = "delta_" + child_get->GetTable().get()->name;
+				delta_table_schema = child_get->GetTable().get()->schema.name;
+				delta_table_catalog = child_get->GetTable().get()->catalog.GetName();
+			}
 			table_catalog_entry =
 			    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, delta_table_catalog, delta_table_schema,
 			                      delta_table, OnEntryNotFound::RETURN_NULL, error_context);
@@ -129,9 +140,6 @@ public:
 			vector<column_t> column_ids = {};
 			column_t seed_column_id = 0;
 			for (auto &col : table.GetColumns().Logical()) {
-#ifdef DEBUG
-				printf("creating bind data: %s\n", col.GetName().c_str());
-#endif
 				return_types.push_back(col.Type());
 				return_names.push_back(col.Name());
 				column_ids.push_back(seed_column_id);
@@ -144,21 +152,12 @@ public:
 			replacement_get_node->column_ids = std::move(column_ids);
 			replacement_get_node->table_filters = std::move(child_get->table_filters);
 
-#ifdef DEBUG
-			for (int i = 0; i < replacement_get_node.get()->GetColumnBindings().size(); i++) {
-				printf("Replacement node CB %d %s\n", i,
-				       replacement_get_node.get()->GetColumnBindings()[i].ToString().c_str());
-			}
-
-			printf("Create projection node to project away unneeded columns \n");
-#endif
-
 			/* The new get node which will read the delta table will read all columns in the delta table
 			 * The original get node will read only the columns that the query uses
 			 * So, we create a projection node to project away the extra columns.
 			 * Thus, original get node will be replaced by a replacement get + projection node
-			 * the column_ids field in the original get node contains the mapping of the logical ids that the columns
-			 have
+			 * the column_ids field in the original get node contains the mapping of the logical ids that the
+			 columns have
 			 * to ids that the get is using. The names field in the orignal get contains the column names. Using a
 			 * combination of these two, we create the column mapping of the projection node.
 			 * original_get->column_ids
@@ -170,9 +169,9 @@ public:
 			    }
 			 * orignal_get->names
 			 * (duckdb::vector<std::basic_string<char, std::char_traits<char>, std::allocator<char> >, true>) $3 = {
-			    std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >,
-			 std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > >
-			 > = size=3 { [0] = "a" [1] = "b" [2] = "c"
+			    std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>
+			 >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>,
+			 std::__1::allocator<char> > > > = size=3 { [0] = "a" [1] = "b" [2] = "c"
 			    }
 			    }
 			 * original_get->projection_ids
@@ -187,14 +186,10 @@ public:
 			// the column bindings are created using the table index of the replacement get node. The column_idx are
 			// from the original get node, but can be assumed to have the same idx as the replacement get.
 			vector<unique_ptr<Expression>> select_list;
-			for (int i = 0; i < child_get->column_ids.size(); i++) {
-#ifdef DEBUG
-				printf("Create column mapping: %s, %llu", child_get->names[child_get->column_ids[i]].c_str(),
-				       child_get->column_ids[i]);
-#endif
-				auto col = make_uniq<BoundColumnRefExpression>(child_get->names[child_get->column_ids[i]],
-				                                               child_get->returned_types[child_get->column_ids[i]],
-				                                               ColumnBinding(table_index, child_get->column_ids[i]));
+			for (auto i = 0; i < child_get->column_ids.size(); i++) {
+				auto col = make_uniq<BoundColumnRefExpression>(
+				    child_get->names[child_get->column_ids[i]], child_get->returned_types[child_get->column_ids[i]],
+				    ColumnBinding(table_index, child_get->column_ids[i]));
 				select_list.emplace_back(std::move(col));
 			}
 
@@ -216,16 +211,6 @@ public:
 			auto projection_node = make_uniq<LogicalProjection>(child->GetTableIndex()[0], std::move(select_list));
 			projection_node->AddChild(std::move(replacement_get_node));
 
-#ifdef DEBUG
-			for (int i = 0; i < projection_node.get()->GetColumnBindings().size(); i++) {
-				printf("Projection node CB %d %s %s\n", i,
-				       projection_node.get()->GetColumnBindings()[i].ToString().c_str(),
-				       projection_node->ParamsToString().c_str());
-			}
-
-			printf("Replacement plan: %s \n", projection_node->ToString().c_str());
-			printf("Emplace back replacement node in parent node \n");
-#endif
 			plan->children.clear();
 			plan->children.emplace_back(std::move(projection_node));
 			break;
@@ -395,7 +380,7 @@ public:
 		std::cout << "\nFINAL PLAN:\n" << optimized_plan->ToString() << std::endl;
 #endif
 		plan = std::move(optimized_plan);
-		auto test = LogicalPlanToString(plan);
+		auto test = LogicalPlanToString(context, plan);
 #ifdef DEBUG
 		std::cout << "\nnew optimized plan to string: \n" << test << "\n";
 #endif

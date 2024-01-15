@@ -8,7 +8,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <libpq-fe.h>
 #include <random>
 
 namespace duckdb {

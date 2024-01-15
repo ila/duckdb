@@ -4,6 +4,7 @@
 #include "duckdb.hpp"
 #include <chrono>
 #include <iostream>
+#include <libpq-fe.h>
 
 namespace duckdb {
 

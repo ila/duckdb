@@ -1,8 +1,10 @@
 #include "include/logical_plan_to_string.hpp"
 
+#include "postgres_scanner.hpp"
+
 namespace duckdb {
 
-string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
+string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan) {
 #ifdef DEBUG
 	if (DBConfigOptions::debug_print_bindings) {
 		throw NotImplementedException("Cannot print logical plan with debug_print_bindings enabled");
@@ -22,11 +24,11 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	std::vector<std::pair<string, string>> column_aliases;
 	string insert_table_name;
 	// now we can call the recursive function
-	LogicalPlanToString(plan, plan_string, column_names, column_aliases, insert_table_name);
+	LogicalPlanToString(context, plan, plan_string, column_names, column_aliases, insert_table_name);
 	return plan_string;
 }
 
-void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
+void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
                          std::vector<std::pair<string, string>> &column_aliases, string &insert_table_name) {
 
@@ -34,7 +36,24 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_GET: { // projection
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
-		auto table_name = node->GetTable().get()->name;
+		string table_name;
+		if (node->GetTable().get()) {
+			table_name = node->GetTable().get()->name;
+		} else { // edge case where our base table is a postgres table
+			// todo bug here where sometimes these settings are empty
+			// todo maybe make it more generic?
+			Value catalog_value;
+
+			context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
+			Value schema_value;
+			context.TryGetCurrentSetting("ivm_schema_name", schema_value);
+
+			string catalog_schema;
+			if (!catalog_value.IsNull() && !schema_value.IsNull()) {
+				catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
+			}
+			table_name = catalog_schema + dynamic_cast<PostgresBindData *>(node->bind_data.get())->table_name;
+		}
 		auto scan_column_names = node->names;
 		// we don't need the table function here; we assume it is a simple scan
 		string from_string = "from " + table_name + "\n";
@@ -181,7 +200,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		}
 
 		// plan_string += "\n";
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(context, plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
 	}
 
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
@@ -204,19 +223,19 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 				}
 			}
 		}
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(context, plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// basically the same logic as the logical get
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
 		// ParamsToString() returns the filter expression
 		plan_string = "where " + node->ParamsToString() + "\n" + plan_string;
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(context, plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
 		// ignore inserts for now
 		auto node = dynamic_cast<LogicalInsert *>(plan.get());
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, node->table.name);
+		return LogicalPlanToString(context, plan->children[0], plan_string, column_names, column_aliases, node->table.name);
 	}
 	}
 }

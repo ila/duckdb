@@ -12,7 +12,7 @@
 namespace duckdb {
 
 void ReplaceTableName(string& query);
-void RunIVMCrossSystemDemo(string& path);
+void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path);
 
 } // namespace duckdb
 

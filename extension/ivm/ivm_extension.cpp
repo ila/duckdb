@@ -26,6 +26,7 @@
 #include <map>
 #include <stdio.h>
 
+
 namespace duckdb {
 
 struct DoIVMData : public GlobalTableFunctionState {
@@ -100,11 +101,15 @@ static duckdb::unique_ptr<FunctionData> DoIVMDemoBind(ClientContext &context, Ta
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
-	auto path = StringValue::Get(input.inputs[0]);
+	auto catalog_name = StringValue::Get(input.inputs[0]);
+	auto schema_name = StringValue::Get(input.inputs[1]);
+	auto path = StringValue::Get(input.inputs[2]);
 
+	input.named_parameters["catalog_name"] = catalog_name;
+	input.named_parameters["schema_name"] = schema_name;
 	input.named_parameters["path"] = path;
 
-	RunIVMCrossSystemDemo(path);
+	RunIVMCrossSystemDemo(catalog_name, schema_name, path);
 
 	// create result set using column bindings returned by the planner
 	auto result = make_uniq<DoIVMBenchmarkFunctionData>();
@@ -217,8 +222,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 	auto &db_config = duckdb::DBConfig::GetConfig(instance);
 	db_config.AddExtensionOption("ivm_files_path", "path for compiled files", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("ivm_system", "database for cross-system ivm", LogicalType::VARCHAR);
-	db_config.AddExtensionOption("ivm_db_name", "database name", LogicalType::VARCHAR);
-	db_config.AddExtensionOption("ivm_schema_name", "database name", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("ivm_catalog_name", "catalog name", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("ivm_schema_name", "schema name", LogicalType::VARCHAR);
 
 	Connection con(instance);
 	auto ivm_parser = duckdb::IVMParserExtension();
@@ -236,7 +241,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	TableFunction ivm_benchmark_func("IVMBenchmark", {LogicalType::VARCHAR, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER}, DoIVMBenchmarkFunction,
 	                       DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
-	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR}, DoIVMDemoFunction,
+	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMDemoFunction,
 	                                 DoIVMDemoBind, DoIVMDemoInit);
 
 	con.BeginTransaction();
@@ -265,6 +270,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 	con.BeginTransaction();
 	ivm_demo_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMDemo);
 	ivm_demo_func.name = "ivm_demo_postgres";
+	ivm_demo_func.named_parameters["catalog_name"];
+	ivm_demo_func.named_parameters["schema_name"];
 	ivm_demo_func.named_parameters["path"];
 	CreateTableFunctionInfo ivm_demo_func_info(ivm_demo_func);
 	catalog.CreateTableFunction(*con.context, &ivm_demo_func_info);
