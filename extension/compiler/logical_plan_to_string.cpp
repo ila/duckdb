@@ -19,14 +19,16 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	std::vector<std::pair<string, string>> column_aliases;
 	string insert_table_name;
 	// now we can call the recursive function
-	LogicalPlanToString(plan, plan_string, column_names, column_aliases, insert_table_name);
+	LogicalPlanToString(plan, plan_string, column_names, column_aliases, insert_table_name, false);
 	return plan_string;
 }
 
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
-                         std::vector<std::pair<string, string>> &column_aliases, string &insert_table_name) {
+                         std::vector<std::pair<string, string>> &column_aliases, 
+						 string &insert_table_name, bool do_join) {
 
+	Printer::Print("Type: ");
 	// we reached a root node
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_GET: { // projection
@@ -34,7 +36,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto table_name = node->GetTable().get()->name;
 		auto scan_column_names = node->names;
 		// we don't need the table function here; we assume it is a simple scan
-		string from_string = "from " + table_name + "\n";
+		string from_string = "";
+
 		// now let's see if the scan has any filters
 		std::vector<string> filters;
 		for (auto &filter : node->table_filters.filters) {
@@ -43,6 +46,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			auto column_name = scan_column_names[id];
 			filters.emplace_back(filter.second->ToString(column_name));
 		}
+
 
 		// column bindings: 0.0, 0.1, 0.2
 		// we are (probably) at the bottom
@@ -71,9 +75,9 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			if (!select_all) {
 				for (auto &pair : column_aliases) {
 					if (pair.first == pair.second || pair.second == "duckdb_placeholder_internal") {
-						select_string = select_string + pair.first + ", ";
+						select_string = select_string + " " + table_name + "." + pair.first + " ";
 					} else {
-						select_string = select_string + pair.second + " as " + pair.first + ", ";
+						select_string = select_string + " " + table_name + "." + pair.second + " as " + pair.first + ", ";
 					}
 				}
 				// erase the last comma and space
@@ -176,7 +180,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		}
 
 		// plan_string += "\n";
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false);
 	}
 
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
@@ -199,19 +203,39 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 				}
 			}
 		}
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// basically the same logic as the logical get
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
 		plan_string = "where " + node->ParamsToString() + "\n" + plan_string;
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false);
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
 		// this should be transformed into an upsert
 		auto node = dynamic_cast<LogicalInsert *>(plan.get());
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, node->table.name);
+		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, node->table.name, false);
 	}
+	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT: {
+		// Tacle Statements Like
+		// SELECT titanic.*, titanic2.* FROM titanic CROSS JOIN titanic2;
+		auto node = dynamic_cast<LogicalCrossProduct* >(plan.get());
+		auto table = node->GetTableIndex();
+		auto &children = node->children;
+		auto right_projection = dynamic_cast<LogicalGet *>(children.back().get());
+		auto left_projection = dynamic_cast<LogicalGet *>(children.front().get());
+		auto right_table_name = right_projection->GetTable().get()->name;
+		plan_string = plan_string + "cross join " + right_table_name;
+		// LogicalPlanToString(plan->children[1], plan_string, column_names, column_aliases, insert_table_name);
+		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, true);
+	}
+	// case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
+	// 	// Tackles Statements like
+	// 	// SELECT a.name, b.name FROM a JOIN b ON a.name = b.name;
+	// 	auto node = dynamic_cast<LogicalComparisonJoin *>(plan.get());	
+	// 	plan_string = "join " + plan_string;
+	// 	// auto exp_bnds = node->GetExpressionBindings();
+	// }
 	}
 }
 

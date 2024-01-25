@@ -1,6 +1,7 @@
 #include "../compiler/include/compiler_extension.hpp"
 #include "duckdb/common/local_file_system.hpp"
 #include "include/ivm_benchmark.hpp"
+#include "../compiler/include/logical_plan_to_string.hpp"
 
 #include <cmath>
 #include <ctime>
@@ -32,15 +33,30 @@ void RunIVMCrossSystemDemo(string& path) {
 
 	// load '/home/ila/postgres_scanner.duckdb_extension';
 
-	auto query = CompilerExtension::ReadFile(path);
-	// the materialized view is stored on DuckDB with data imported from PostgreSQL
-	auto table = CompilerExtension::ExtractViewName(query); // the table is on PostgreSQL
-
-	const char *user = std::getenv("USER");
-	string conn_info = "user=" + string(user);
-
-	DuckDB db(nullptr);
+	Printer::Print("Path is: "+ path);
+	DuckDB db("../../data/testdb.db");
 	Connection con(db);
+	con.BeginTransaction();
+	Planner plan(*con.context);
+	Parser parser;
+	parser.ParseQuery(path);
+	auto statement = parser.statements[0].get();
+	plan.CreatePlan(statement->Copy());
+
+	string planString = LogicalPlanToString(plan.plan);	
+	Printer::Print("String: " + planString);
+	con.Commit();
+	// plan.CreatePlan()
+
+	// auto query = CompilerExtension::ReadFile(path);
+	// // the materialized view is stored on DuckDB with data imported from PostgreSQL
+	// auto table = CompilerExtension::ExtractViewName(query); // the table is on PostgreSQL
+
+	// const char *user = std::getenv("USER");
+	// string conn_info = "user=" + string(user);
+
+	// DuckDB db(nullptr);
+	// Connection con(db);
 
 	//auto res = con.Query("load '/home/ila/postgres_scanner.duckdb_extension'");
 	// ATTACH 'dbname=ila user=ila' as p (type postgres);
