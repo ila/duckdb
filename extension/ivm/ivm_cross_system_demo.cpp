@@ -21,6 +21,23 @@ void ReplaceTableName(string& query) {
 	std::regex_replace(query, pattern, "p.public.$1");
 }
 
+void RunLogicalPlanToString(string& sql_string){
+	Printer::Print("Path is: "+ sql_string);
+	DuckDB db(nullptr);
+	// DuckDB db("../../data/testdb.db");
+	Connection con(db);
+	con.BeginTransaction();
+	Planner plan(*con.context);
+	Parser parser;
+	parser.ParseQuery(sql_string);
+	auto statement = parser.statements[0].get();
+	plan.CreatePlan(statement->Copy());
+
+	string planString = LogicalPlanToString(plan.plan);	
+	Printer::Print("String: " + planString);
+	con.Commit();
+}
+
 void RunIVMCrossSystemDemo(string& path) {
 
 	// usage: call ivm_demo_postgres('file_path');
@@ -33,19 +50,7 @@ void RunIVMCrossSystemDemo(string& path) {
 
 	// load '/home/ila/postgres_scanner.duckdb_extension';
 
-	Printer::Print("Path is: "+ path);
-	DuckDB db("../../data/testdb.db");
-	Connection con(db);
-	con.BeginTransaction();
-	Planner plan(*con.context);
-	Parser parser;
-	parser.ParseQuery(path);
-	auto statement = parser.statements[0].get();
-	plan.CreatePlan(statement->Copy());
-
-	string planString = LogicalPlanToString(plan.plan);	
-	Printer::Print("String: " + planString);
-	con.Commit();
+	
 	// plan.CreatePlan()
 
 	// auto query = CompilerExtension::ReadFile(path);

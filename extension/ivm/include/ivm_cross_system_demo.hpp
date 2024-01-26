@@ -14,6 +14,9 @@ namespace duckdb {
 void ReplaceTableName(string& query);
 void RunIVMCrossSystemDemo(string& path);
 
+// Logical Plan to string demo
+void RunLogicalPlanToString(string& sql_string);
+
 } // namespace duckdb
 
 

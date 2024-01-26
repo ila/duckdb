@@ -38,6 +38,10 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		// we don't need the table function here; we assume it is a simple scan
 		string from_string = "";
 
+		if(!do_join){
+			from_string = "from " + table_name + "\n";
+		}
+
 		// now let's see if the scan has any filters
 		std::vector<string> filters;
 		for (auto &filter : node->table_filters.filters) {
@@ -226,8 +230,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto left_projection = dynamic_cast<LogicalGet *>(children.front().get());
 		auto right_table_name = right_projection->GetTable().get()->name;
 		plan_string = plan_string + "cross join " + right_table_name;
-		// LogicalPlanToString(plan->children[1], plan_string, column_names, column_aliases, insert_table_name);
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, true);
+		LogicalPlanToString(plan->children[1], plan_string, column_names, column_aliases, insert_table_name, true);
+		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false);
 	}
 	// case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
 	// 	// Tackles Statements like

@@ -47,6 +47,12 @@ struct DoIVMDemoData : public GlobalTableFunctionState {
 	idx_t offset;
 };
 
+struct DoLogicalPlanToStringData: public GlobalTableFunctionState {
+	DoLogicalPlanToStringData() : offset(0) {
+	}
+	idx_t offset;
+};
+
 unique_ptr<GlobalTableFunctionState> DoIVMInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto result = make_uniq<DoIVMData>();
 	return std::move(result);
@@ -116,6 +122,29 @@ static duckdb::unique_ptr<FunctionData> DoIVMDemoBind(ClientContext &context, Ta
 	return std::move(result);
 }
 
+static duckdb::unique_ptr<FunctionData> DoLogicalPlanToStringBind(ClientContext &context, TableFunctionBindInput &input,
+                                                           vector<LogicalType> &return_types, vector<string> &names) {
+	// called when the pragma is executed
+	// specifies the output format of the query (columns)
+	// display the outputs (do not remove)
+	auto sql_string = StringValue::Get(input.inputs[0]);
+
+	input.named_parameters["sql_string"] = sql_string;
+
+	RunLogicalPlanToString(sql_string);
+	// RunIVMCrossSystemDemo(path);
+
+	// create result set using column bindings returned by the planner
+	auto result = make_uniq<DoIVMBenchmarkFunctionData>();
+
+	// add the multiplicity column
+	return_types.emplace_back(LogicalTypeId::BOOLEAN);
+	names.emplace_back("Done");
+
+	return std::move(result);
+}
+
+
 static void DoIVMFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto &data = dynamic_cast<DoIVMData &>(*data_p.global_state);
 	if (data.offset >= 1) {
@@ -135,11 +164,20 @@ unique_ptr<GlobalTableFunctionState> DoIVMDemoInit(ClientContext &context, Table
 	return std::move(result);
 }
 
+unique_ptr<GlobalTableFunctionState> DoLogicalPlanToStringInit(ClientContext &context, TableFunctionInitInput &input) {
+	auto result = make_uniq<DoLogicalPlanToStringData>();
+	return std::move(result);
+}
+
 static unique_ptr<TableRef> DoIVMBenchmark(ClientContext &context, TableFunctionBindInput &input) {
 	return nullptr;
 }
 
 static unique_ptr<TableRef> DoIVMDemo(ClientContext &context, TableFunctionBindInput &input) {
+	return nullptr;
+}
+
+static unique_ptr<TableRef> DoLogicalPlanToString(ClientContext &context, TableFunctionBindInput &input) {
 	return nullptr;
 }
 
@@ -211,6 +249,15 @@ static void DoIVMDemoFunction(ClientContext &context, TableFunctionInput &data_p
 	return;
 }
 
+static void DoLogicalPlanToStringFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	auto &data = dynamic_cast<DoIVMDemoData &>(*data_p.global_state);
+	if (data.offset >= 1) {
+		// finished returning values
+		return;
+	}
+	return;
+}
+
 static void LoadInternal(DatabaseInstance &instance) {
 
 	// add a parser extension
@@ -235,6 +282,10 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR}, DoIVMDemoFunction,
 	                                 DoIVMDemoBind, DoIVMDemoInit);
+
+	TableFunction logical_plan_to_string_func("LogicalPlanToString", {LogicalType::VARCHAR}, DoLogicalPlanToStringFunction,
+	                                 DoLogicalPlanToStringBind, DoLogicalPlanToStringInit);
+
 
 	con.BeginTransaction();
 	auto &catalog = Catalog::GetSystemCatalog(*con.context);
@@ -266,6 +317,14 @@ static void LoadInternal(DatabaseInstance &instance) {
 	CreateTableFunctionInfo ivm_demo_func_info(ivm_demo_func);
 	catalog.CreateTableFunction(*con.context, &ivm_demo_func_info);
 	con.Commit();
+
+	con.BeginTransaction();
+	logical_plan_to_string_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoLogicalPlanToString);
+	logical_plan_to_string_func.name = "logical_plan_to_string";
+	logical_plan_to_string_func.named_parameters["sql_string"];
+	CreateTableFunctionInfo logical_plan_to_string_func_info(logical_plan_to_string_func);
+	catalog.CreateTableFunction(*con.context, &logical_plan_to_string_func_info);
+	con.Commit();	
 
 	// this is called at the database startup and every time a query fails
 	auto upsert_delta_func = PragmaFunction::PragmaCall(
