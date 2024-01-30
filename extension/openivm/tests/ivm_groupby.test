@@ -1,4 +1,4 @@
-# name: extension/ivm/tests/ivm_groupby.test
+# name: extension/openivm/tests/ivm_groupby.test
 # description: Test aggregation/group by statements
 # group: [tests]
 

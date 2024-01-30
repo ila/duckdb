@@ -1,6 +1,6 @@
 #include "../compiler/include/compiler_extension.hpp"
 #include "duckdb/common/local_file_system.hpp"
-#include "include/ivm_benchmark.hpp"
+#include "include/openivm_benchmark.hpp"
 
 #include <cmath>
 #include <ctime>
@@ -29,8 +29,6 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 	// path is the file with the materialized view definition
 	// this assumes (new) data already present in PostgreSQL
 
-	// load '/home/ila/postgres_scanner.duckdb_extension';
-
 	auto query = CompilerExtension::ReadFile(path);
 	query = CompilerExtension::SQLToLowercase(query);
 	ReplaceTableName(catalog, schema, query); // this is for the input query
@@ -38,14 +36,15 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 	auto table = CompilerExtension::ExtractViewName(query); // the table is on PostgreSQL
 
 	const char *user = std::getenv("USER");
-	string conn_info = "dbname=" + string(user) + " user=" + string(user);
+	// todo add dbname flag
+	string conn_info = "dbname=" + string(user) + " user=" + string(user) + " dbname=dvdrental";
 
 	DuckDB db("/home/ila/Code/duckdb/postgres.db");
 	Connection con(db);
 
 	// setting system settings
 	con.Query("load '/home/ila/postgres_scanner.duckdb_extension'");
-	con.Query("set ivm_files_path='/home/ila/Code/duckdb'");
+	con.Query("set ivm_files_path='/home/ila/Code/duckdb'"); // todo this does not work
 	con.Query("set ivm_catalog_name='" + catalog + "'");
 	con.Query("set ivm_schema_name='" + schema + "'");
 
@@ -59,15 +58,31 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 		throw Exception("Could not create materialized view: " + res->GetError());
 	}
 
+	std::cout << "Input query: " << query << "\n";
+
+	auto count = con.Query("SELECT COUNT(*) FROM " + table + ";")->GetValue(0, 0).ToString();
+	std::cout << "Rows inserted in the materialized view: " << Format(count) << "\n";
+	auto rows = con.Query("SELECT * FROM " + table + ";");
+	rows->Print();
+
 	// now triggering the IVM
 	// PRAGMA ivm_upsert('catalog', 'schema', 'result')
-	res = con.Query("PRAGMA ivm_upsert('postgres', 'main', '" + table + "');");
-	if (res->HasError()) {
-		throw Exception("Could not complete IVM: " + res->GetError());
+	string input;
+	std::cout << "Enter 'OK' when changes are ready to be applied: ";
+	std::cin >> input;
+
+	// check if the input is equal to "OK"
+	if (input == "OK") {
+		res = con.Query("PRAGMA ivm_upsert('postgres', 'main', '" + table + "');");
+		if (res->HasError()) {
+			throw Exception("Could not complete IVM: " + res->GetError());
+		} else {
+			count = con.Query("SELECT COUNT(*) FROM " + table + ";")->GetValue(0, 0).ToString();
+			std::cout << "Rows in the materialized view after the update: " << Format(count) << "\n";
+		}
 	} else {
-
+		std::cout << "Invalid input. Expected 'OK'.\n";
 	}
-
 
 }
 

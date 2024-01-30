@@ -1,5 +1,5 @@
-#ifndef DUCKDB_IVM_UPSERT_HPP
-#define DUCKDB_IVM_UPSERT_HPP
+#ifndef DUCKDB_OPENIVM_UPSERT_HPP
+#define DUCKDB_OPENIVM_UPSERT_HPP
 
 #pragma once
 
@@ -15,4 +15,4 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 
 
-#endif // DUCKDB_IVM_UPSERT_HPP
+#endif // DUCKDB_OPENIVM_UPSERT_HPP

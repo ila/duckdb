@@ -1,11 +1,9 @@
-#include <utility>
-
 #include "duckdb.hpp"
-
-#include "duckdb/main/extension_util.hpp"
 #include "duckdb/function/pragma_function.hpp"
-#include "ivm_upsert.hpp"
+#include "duckdb/main/extension_util.hpp"
+#include "openivm_upsert.hpp"
 
+#include <utility>
 
 #ifndef DUCKDB_IVM_PARSER_HPP
 #define DUCKDB_IVM_PARSER_HPP

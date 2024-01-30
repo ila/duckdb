@@ -1,4 +1,4 @@
-#include "../include/ivm/ivm_compile_upsert.hpp"
+#include "../include/openivm/openivm_compile_upsert.hpp"
 
 namespace duckdb {
 
@@ -76,12 +76,14 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	string select_string = "select ";
 	// we only add the keys once
 	for (auto &key : keys) {
-		select_string = select_string + view_name + "." + key + ", ";
+		// we select columns from the delta table since there might be newly added groups
+		select_string = select_string + "delta_" + view_name + "." + key + ", ";
 	}
 	// now we sum the columns
 	for (auto &column : aggregates) {
+		// we coalesce newly added groups (otherwise the sum would be null)
 		select_string =
-		    select_string + "\n\tsum(" + view_name + "." + column + " + delta_" + view_name + "." + column + "), ";
+		    select_string + "\n\tsum(coalesce(" + view_name + "." + column + ", 0) + delta_" + view_name + "." + column + "), ";
 	}
 	// remove the last comma
 	select_string.erase(select_string.size() - 2, 2);
@@ -103,7 +105,7 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	// group by is also easy, we just group by the keys
 	string group_by_string = "group by ";
 	for (auto &key : keys) {
-		group_by_string = group_by_string + view_name + "." + key + ", ";
+		group_by_string = group_by_string + "delta_" + view_name + "." + key + ", ";
 	}
 	// remove the last comma
 	group_by_string.erase(group_by_string.size() - 2, 2);

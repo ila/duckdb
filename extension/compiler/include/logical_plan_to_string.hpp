@@ -19,6 +19,7 @@
 #include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
+#include "duckdb/planner/operator/logical_create_table.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/planner/tableref/bound_basetableref.hpp"

@@ -1,5 +1,6 @@
-#include "include/ivm_parser.hpp"
+#include "include/openivm_parser.hpp"
 
+#include "../compiler/include/compiler_extension.hpp"
 #include "../compiler/include/rdda/rdda_parse_table.hpp"
 #include "../compiler/include/rdda/rdda_parse_view.hpp"
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
@@ -14,7 +15,6 @@
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
-#include "../compiler/include/compiler_extension.hpp"
 
 #include <iostream>
 #include <stack>
@@ -74,8 +74,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	string system_tables_path = db_path + "/ivm_system_tables.sql";
 	// we need a separate index file because it is faster to create the index after the materialized view
 	auto index_file_path = db_path + "/ivm_index_" + view_name + ".sql";
-
-	// CompilerExtension::WriteFile(compiled_file_path, false, statement->query);
 
 	Connection con(*context.db.get());
 
@@ -151,7 +149,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	// recreate the file - we assume the queries will be executed after the parsing is done
 	CompilerExtension::WriteFile(system_tables_path, false, system_table);
 
-	// now we insert the details in the ivm view lookup table
+	// now we insert the details in the openivm view lookup table
 	// firstly we need to serialize the plan to a string
 	// commenting because the Postgres scanner does not have a serializer yet
 	/*
@@ -199,7 +197,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		}
 
 		auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
-		                   " as select *, true as _duckdb_ivm_multiplicity from " + table_name + " limit 0;\n";
+		                   " as select *, true as _duckdb_ivm_multiplicity from " + catalog_schema + table_name + " limit 0;\n";
 		CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 	}
 

@@ -4,17 +4,17 @@ project(CompilerExtension)
 
 add_extension_definitions()
 
-include_directories(include include/ivm include/rdda)
+include_directories(include include/openivm include/rdda)
 
 add_library(
         compiler_extension STATIC
-        compiler_extension.cpp ivm/ivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
+        compiler_extension.cpp openivm/ivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
         rdda/rdda_parse_view.cpp rdda/rdda_parse_select.cpp)
 
 add_executable(
         compiler
         compiler_library.cpp
-        compiler_extension.cpp ivm/ivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
+        compiler_extension.cpp openivm/ivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
         rdda/rdda_parse_view.cpp rdda/rdda_parse_select.cpp)
 
 set(PARAMETERS "-warnings")
@@ -23,7 +23,7 @@ build_loadable_extension(
         ${PARAMETERS}
         compiler_library.cpp
         compiler_extension.cpp
-        ivm/ivm_compile_upsert.cpp
+        openivm/ivm_compile_upsert.cpp
         rdda/rdda_parse_table.cpp
         rdda/rdda_parse_view.cpp
         rdda/rdda_parse_select.cpp)

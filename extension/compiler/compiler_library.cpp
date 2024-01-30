@@ -1,6 +1,6 @@
 #include "include/compiler_library.hpp"
-#include "../../extension/ivm/include/ivm_upsert.hpp"
 
+#include "../../extension/openivm/include/openivm_upsert.hpp"
 #include "duckdb/common/local_file_system.hpp"
 #include "include/compiler_extension.hpp"
 

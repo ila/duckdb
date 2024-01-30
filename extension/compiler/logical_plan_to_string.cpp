@@ -37,11 +37,11 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 	case LogicalOperatorType::LOGICAL_GET: { // projection
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 		string table_name;
-		if (node->GetTable().get()) {
+		if (node->GetTable().get()) { // DuckDB table scan
 			table_name = node->GetTable().get()->name;
-		} else { // edge case where our base table is a postgres table
+		} else { // edge case where our base table is a postgres table (postgres scan)
 			// todo bug here where sometimes these settings are empty
-			// todo maybe make it more generic?
+			// todo make this more generic - add schema and catalog
 			Value catalog_value;
 
 			context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
@@ -77,15 +77,17 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			// if the plan string does not start with "group by" it can be a SELECT *
 			// todo - change this when the queries become more complicated
 			if (plan_string.substr(0, 8) != "group by") {
-				auto table_column_names = node->GetTable()->GetColumns().GetColumnNames();
-				if (column_aliases.size() == table_column_names.size()) {
-					// we need to further check if the column names and their order are the same
-					for (auto i = 0; i < table_column_names.size(); i++) {
-						if (column_aliases[i].first != table_column_names[i]) {
-							break;
+				if (node->GetTable()) { // todo refactor this with AST
+					auto table_column_names = node->GetTable()->GetColumns().GetColumnNames();
+					if (column_aliases.size() == table_column_names.size()) {
+						// we need to further check if the column names and their order are the same
+						for (auto i = 0; i < table_column_names.size(); i++) {
+							if (column_aliases[i].first != table_column_names[i]) {
+								break;
+							}
 						}
+						select_all = true;
 					}
-					select_all = true;
 				}
 			}
 			// now we sort out the column aliases

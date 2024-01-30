@@ -1,6 +1,6 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "ivm_extension.hpp"
+#include "openivm_extension.hpp"
 
 #include "duckdb/catalog/catalog_entry/index_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
@@ -19,13 +19,12 @@
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
 #include "duckdb/planner/planner.hpp"
-#include "ivm_benchmark.hpp"
-#include "ivm_upsert.hpp"
-#include "ivm_cross_system_demo.hpp"
+#include "openivm_benchmark.hpp"
+#include "openivm_cross_system_demo.hpp"
+#include "openivm_upsert.hpp"
 
 #include <map>
 #include <stdio.h>
-
 
 namespace duckdb {
 
@@ -221,7 +220,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// add a parser extension
 	auto &db_config = duckdb::DBConfig::GetConfig(instance);
 	db_config.AddExtensionOption("ivm_files_path", "path for compiled files", LogicalType::VARCHAR);
-	db_config.AddExtensionOption("ivm_system", "database for cross-system ivm", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("ivm_system", "database for cross-system openivm", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("ivm_catalog_name", "catalog name", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("ivm_schema_name", "schema name", LogicalType::VARCHAR);
 
@@ -234,6 +233,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	db_config.parser_extensions.push_back(ivm_parser);
 	db_config.optimizer_extensions.push_back(ivm_rewrite_rule);
 	db_config.optimizer_extensions.push_back(ivm_insert_rule);
+
 
 	TableFunction ivm_func("DoIVM", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMFunction,
 	                       DoIVMBind, DoIVMInit);
@@ -283,11 +283,11 @@ static void LoadInternal(DatabaseInstance &instance) {
 	ExtensionUtil::RegisterFunction(instance, upsert_delta_func);
 }
 
-void IvmExtension::Load(DuckDB &db) {
+void OpenivmExtension::Load(DuckDB &db) {
 	LoadInternal(*db.instance);
 }
-std::string IvmExtension::Name() {
-	return "ivm";
+std::string OpenivmExtension::Name() {
+	return "openivm";
 }
 
 } // namespace duckdb
@@ -296,7 +296,7 @@ extern "C" {
 
 DUCKDB_EXTENSION_API void ivm_init(duckdb::DatabaseInstance &db) {
 	duckdb::DuckDB db_wrapper(db);
-	db_wrapper.LoadExtension<duckdb::IvmExtension>();
+	db_wrapper.LoadExtension<duckdb::OpenivmExtension>();
 	// LoadInternal(db);
 }
 

@@ -1,5 +1,5 @@
-#ifndef DUCKDB_IVM_INSERT_RULE_HPP
-#define DUCKDB_IVM_INSERT_RULE_HPP
+#ifndef DUCKDB_OPENIVM_INSERT_RULE_HPP
+#define DUCKDB_OPENIVM_INSERT_RULE_HPP
 
 #include "../../compiler/include/logical_plan_to_string.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
@@ -21,7 +21,7 @@
 #include "duckdb/planner/operator/logical_update.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
-#include "ivm_parser.hpp"
+#include "openivm_parser.hpp"
 
 #include <iostream>
 #include <utility>
@@ -166,4 +166,4 @@ public:
 };
 }; // namespace duckdb
 
-#endif // DUCKDB_IVM_INSERT_RULE_HPP
+#endif // DUCKDB_OPENIVM_INSERT_RULE_HPP

@@ -1,7 +1,7 @@
-#include "include/ivm_upsert.hpp"
+#include "include/openivm_upsert.hpp"
 
 #include "../../compiler/include/compiler_extension.hpp"
-#include "../../compiler/include/ivm/ivm_compile_upsert.hpp"
+#include "../../compiler/include/openivm/openivm_compile_upsert.hpp"
 #include "duckdb/catalog/catalog_entry/index_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
