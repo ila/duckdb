@@ -9,6 +9,7 @@
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
+#include "../compiler/include/compiler_extension.hpp"
 
 #include <iostream>
 #include <stack>
@@ -53,8 +54,8 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 		if (query_lower.substr(0, 12) == "create table") {
 			// remove RDDA constraints from the string
 			// todo can constraints be empty?
-			std::vector<rdda_constraint> constraints;
-			if (scope == table_scope::decentralized) {
+			std::vector<RDDAConstraint> constraints;
+			if (scope == TableScope::decentralized) {
 				constraints = ParseCreateTable(query_lower);
 			}
 			// query is clean now, let's try and feed it back to the parser
@@ -62,14 +63,20 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 			auto result = parser_con.Query(query_lower);
 			if (!result->HasError()) {
 				// query succeeded, now we translate our RDDA keywords into SQL statements
-				auto table_name = ExtractTableName(query_lower);
+				auto table_name = CompilerExtension::ExtractTableName(query_lower);
 				std::cout << table_name << "\n";
 				// now we add the table in our RDDA catalog (name, scope, query)
 				auto table_string = "insert into rdda_tables values(" + table_name + ", " +
 				                    std::to_string(static_cast<int32_t>(scope)) + ", NULL);\n";
 				centralized_queries += table_string;
 				query_lower += "\n";
-				if (scope == table_scope::decentralized) {
+				// min agg must be w/ sensitive
+				// sensitive can exist w/o min agg
+				// min agg is a number
+				// min agg column level, max min agg
+				// omit randomized
+
+				if (scope == TableScope::decentralized) {
 					decentralized_queries += query_lower;
 					if (!constraints.empty()) {
 						for (auto &constraint : constraints) {
@@ -86,7 +93,7 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 						}
 					}
 				} else {
-					if (scope == table_scope::replicated) {
+					if (scope == TableScope::replicated) {
 						centralized_queries += query_lower;
 						decentralized_queries += query_lower;
 					} else {
@@ -114,9 +121,9 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 			auto result = parser_con.Query(query_lower);
 			if (!result->HasError()) {
 				// adding the view to the system tables
-				auto view_name = ExtractTableName(query_lower);
+				auto view_name = CompilerExtension::ExtractTableName(query_lower);
 				std::cout << "\nname: " << view_name << "\n";
-				auto view_query = ExtractViewQuery(query_lower);
+				auto view_query = CompilerExtension::ExtractViewQuery(query_lower);
 				std::cout << "query: " << view_query << "\n";
 				// extracting the FROM and JOIN clause tables to store the query scope
 				auto view_tables = ParseViewTables(query_lower);
@@ -371,7 +378,7 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 				BufferedFileWriter serializer(parser_db.GetFileSystem(), path + "centralized_tables.binary");
 				// table_info->Serialize(serializer);
 
-				if (scope == table_scope::centralized) {
+				if (scope == TableScope::centralized) {
 					// check if the query comes from decentralized tables
 					// todo what to do with all of this?
 					std::stringstream ss(view_tables);
@@ -420,7 +427,7 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 					                       "(encrypted_block text, client_id bigint, arrival_time timestamp);\n";
 					third_party_queries += encrypted_query; */
 
-				} else if (scope == table_scope::decentralized) {
+				} else if (scope == TableScope::decentralized) {
 					throw ParserException("Decentralized views are generated automatically!");
 				} else {
 					// replicated
@@ -461,13 +468,13 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 
 	// writing the newly parsed SQL commands
 	if (!centralized_queries.empty()) {
-		WriteFile(centralized_queries, path_centralized);
+		CompilerExtension::WriteFile(centralized_queries, false, path_centralized);
 	}
 	if (!decentralized_queries.empty()) {
-		WriteFile(decentralized_queries, path_decentralized);
+		CompilerExtension::WriteFile(decentralized_queries, false, path_decentralized);
 	}
 	if (!third_party_queries.empty()) {
-		WriteFile(third_party_queries, path_third_party);
+		CompilerExtension::WriteFile(third_party_queries, false, path_third_party);
 	}
 
 	std::cout << "done!\n" << std::endl;

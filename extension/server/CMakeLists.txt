@@ -4,7 +4,7 @@ project(ServerExtension)
 
 add_extension_definitions()
 
-include_directories(include)
+include_directories(include ../../extension/compiler/include)
 
 add_library(
   server_extension STATIC

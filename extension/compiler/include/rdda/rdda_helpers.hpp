@@ -22,6 +22,7 @@ struct RDDAConstraint {
 struct RDDAViewConstraint {
 	uint8_t window = 0;
 	uint8_t ttl = 0;
+	uint8_t refresh = 0;
 };
 
 struct RDDASelectOption {
