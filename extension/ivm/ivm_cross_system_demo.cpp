@@ -23,8 +23,11 @@ void ReplaceTableName(string& query) {
 
 void RunLogicalPlanToString(string& sql_string){
 	Printer::Print("Path is: "+ sql_string);
-	DuckDB db(nullptr);
-	// DuckDB db("../../data/testdb.db");
+	DuckDB db("../../data/testdb.db");
+	// todo:
+	// if (!context.db->config.options.database_path.empty()) {
+	// 	db_path = context.db->GetFileSystem().GetWorkingDirectory();
+	// }
 	Connection con(db);
 	con.BeginTransaction();
 	Planner plan(*con.context);

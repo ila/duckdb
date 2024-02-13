@@ -15,7 +15,8 @@ add_executable(
         compiler
         compiler_library.cpp
         compiler_extension.cpp ivm/ivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
-        rdda/rdda_parse_view.cpp rdda/rdda_parse_select.cpp)
+        rdda/rdda_parse_view.cpp rdda/rdda_parse_select.cpp
+        data_representation.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(
