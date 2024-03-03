@@ -29,9 +29,11 @@
 namespace duckdb {
 string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
+  string cur_parent, unique_ptr<DuckAST> &ql_tree);
+void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
-                         std::vector<std::pair<string, string>> &column_aliases, 
-                         string &insert_table_name, bool do_join, unique_ptr<QuackQLTree> &ql);
+                         std::vector<std::pair<string, string>> &column_aliases, string cur_parent,
+                         string &insert_table_name, bool do_join, unique_ptr<DuckAST> &ql);
 } // namespace duckdb
 
 #endif // DUCKDB_LOGICAL_PLAN_TO_STRING_HPP

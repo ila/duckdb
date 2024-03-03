@@ -27,50 +27,72 @@
 #include "duckdb/planner/operator/logical_cross_product.hpp"
 #include "duckdb/common/printer.hpp"
 
-// Naming the representation: QuackQL
+// Naming the representation: DuckAST
 
 namespace duckdb {
 
-  // QuackQLBaseExpression Types
-  enum QuackQLExpressionType {
+  // DuckASTBaseExpression Types
+  enum DuckASTExpressionType {
     NONE,
-    PROJECTION
+    PROJECTION,
+    GET
   };
 
   // Node Type Classes
-  class QuackQLBaseExpression {
+  class DuckASTBaseExpression {
     public:
       string name;
-      QuackQLBaseExpression();
-      QuackQLBaseExpression(string name);
-      ~QuackQLBaseExpression();
+      DuckASTBaseExpression();
+      DuckASTBaseExpression(string name);
+      virtual ~DuckASTBaseExpression();
   };
 
-  class QuackQLProjection : public QuackQLBaseExpression{
+  class DuckASTProjection : public DuckASTBaseExpression{
     public:
-      std::vector<string> column_names;
-      QuackQLProjection();
-      QuackQLProjection(string name);
-      ~QuackQLProjection();
+      std::map<string, string> column_alaises;
+      DuckASTProjection();
+      DuckASTProjection(string name);
+      ~DuckASTProjection() override;
+      void add_column(string table_index, string column_index, string alias);
   };
+
+  class DuckASTGet : public DuckASTBaseExpression {
+    public:
+      std::string table_name;
+      unsigned long int table_index;
+      std::vector<string> column_names;
+      bool all_columns;
+      // todo: Column Index for bindings
+      DuckASTGet();
+      DuckASTGet(string table_name, unsigned long int table_index, std::vector<string> col_names);
+      ~DuckASTGet() override;
+      void set_table_name(string table_name);
+      // void set_column_names(std::vector<string> column_names);
+      // void add_column_name(string column_name);
+  };
+  // Filter PushDown
+ // Separate Type for filter?
 
   // Expression Tree
-  class QuackQLNode {
+  class DuckASTNode {
     public:
-      shared_ptr<QuackQLBaseExpression> expr;
-      vector<shared_ptr<QuackQLNode>> children;
-      QuackQLExpressionType type;
-      QuackQLNode();
-      QuackQLNode(shared_ptr<QuackQLBaseExpression> expr, QuackQLExpressionType type);
-      void setExpression(shared_ptr<QuackQLBaseExpression> expr, QuackQLExpressionType type);
+      shared_ptr<DuckASTBaseExpression> expr;
+      string id;
+      vector<shared_ptr<DuckASTNode>> children;
+      shared_ptr<DuckASTNode> parent_node;
+      DuckASTExpressionType type;
+      DuckASTNode();
+      DuckASTNode(shared_ptr<DuckASTBaseExpression> expr, DuckASTExpressionType type);
+      void setExpression(shared_ptr<DuckASTBaseExpression> expr, DuckASTExpressionType type);
   };
-  class QuackQLTree {
+  class DuckAST {
     private:
-      shared_ptr<QuackQLNode> root;
+      shared_ptr<DuckASTNode> root;
+      bool insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, shared_ptr<DuckASTNode> curNode);
+      void displayTree_t(shared_ptr<DuckASTNode> node);
     public:
-      QuackQLTree();
-      void insert(shared_ptr<QuackQLBaseExpression>& expr, string id, QuackQLExpressionType type);
-      void displayTree_t(shared_ptr<QuackQLNode> node);
+      DuckAST();
+      void insert(shared_ptr<DuckASTBaseExpression>& expr, string id, DuckASTExpressionType type, string parent_id);
       void displayTree();
   };
 } // namespace duckdb

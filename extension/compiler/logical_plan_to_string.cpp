@@ -19,28 +19,81 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	// using trees or hash tables would not preserve the order
 	std::vector<std::pair<string, string>> column_aliases;
 	string insert_table_name;
-	auto prj = unique_ptr<QuackQLTree>(new QuackQLTree());
+	auto prj = unique_ptr<DuckAST>(new DuckAST());
 	// now we can call the recursive function
-	LogicalPlanToString(plan, plan_string, column_names, column_aliases, insert_table_name, false, prj);
+	// LogicalPlanToString(plan, plan_string, column_names, column_aliases, "", insert_table_name, false, prj);
+	LogicalPlanToString(plan, plan_string, "", prj);
+	Printer::Print("Display!-------------");
+	prj->displayTree();
 	return plan_string;
 }
 
-
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
+	string cur_parent, unique_ptr<DuckAST> &ql_tree) {
+	ql_tree->displayTree();
+	if(cur_parent.size() == 0) {
+		cur_parent = "native";
+	}
+	switch(plan->type) {
+	case LogicalOperatorType::LOGICAL_PROJECTION: {
+		auto node = dynamic_cast<LogicalProjection *>(plan.get());
+		auto ql_proj_exp = new DuckASTProjection();
+		ql_proj_exp->name = node->GetName();
+		auto bindings = node->GetColumnBindings();
+		auto expressions = node->expressions;
+		for(auto expression: expressions) {
+			if(expression->type == ExpressionType::BOUND_REF) {
+				auto column = dynamic_cast<BoundColumnRefExpression *>(expression.get());
+				auto column_index = to_string(column->binding.column_index);
+				auto table_index = to_string(column->binding.table_index);
+				auto column_name = column->alias;
+				ql_proj_exp->add_column(table_index, column_index, column_name);
+			}
+		}
+		auto expr = (shared_ptr<DuckASTBaseExpression>)(ql_proj_exp);
+		ql_tree->insert(expr, cur_parent + "_" + ql_proj_exp->name, DuckASTExpressionType::PROJECTION, cur_parent);
+		return LogicalPlanToString(plan->children[0], plan_string, cur_parent, ql_tree);
+	}
+	case LogicalOperatorType::LOGICAL_GET: {
+		auto node = dynamic_cast<LogicalGet *>(plan.get());
+		auto ql_get_exp = new DuckASTGet();
+	}
+	}
+}
+
+void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
-                         std::vector<std::pair<string, string>> &column_aliases, 
-						 string &insert_table_name, bool do_join, unique_ptr<QuackQLTree> &ql) {
+                         std::vector<std::pair<string, string>> &column_aliases, string cur_parent,
+						 string &insert_table_name, bool do_join, unique_ptr<DuckAST> &ql) {
 
 	Printer::Print("Type: ");
+	// ql->displayTree();
+	Printer::Print(cur_parent);
+	if(cur_parent.size() == 0) {
+		cur_parent = "native";
+	}
 	// we reached a root node
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_GET: { // projection
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
+		auto bindings = node->GetColumnBindings();
 		auto table_name = node->GetTable().get()->name;
 		auto current_table_index = node->GetTableIndex();
 		// Get columns from column names mapq
 
 		auto scan_column_names = node->names;
+
+		auto ql_exp = new DuckASTGet(table_name, current_table_index[0], node->names);
+		ql_exp->name = node->GetName();
+		if(column_aliases.size() == scan_column_names.size()) {
+			ql_exp->column_names = scan_column_names;
+		} else {
+			ql_exp->all_columns = true;
+		}
+
+		ql_exp->table_index = current_table_index[0];
+		auto fin_exp = (shared_ptr<DuckASTBaseExpression>)ql_exp;
+		ql->insert(fin_exp, cur_parent + "_" + ql_exp->name, DuckASTExpressionType::GET,cur_parent);
 		// we don't need the table function here; we assume it is a simple scan
 		string from_string = "";
 
@@ -121,6 +174,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		} else {
 			// uh oh
 		}
+
+
 	}
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		// we cannot use ParamsToString here because we lose the aliases
@@ -193,13 +248,13 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		}
 
 		// plan_string += "\n";
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, cur_parent, insert_table_name, false, ql);
 	}
 
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
 
-		auto exp = (shared_ptr<QuackQLProjection>)(new QuackQLProjection());
+		auto exp = (new DuckASTProjection());
 		if (column_aliases.empty()) {
 			// this is the first projection (at least in this first rudimentary implementation)
 			// when we support more complicated queries, we can just add a do_ivm flag to skip this projection
@@ -214,25 +269,29 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 					auto table_index = column->binding.table_index;
 					auto column_name = column->alias;
 
+					// exp->add_column(column_name);
+
 					column_names[std::to_string(table_index) + "." + std::to_string(column_index)] = column_name;
 					// we use a placeholder to figure out which column names have been aliased
 					column_aliases.emplace_back(column_name, "duckdb_placeholder_internal");
 				}
 			}
 		}
-		ql->insert(exp, node->GetName(), QuackQLExpressionType::PROJECTION);
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false, ql);
+		auto fin_exp = (shared_ptr<DuckASTBaseExpression>)exp;
+		auto cur_id = cur_parent + "_" + node->GetName();
+		ql->insert(fin_exp, cur_parent + "_" + node->GetName(), DuckASTExpressionType::PROJECTION, cur_parent);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, cur_id, insert_table_name, false, ql);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// basically the same logic as the logical get
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
 		plan_string = "where " + node->ParamsToString() + "\n" + plan_string;
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", insert_table_name, false, ql);
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
 		// this should be transformed into an upsert
 		auto node = dynamic_cast<LogicalInsert *>(plan.get());
-		return LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, node->table.name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", node->table.name, false, ql);
 	}
 	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT: {
 		// Tacle Statements Like
@@ -244,8 +303,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		// auto left_projection = dynamic_cast<LogicalGet *>(children.front().get());
 		auto right_table_name = right_projection->GetTable().get()->name;
 		plan_string = plan_string + "cross join " + right_table_name;
-		LogicalPlanToString(plan->children[0], plan_string, column_names, column_aliases, insert_table_name, false, ql);
-		return LogicalPlanToString(plan->children[1], plan_string, column_names, column_aliases, insert_table_name, true, ql);
+		LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", insert_table_name, false, ql);
+		return LogicalPlanToString_old(plan->children[1], plan_string, column_names, column_aliases, "", insert_table_name, true, ql);
 	}
 	// case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
 	// 	// Tackles Statements like
