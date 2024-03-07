@@ -60,13 +60,20 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		ql_get_exp->name = node->GetName();
 
 		auto column_names = node->GetTable()->GetColumns().GetColumnNames();
+		auto current_table_index = node->GetTableIndex();
+		map<string, string> cur_col_map;
+		for(auto &name: column_names) {
+			auto col_index = node->GetTable()->GetColumnIndex(name).index;
+			auto id = to_string(current_table_index[0]) + "." + to_string(col_index);
+			cur_col_map[id] = name;
+		}
 		auto column_bindings = node->GetColumnBindings();
 		int i = 0;
 		for(auto binding: column_bindings) {
 			string id = to_string(binding.table_index) + "." + to_string(binding.column_index);
 			Printer::Print(id);
 			if(column_map.find(id) != column_map.end()) {
-				auto column_name = column_map[id];
+				auto column_name = cur_col_map[id];
 				ql_get_exp->column_names.push_back(column_name);
 			}
 			i++;
