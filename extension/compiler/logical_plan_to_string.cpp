@@ -21,16 +21,16 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	string insert_table_name;
 	auto prj = unique_ptr<DuckAST>(new DuckAST());
 	// now we can call the recursive function
-	// LogicalPlanToString(plan, plan_string, column_names, column_aliases, "", insert_table_name, false, prj);
-	LogicalPlanToString(plan, plan_string, "", prj);
+	map<string, string> colm_aliases;
+	// LogicalPlanToString_old(plan, plan_string, column_names, column_aliases, "", insert_table_name, false, prj);
+	LogicalPlanToString(plan, plan_string, "", prj, colm_aliases);
 	Printer::Print("Display!-------------");
 	prj->displayTree();
 	return plan_string;
 }
 
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
-	string cur_parent, unique_ptr<DuckAST> &ql_tree) {
-	ql_tree->displayTree();
+	string cur_parent, unique_ptr<DuckAST> &ql_tree, map<string, string> &column_map) {
 	if(cur_parent.size() == 0) {
 		cur_parent = "native";
 	}
@@ -40,9 +40,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto ql_proj_exp = new DuckASTProjection();
 		ql_proj_exp->name = node->GetName();
 		auto bindings = node->GetColumnBindings();
-		auto expressions = node->expressions;
-		for(auto expression: expressions) {
-			if(expression->type == ExpressionType::BOUND_REF) {
+		for(auto &expression: node->expressions) {
+			if(expression->type == ExpressionType::BOUND_COLUMN_REF) {
 				auto column = dynamic_cast<BoundColumnRefExpression *>(expression.get());
 				auto column_index = to_string(column->binding.column_index);
 				auto table_index = to_string(column->binding.table_index);
@@ -51,12 +50,29 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			}
 		}
 		auto expr = (shared_ptr<DuckASTBaseExpression>)(ql_proj_exp);
-		ql_tree->insert(expr, cur_parent + "_" + ql_proj_exp->name, DuckASTExpressionType::PROJECTION, cur_parent);
-		return LogicalPlanToString(plan->children[0], plan_string, cur_parent, ql_tree);
+		auto node_id = cur_parent + "_" + ql_proj_exp->name;
+		ql_tree->insert(expr, node_id, DuckASTExpressionType::PROJECTION, cur_parent);
+		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, ql_proj_exp->column_alaises);
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 		auto ql_get_exp = new DuckASTGet();
+		ql_get_exp->name = node->GetName();
+
+		auto column_names = node->GetTable()->GetColumns().GetColumnNames();
+		auto column_bindings = node->GetColumnBindings();
+		int i = 0;
+		for(auto binding: column_bindings) {
+			string id = to_string(binding.table_index) + "." + to_string(binding.column_index);
+			Printer::Print(id);
+			if(column_map.find(id) != column_map.end()) {
+				auto column_name = column_map[id];
+				ql_get_exp->column_names.push_back(column_name);
+			}
+			i++;
+		}
+		auto expr = (shared_ptr<DuckASTBaseExpression>)ql_get_exp;
+		ql_tree->insert(expr, cur_parent + "_" + ql_get_exp->name, DuckASTExpressionType::GET, cur_parent);
 	}
 	}
 }

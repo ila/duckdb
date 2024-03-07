@@ -29,7 +29,7 @@
 namespace duckdb {
 string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
-  string cur_parent, unique_ptr<DuckAST> &ql_tree);
+  string cur_parent, unique_ptr<DuckAST> &ql_tree, map<string, string> &alias_map);
 void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          std::unordered_map<string, string> &column_names,
                          std::vector<std::pair<string, string>> &column_aliases, string cur_parent,

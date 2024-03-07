@@ -24,14 +24,13 @@ namespace duckdb {
 
 	DuckASTProjection::DuckASTProjection(string name) {
 		this->name = name;
-		this->column_names;
     }
 
 	DuckASTProjection::~DuckASTProjection() {
 	}
 
 	void DuckASTProjection::add_column(string table_index, string column_index, string alias) {
-		column_alaises[table_index + "." + column_index] = alias;
+		this->column_alaises[table_index + "." + column_index] = alias;
 	}
 
 	// DuckASTGet
@@ -90,6 +89,7 @@ namespace duckdb {
 
 
 	void DuckAST::insert(shared_ptr<DuckASTBaseExpression>& expr, string id, DuckASTExpressionType type, string parent_id) {
+		Printer::Print("Inserting: "+id);
 		expr->name = id;
 		if(root == nullptr) {
 			root = (shared_ptr<DuckASTNode>)(new DuckASTNode(expr, type));
@@ -103,30 +103,33 @@ namespace duckdb {
 		bool result = insert_after_root(node, parent_id, root);
 		if(result) {
 			Printer::Print("Inserted Element successfully");
+		}else {
+			Printer::Print("Unable to find element");
 		}
     }
 
 	void DuckAST::displayTree_t(shared_ptr<DuckASTNode> node) {
 	    if(node == nullptr) return;
 		Printer::Print(node->id);
-		Printer::Print("\t->");
 
 		// Cast according to Nde Type
 		switch(node->type) {
 			case DuckASTExpressionType::GET: {
 				auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
 				Printer::Print(exp->table_name);
-				Printer::Print("Columns: ");
+				Printer::Print("Columns IN GET: ");
 				for(auto col: exp->column_names) {
 					Printer::Print(col);
 				}
+				break;
 			}
 			case DuckASTExpressionType::PROJECTION: {
 				auto exp = dynamic_cast<DuckASTProjection*>(node->expr.get());
-				Printer::Print("Columns to select:");
-				for(auto col: exp->column_names) {
-					Printer::Print(col);
+				Printer::Print("Columns to select in PROJJ:");
+				for(auto col: exp->column_alaises) {
+					Printer::Print(col.first + "+" + col.second);
 				}
+				break;
 			}
 		}
 
@@ -139,5 +142,9 @@ namespace duckdb {
 	    if(root == nullptr) return;
 		this->displayTree_t(root);
     }
+
+	// DuckASTNode DuckAST::get_node(string node_id, shared_ptr<DuckASTNode> node=nullptr) {
+ //    }
+
 
 }

@@ -93,6 +93,7 @@ namespace duckdb {
     public:
       DuckAST();
       void insert(shared_ptr<DuckASTBaseExpression>& expr, string id, DuckASTExpressionType type, string parent_id);
+      DuckASTNode get_node(string node_id);
       void displayTree();
   };
 } // namespace duckdb
