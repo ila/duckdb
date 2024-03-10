@@ -38,10 +38,9 @@ namespace duckdb {
 		this->all_columns = false;
 	}
 
-	DuckASTGet::DuckASTGet(string table_name, unsigned long int table_index, std::vector<string> col_name) {
+	DuckASTGet::DuckASTGet(string table_name, unsigned long int table_index) {
 		this->table_name = table_name;
 		this->table_index = table_index;
-		this->column_names = column_names;
 		this->all_columns = false;
 	}
 
@@ -118,8 +117,8 @@ namespace duckdb {
 				auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
 				Printer::Print(exp->table_name);
 				Printer::Print("Columns IN GET: ");
-				for(auto col: exp->column_names) {
-					Printer::Print(col);
+				for(auto col: exp->alias_map) {
+					Printer::Print(col.first + " as " + col.second);
 				}
 				break;
 			}
@@ -142,6 +141,62 @@ namespace duckdb {
 	    if(root == nullptr) return;
 		this->displayTree_t(root);
     }
+
+	void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string) {
+		if(node == nullptr) return;
+
+		// Append to plan_string according to node type
+		switch(node->type) {
+			case DuckASTExpressionType::PROJECTION: {
+				for(auto child: node->children) {
+					generateString_t(child, plan_string);
+				}
+				break;
+			}
+			case DuckASTExpressionType::GET: {
+				vector<string> columns;
+				auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
+				string table_name = exp->table_name;
+				if(exp->all_columns) {
+					plan_string = "select * from " + table_name + " " + plan_string;
+					return;
+				}
+				for(auto col: exp->alias_map) {
+					if(col.second == "") {
+						columns.push_back(col.first);
+					}else {
+						columns.push_back(col.first + " as " + col.second);
+					}
+				}
+				string cur_string = "select ";
+				for(int i = 0; i < columns.size(); i++) {
+					cur_string += columns[i];
+					if(i != columns.size() - 1) {
+						cur_string += ", ";
+					}
+				}
+				cur_string += " from " + table_name;
+				plan_string = cur_string + plan_string;
+
+				// Move ahead in the tree
+				// for(auto child: node->children) {
+				// 	generateString_t(child, plan_string);
+				// }
+				// break;
+
+				// Assuming that this is the bottom of the tree
+				return;
+			}
+		}
+    }
+
+
+	void DuckAST::generateString(string &plan_string) {
+		if(root == nullptr) return;
+		this->generateString_t(root, plan_string);
+		plan_string += ";";
+    }
+
 
 	// DuckASTNode DuckAST::get_node(string node_id, shared_ptr<DuckASTNode> node=nullptr) {
  //    }

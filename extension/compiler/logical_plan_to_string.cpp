@@ -25,7 +25,8 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	// LogicalPlanToString_old(plan, plan_string, column_names, column_aliases, "", insert_table_name, false, prj);
 	LogicalPlanToString(plan, plan_string, "", prj, colm_aliases);
 	Printer::Print("Display!-------------");
-	prj->displayTree();
+	prj->generateString(plan_string);
+	Printer::Print(plan_string);
 	return plan_string;
 }
 
@@ -58,26 +59,34 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 		auto ql_get_exp = new DuckASTGet();
 		ql_get_exp->name = node->GetName();
+		ql_get_exp->table_name = node->GetTable()->name;
+		ql_get_exp->all_columns = true;
 
+		auto bindings = node->GetColumnBindings();
+		auto column_ids = node->column_ids;
 		auto column_names = node->GetTable()->GetColumns().GetColumnNames();
 		auto current_table_index = node->GetTableIndex();
-		map<string, string> cur_col_map;
-		for(auto &name: column_names) {
-			auto col_index = node->GetTable()->GetColumnIndex(name).index;
-			auto id = to_string(current_table_index[0]) + "." + to_string(col_index);
-			cur_col_map[id] = name;
+		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
+		for(int i = 0; i < bindings.size(); i++) {
+			auto cur_binding = bindings[i];
+			cur_col_map[to_string(cur_binding.table_index)+"."+to_string(cur_binding.column_index)] = column_names[column_ids[i]];
 		}
-		auto column_bindings = node->GetColumnBindings();
-		int i = 0;
-		for(auto binding: column_bindings) {
-			string id = to_string(binding.table_index) + "." + to_string(binding.column_index);
-			Printer::Print(id);
-			if(column_map.find(id) != column_map.end()) {
-				auto column_name = cur_col_map[id];
-				ql_get_exp->column_names.push_back(column_name);
+		unordered_map<string, string> alias_map;
+		for(auto curmp: cur_col_map) {
+			Printer::Print(curmp.first + " " + curmp.second);
+			auto alias = column_map[curmp.first];
+			if(alias == curmp.second) {
+				alias_map[curmp.second] = "";
+			}else{
+				alias_map[curmp.second] = alias;
+				ql_get_exp->all_columns = false;
 			}
-			i++;
 		}
+		ql_get_exp->alias_map = alias_map;
+		if(ql_get_exp->all_columns && alias_map.size() != column_names.size()) {
+			ql_get_exp->all_columns = false;
+		}
+
 		auto expr = (shared_ptr<DuckASTBaseExpression>)ql_get_exp;
 		ql_tree->insert(expr, cur_parent + "_" + ql_get_exp->name, DuckASTExpressionType::GET, cur_parent);
 	}
@@ -106,10 +115,10 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
 
 		auto scan_column_names = node->names;
 
-		auto ql_exp = new DuckASTGet(table_name, current_table_index[0], node->names);
+		auto ql_exp = new DuckASTGet(table_name, current_table_index[0]);
 		ql_exp->name = node->GetName();
 		if(column_aliases.size() == scan_column_names.size()) {
-			ql_exp->column_names = scan_column_names;
+			// ql_exp->column_names = scan_column_names;
 		} else {
 			ql_exp->all_columns = true;
 		}

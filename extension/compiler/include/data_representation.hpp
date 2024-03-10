@@ -60,11 +60,11 @@ namespace duckdb {
     public:
       std::string table_name;
       unsigned long int table_index;
-      std::vector<string> column_names;
+      unordered_map<string, string> alias_map;
       bool all_columns;
       // todo: Column Index for bindings
       DuckASTGet();
-      DuckASTGet(string table_name, unsigned long int table_index, std::vector<string> col_names);
+      DuckASTGet(string table_name, unsigned long int table_index);
       ~DuckASTGet() override;
       void set_table_name(string table_name);
       // void set_column_names(std::vector<string> column_names);
@@ -90,11 +90,13 @@ namespace duckdb {
       shared_ptr<DuckASTNode> root;
       bool insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, shared_ptr<DuckASTNode> curNode);
       void displayTree_t(shared_ptr<DuckASTNode> node);
+      void generateString_t(shared_ptr<DuckASTNode> node, string &plan_string);
     public:
       DuckAST();
       void insert(shared_ptr<DuckASTBaseExpression>& expr, string id, DuckASTExpressionType type, string parent_id);
       DuckASTNode get_node(string node_id);
       void displayTree();
+      void generateString(string &plan_string);
   };
 } // namespace duckdb
 
