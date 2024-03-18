@@ -35,7 +35,8 @@ namespace duckdb {
   enum DuckASTExpressionType {
     NONE,
     PROJECTION,
-    GET
+    GET,
+    FILTER
   };
 
   // Node Type Classes
@@ -54,6 +55,14 @@ namespace duckdb {
       DuckASTProjection(string name);
       ~DuckASTProjection() override;
       void add_column(string table_index, string column_index, string alias);
+  };
+
+  class DuckASTFilter : public DuckASTBaseExpression {
+    public:
+      std::string filter_condition;
+      DuckASTFilter();
+      DuckASTFilter(const string &filter_condition);
+      void set_filter_condition(string filter_condition);
   };
 
   class DuckASTGet : public DuckASTBaseExpression {

@@ -33,6 +33,19 @@ namespace duckdb {
 		this->column_alaises[table_index + "." + column_index] = alias;
 	}
 
+	// DuckASTFilter
+	DuckASTFilter::DuckASTFilter() {
+		this->filter_condition = "";
+	}
+
+	DuckASTFilter::DuckASTFilter(const string &filter_condition) {
+		this->filter_condition = filter_condition;
+	}
+
+	void DuckASTFilter::set_filter_condition(string filter_condition) {
+		this->filter_condition = filter_condition;
+	}
+
 	// DuckASTGet
 	DuckASTGet::DuckASTGet() {
 		this->all_columns = false;
@@ -80,7 +93,7 @@ namespace duckdb {
 			return true;
 		}
 		for(auto child: curNode->children) {
-			bool result = insert_after_root(root, parent_id, child);
+			bool result = insert_after_root(node, parent_id, child);
 			if(result) return true;
 		}
 		return false;
@@ -113,6 +126,11 @@ namespace duckdb {
 
 		// Cast according to Nde Type
 		switch(node->type) {
+			case DuckASTExpressionType::FILTER: {
+				auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
+				Printer::Print("Where " + exp->filter_condition);
+				break;
+			}
 			case DuckASTExpressionType::GET: {
 				auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
 				Printer::Print(exp->table_name);
@@ -148,6 +166,16 @@ namespace duckdb {
 		// Append to plan_string according to node type
 		switch(node->type) {
 			case DuckASTExpressionType::PROJECTION: {
+				for(auto child: node->children) {
+					generateString_t(child, plan_string);
+				}
+				break;
+			}
+			case DuckASTExpressionType::FILTER: {
+				auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
+				string condition = " where " + exp->filter_condition;
+				plan_string = plan_string + condition;
+				auto children = node->children;
 				for(auto child: node->children) {
 					generateString_t(child, plan_string);
 				}

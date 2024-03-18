@@ -55,6 +55,15 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		ql_tree->insert(expr, node_id, DuckASTExpressionType::PROJECTION, cur_parent);
 		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, ql_proj_exp->column_alaises);
 	}
+	case LogicalOperatorType::LOGICAL_FILTER: {
+		auto node = dynamic_cast<LogicalFilter *>(plan.get());
+		auto condition = node->ParamsToString();
+		auto ql_filter_exp = new DuckASTFilter(condition);
+		auto expr = shared_ptr<DuckASTBaseExpression>(ql_filter_exp);
+		auto node_id = cur_parent + "_" + node->GetName();
+		ql_tree->insert(expr, node_id, DuckASTExpressionType::FILTER, cur_parent);
+		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
+	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 		auto ql_get_exp = new DuckASTGet();
