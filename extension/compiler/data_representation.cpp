@@ -33,6 +33,12 @@ namespace duckdb {
 		this->column_alaises[table_index + "." + column_index] = alias;
 	}
 
+	// DuckASTAggregate
+	DuckASTAggregate::DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column) {
+		this->aggregate_function = aggregate_function;
+		this->group_column = group_column;
+	}
+
 	// DuckASTFilter
 	DuckASTFilter::DuckASTFilter() {
 		this->filter_condition = "";
@@ -205,12 +211,6 @@ namespace duckdb {
 				}
 				cur_string += " from " + table_name;
 				plan_string = cur_string + plan_string;
-
-				// Move ahead in the tree
-				// for(auto child: node->children) {
-				// 	generateString_t(child, plan_string);
-				// }
-				// break;
 
 				// Assuming that this is the bottom of the tree
 				return;

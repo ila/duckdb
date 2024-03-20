@@ -64,6 +64,26 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		ql_tree->insert(expr, node_id, DuckASTExpressionType::FILTER, cur_parent);
 		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
 	}
+	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
+		auto node = dynamic_cast<LogicalAggregate*>(plan.get());
+		auto par = node->ParamsToString();
+		auto names = node->GetName();
+		vector<string> group_names;
+		for(auto &grp: node->groups) {
+			group_names.push_back(grp->GetName());
+			Printer::Print("OK");
+		}
+		vector<string> aggregate_function;
+		for(auto &grp: node->expressions) {
+			aggregate_function.push_back(grp->GetName());
+		}
+		auto node_id = cur_parent + "_" + node->GetName();
+		auto ql_aggregate_node = new DuckASTAggregate(aggregate_function, group_names);
+		auto expr = (shared_ptr<DuckASTBaseExpression>)(ql_aggregate_node);
+		expr->name = node_id;
+		ql_tree->insert(expr, node_id, DuckASTExpressionType::AGGREGATE, cur_parent);
+		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
+	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 		auto ql_get_exp = new DuckASTGet();
@@ -98,6 +118,11 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 
 		auto expr = (shared_ptr<DuckASTBaseExpression>)ql_get_exp;
 		ql_tree->insert(expr, cur_parent + "_" + ql_get_exp->name, DuckASTExpressionType::GET, cur_parent);
+		break;
+	}
+	default: {
+		auto node = plan.get();
+		Printer::Print("O");
 	}
 	}
 }

@@ -36,7 +36,8 @@ namespace duckdb {
     NONE,
     PROJECTION,
     GET,
-    FILTER
+    FILTER,
+    AGGREGATE
   };
 
   // Node Type Classes
@@ -63,6 +64,13 @@ namespace duckdb {
       DuckASTFilter();
       DuckASTFilter(const string &filter_condition);
       void set_filter_condition(string filter_condition);
+  };
+
+  class DuckASTAggregate: public DuckASTBaseExpression {
+      public:
+        vector<string> group_column;
+        vector<string> aggregate_function;
+        DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
   };
 
   class DuckASTGet : public DuckASTBaseExpression {
