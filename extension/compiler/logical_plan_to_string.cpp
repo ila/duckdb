@@ -68,10 +68,16 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto node = dynamic_cast<LogicalAggregate*>(plan.get());
 		auto par = node->ParamsToString();
 		auto names = node->GetName();
+		auto binds = node->GetColumnBindings();
 		vector<string> group_names;
+		int counter = 0;
 		for(auto &grp: node->groups) {
 			group_names.push_back(grp->GetName());
-			Printer::Print("OK");
+			// assuming that these bindings are generated in a +2 table_index
+			// Need to fix and find actual reason
+			auto id = to_string(binds[counter].table_index - 2) + "." +  to_string(binds[counter].column_index);
+			column_map[id] = grp->GetName();
+			counter++;
 		}
 		vector<string> aggregate_function;
 		for(auto &grp: node->expressions) {
@@ -83,6 +89,10 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		expr->name = node_id;
 		ql_tree->insert(expr, node_id, DuckASTExpressionType::AGGREGATE, cur_parent);
 		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
+	}
+	case LogicalOperatorType::LOGICAL_ORDER_BY: {
+
+		break;
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		auto node = dynamic_cast<LogicalGet *>(plan.get());

@@ -37,6 +37,11 @@ namespace duckdb {
 	DuckASTAggregate::DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column) {
 		this->aggregate_function = aggregate_function;
 		this->group_column = group_column;
+		if(this->group_column.size() == 0) {
+			this->is_group_by = false;
+		}else {
+			this->is_group_by = true;
+		}
 	}
 
 	// DuckASTFilter
@@ -166,24 +171,50 @@ namespace duckdb {
 		this->displayTree_t(root);
     }
 
-	void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string) {
+	void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string, vector<string>& additional_cols, bool has_filter) {
 		if(node == nullptr) return;
 
 		// Append to plan_string according to node type
 		switch(node->type) {
 			case DuckASTExpressionType::PROJECTION: {
 				for(auto child: node->children) {
-					generateString_t(child, plan_string);
+					generateString_t(child, plan_string, additional_cols);
 				}
 				break;
 			}
 			case DuckASTExpressionType::FILTER: {
 				auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
-				string condition = " where " + exp->filter_condition;
+				string condition = exp->filter_condition;
 				plan_string = plan_string + condition;
 				auto children = node->children;
 				for(auto child: node->children) {
-					generateString_t(child, plan_string);
+					generateString_t(child, plan_string, additional_cols, true);
+				}
+				break;
+			}
+			case DuckASTExpressionType::AGGREGATE: {
+				auto exp = dynamic_cast<DuckASTAggregate *>(node->expr.get());
+				if(has_filter)
+					plan_string = " having " + plan_string;
+				string grp_string = "";
+				if(exp->is_group_by) {
+					int count = exp->group_column.size();
+					for(auto grp: exp->group_column) {
+						grp_string += grp;
+						count--;
+						if(count <= 0) {
+							grp_string += " ";
+						}else {
+							grp_string += ", ";
+						}
+					}
+					plan_string = " group by " + grp_string + plan_string;
+				}
+				for(auto ext_col: exp->aggregate_function) {
+					additional_cols.push_back(ext_col);
+				}
+				for(auto child: node->children) {
+					generateString_t(child, plan_string, additional_cols);
 				}
 				break;
 			}
@@ -191,6 +222,9 @@ namespace duckdb {
 				vector<string> columns;
 				auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
 				string table_name = exp->table_name;
+				if(has_filter) {
+					plan_string = " where " + plan_string;
+				}
 				if(exp->all_columns) {
 					plan_string = "select * from " + table_name + " " + plan_string;
 					return;
@@ -205,7 +239,15 @@ namespace duckdb {
 				string cur_string = "select ";
 				for(int i = 0; i < columns.size(); i++) {
 					cur_string += columns[i];
-					if(i != columns.size() - 1) {
+					if(i != columns.size() - 1){
+						cur_string += ", ";
+					}else if(additional_cols.size() != 0) {
+						cur_string += ", ";
+					}
+				}
+				for(int i = 0; i < additional_cols.size(); i++) {
+					cur_string += additional_cols[i];
+					if(i != additional_cols.size() - 1){
 						cur_string += ", ";
 					}
 				}
@@ -221,7 +263,8 @@ namespace duckdb {
 
 	void DuckAST::generateString(string &plan_string) {
 		if(root == nullptr) return;
-		this->generateString_t(root, plan_string);
+		vector<string> addcols;
+		this->generateString_t(root, plan_string, addcols);
 		plan_string += ";";
     }
 

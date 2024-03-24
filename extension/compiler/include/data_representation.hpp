@@ -70,6 +70,7 @@ namespace duckdb {
       public:
         vector<string> group_column;
         vector<string> aggregate_function;
+        bool is_group_by;
         DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
   };
 
@@ -107,7 +108,7 @@ namespace duckdb {
       shared_ptr<DuckASTNode> root;
       bool insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, shared_ptr<DuckASTNode> curNode);
       void displayTree_t(shared_ptr<DuckASTNode> node);
-      void generateString_t(shared_ptr<DuckASTNode> node, string &plan_string);
+      void generateString_t(shared_ptr<DuckASTNode> node, string &plan_string, vector<string>& additional_cols, bool has_filter=false);
     public:
       DuckAST();
       void insert(shared_ptr<DuckASTBaseExpression>& expr, string id, DuckASTExpressionType type, string parent_id);
