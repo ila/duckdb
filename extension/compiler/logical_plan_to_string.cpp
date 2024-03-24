@@ -91,8 +91,28 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
 	}
 	case LogicalOperatorType::LOGICAL_ORDER_BY: {
-
-		break;
+		auto node = dynamic_cast<LogicalOrder *>(plan.get());
+		auto ql_order_by = new DuckASTOrderBy();
+		for(auto &order: node->orders) {
+			auto name = order.expression->GetName();
+			string order_type = "";
+			switch(order.type) {
+				case OrderType::DESCENDING: {
+					order_type = "DESC";
+					break;
+				}
+				case OrderType::ASCENDING: {
+					order_type = "ASC";
+					break;
+				}
+			}
+			ql_order_by->add_order_column(name, order_type);
+		}
+		auto expr = (shared_ptr<DuckASTBaseExpression>)(ql_order_by);
+		auto node_id = cur_parent + "_" + node->GetName();
+		expr->name = node_id;
+		ql_tree->insert(expr, node_id, DuckASTExpressionType::ORDER_BY, cur_parent);
+		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
@@ -112,7 +132,6 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		}
 		unordered_map<string, string> alias_map;
 		for(auto curmp: cur_col_map) {
-			Printer::Print(curmp.first + " " + curmp.second);
 			auto alias = column_map[curmp.first];
 			if(alias == curmp.second) {
 				alias_map[curmp.second] = "";
@@ -132,7 +151,6 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	}
 	default: {
 		auto node = plan.get();
-		Printer::Print("O");
 	}
 	}
 }
@@ -142,9 +160,7 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
                          std::vector<std::pair<string, string>> &column_aliases, string cur_parent,
 						 string &insert_table_name, bool do_join, unique_ptr<DuckAST> &ql) {
 
-	Printer::Print("Type: ");
 	// ql->displayTree();
-	Printer::Print(cur_parent);
 	if(cur_parent.size() == 0) {
 		cur_parent = "native";
 	}

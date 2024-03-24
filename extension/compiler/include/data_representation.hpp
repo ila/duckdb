@@ -37,7 +37,8 @@ namespace duckdb {
     PROJECTION,
     GET,
     FILTER,
-    AGGREGATE
+    AGGREGATE,
+    ORDER_BY
   };
 
   // Node Type Classes
@@ -72,6 +73,14 @@ namespace duckdb {
         vector<string> aggregate_function;
         bool is_group_by;
         DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
+  };
+
+  class DuckASTOrderBy: public DuckASTBaseExpression {
+	  public:
+        // order by column and in which order
+        unordered_map<string, string> order;
+        DuckASTOrderBy();
+        void add_order_column(string& col, string& ord);
   };
 
   class DuckASTGet : public DuckASTBaseExpression {

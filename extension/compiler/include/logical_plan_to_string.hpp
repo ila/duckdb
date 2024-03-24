@@ -24,6 +24,7 @@
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
 #include "duckdb/planner/operator/logical_join.hpp"
 #include "duckdb/planner/operator/logical_cross_product.hpp"
+#include "duckdb/planner/operator/logical_order.hpp"
 #include "data_representation.hpp"
 
 namespace duckdb {

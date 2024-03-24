@@ -44,6 +44,14 @@ namespace duckdb {
 		}
 	}
 
+	// DuckASTOrderBy
+	DuckASTOrderBy::DuckASTOrderBy() {
+	}
+
+	void DuckASTOrderBy::add_order_column(string& col, string& ord) {
+		this->order[col] = ord;
+	}
+
 	// DuckASTFilter
 	DuckASTFilter::DuckASTFilter() {
 		this->filter_condition = "";
@@ -187,6 +195,25 @@ namespace duckdb {
 				string condition = exp->filter_condition;
 				plan_string = plan_string + condition;
 				auto children = node->children;
+				for(auto child: node->children) {
+					generateString_t(child, plan_string, additional_cols, true);
+				}
+				break;
+			}
+			case DuckASTExpressionType::ORDER_BY: {
+				auto exp = dynamic_cast<DuckASTOrderBy *>(node->expr.get());
+				string order_string = "";
+				int cnt = exp->order.size();
+				for(auto ord: exp->order) {
+					order_string += ord.first + " " + ord.second;
+					cnt--;
+					if(cnt <= 0) {
+						order_string += " ";
+					}else {
+						order_string += ", ";
+					}
+				}
+				plan_string  = " ORDER BY " + order_string + plan_string;
 				for(auto child: node->children) {
 					generateString_t(child, plan_string, additional_cols, true);
 				}
