@@ -6,7 +6,6 @@
 #include "duckdb/function/pragma_function.hpp"
 #include "ivm_upsert.hpp"
 
-
 #ifndef DUCKDB_IVM_PARSER_HPP
 #define DUCKDB_IVM_PARSER_HPP
 
@@ -105,7 +104,6 @@ public:
 
 	static duckdb::unique_ptr<FunctionData> IVMBind(ClientContext &context, TableFunctionBindInput &input,
 	                                                vector<LogicalType> &return_types, vector<string> &names) {
-
 
 		names.emplace_back("MATERIALIZED VIEW CREATION");
 		return_types.emplace_back(LogicalType::BOOLEAN);

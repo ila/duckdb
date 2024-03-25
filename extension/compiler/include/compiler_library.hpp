@@ -5,11 +5,10 @@
 
 class SQLCompiler {
 public:
-	SQLCompiler(const std::string& schemaFile, const std::string& materializedViewFile, bool applyUpdates);
+	SQLCompiler(const std::string &schemaFile, const std::string &materializedViewFile, bool applyUpdates);
 	void Compile();
 
 private:
-
 	// Add functions for processing materialized views and applying updates
 	// Modify the schema based on the provided instructions
 

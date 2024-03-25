@@ -79,47 +79,47 @@ public:
 			// we need to check whether the table isn't the delta table already
 			auto insert_table_name = insert_node->table.name;
 			if (insert_table_name.substr(0, 6) == "delta_") {
-				// todo - does this ever happen? throw an exception?
-				return;
+			    // todo - does this ever happen? throw an exception?
+			    return;
 			} else {
-				auto insert_table = "delta_" + insert_node->table.name;
-				QueryErrorContext error_context = QueryErrorContext();
-				auto delta_table_catalog_entry = Catalog::GetEntry(
-				    context, CatalogType::TABLE_ENTRY, insert_node->table.catalog.GetName(),
-				    insert_node->table.schema.name, insert_table, OnEntryNotFound::RETURN_NULL, error_context);
+			    auto insert_table = "delta_" + insert_node->table.name;
+			    QueryErrorContext error_context = QueryErrorContext();
+			    auto delta_table_catalog_entry = Catalog::GetEntry(
+			        context, CatalogType::TABLE_ENTRY, insert_node->table.catalog.GetName(),
+			        insert_node->table.schema.name, insert_table, OnEntryNotFound::RETURN_NULL, error_context);
 
-				if (delta_table_catalog_entry) { // if it exists, we can append
-					// check if already done
-					if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed) {
-						auto delta_table_entry = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
+			    if (delta_table_catalog_entry) { // if it exists, we can append
+			        // check if already done
+			        if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed) {
+			            auto delta_table_entry = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
 
-						Connection con(*context.db);
-						InternalAppender appender(context, *delta_table_entry);
+			            Connection con(*context.db);
+			            InternalAppender appender(context, *delta_table_entry);
 
-						// we need to get the projection node, since that contains the rows we want to append
-						auto projection_node = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
-						// this will break if there are no columns (unlikely but still?) // todo fixme?
-						auto get_node = dynamic_cast<LogicalExpressionGet *>(projection_node->children[0].get());
-						// expressions in the logical expression get are the rows of the insert
-						// we need to add the multiplicity column to the expression get
-						for (auto &row : get_node->expressions) {
-							appender.BeginRow();
-							// we can't directly append the row - need to iterate the fields
-							for (auto &col : row) {
-								appender.Append(dynamic_cast<BoundConstantExpression *>(col.get())->value);
-							}
-							appender.Append(true); // insertion (multiplicity column)
-							appender.EndRow();
-						}
+			            // we need to get the projection node, since that contains the rows we want to append
+			            auto projection_node = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
+			            // this will break if there are no columns (unlikely but still?) // todo fixme?
+			            auto get_node = dynamic_cast<LogicalExpressionGet *>(projection_node->children[0].get());
+			            // expressions in the logical expression get are the rows of the insert
+			            // we need to add the multiplicity column to the expression get
+			            for (auto &row : get_node->expressions) {
+			                appender.BeginRow();
+			                // we can't directly append the row - need to iterate the fields
+			                for (auto &col : row) {
+			                    appender.Append(dynamic_cast<BoundConstantExpression *>(col.get())->value);
+			                }
+			                appender.Append(true); // insertion (multiplicity column)
+			                appender.EndRow();
+			            }
 
-						appender.Close();
-						dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = true;
-					} else {
-						// we skip the second insertion and reset the flag
-						dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = false;
-					}
-					return;
-				}
+			            appender.Close();
+			            dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = true;
+			        } else {
+			            // we skip the second insertion and reset the flag
+			            dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = false;
+			        }
+			        return;
+			    }
 			}
 		}
 		case LogicalOperatorType::LOGICAL_DELETE: {
@@ -129,30 +129,30 @@ public:
 			// we need to check whether the table isn't the delta table already
 			auto delete_table_name = delete_node->table.name;
 			if (delete_table_name.substr(0, 6) == "delta_") {
-				// todo - throw an exception?
-				return;
+			    // todo - throw an exception?
+			    return;
 			} else {
-				// delete_node->return_chunk = true;
-				auto delete_table = "delta_" + delete_node->table.name;
-				QueryErrorContext error_context = QueryErrorContext();
-				auto delta_table_catalog_entry = Catalog::GetEntry(
-				    context, CatalogType::TABLE_ENTRY, delete_node->table.catalog.GetName(),
-				    delete_node->table.schema.name, delete_table, OnEntryNotFound::RETURN_NULL, error_context);
+			    // delete_node->return_chunk = true;
+			    auto delete_table = "delta_" + delete_node->table.name;
+			    QueryErrorContext error_context = QueryErrorContext();
+			    auto delta_table_catalog_entry = Catalog::GetEntry(
+			        context, CatalogType::TABLE_ENTRY, delete_node->table.catalog.GetName(),
+			        delete_node->table.schema.name, delete_table, OnEntryNotFound::RETURN_NULL, error_context);
 
-				if (delta_table_catalog_entry) { // if it exists, we can append
-					// check if already done
-					if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed) {
-						auto delta_table_entry = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
+			    if (delta_table_catalog_entry) { // if it exists, we can append
+			        // check if already done
+			        if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed) {
+			            auto delta_table_entry = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
 
-						Connection con(*context.db);
-						InternalAppender appender(context, *delta_table_entry);
+			            Connection con(*context.db);
+			            InternalAppender appender(context, *delta_table_entry);
 
-					} else {
-						// we skip the second insertion and reset the flag
-						dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = false;
-					}
-					return;
-				}
+			        } else {
+			            // we skip the second insertion and reset the flag
+			            dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = false;
+			        }
+			        return;
+			    }
 			} */
 		}
 		case LogicalOperatorType::LOGICAL_UPDATE: {

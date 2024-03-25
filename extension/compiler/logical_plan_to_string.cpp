@@ -1,5 +1,4 @@
 #include "include/logical_plan_to_string.hpp"
-#include "include/data_representation.hpp"
 
 namespace duckdb {
 
@@ -30,19 +29,19 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	return plan_string;
 }
 
-void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
-	string cur_parent, unique_ptr<DuckAST> &ql_tree, map<string, string> &column_map) {
-	if(cur_parent.size() == 0) {
+void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string, string cur_parent,
+                         unique_ptr<DuckAST> &ql_tree, map<string, string> &column_map) {
+	if (cur_parent.size() == 0) {
 		cur_parent = "native";
 	}
-	switch(plan->type) {
+	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
 		auto ql_proj_exp = new DuckASTProjection();
 		ql_proj_exp->name = node->GetName();
 		auto bindings = node->GetColumnBindings();
-		for(auto &expression: node->expressions) {
-			if(expression->type == ExpressionType::BOUND_COLUMN_REF) {
+		for (auto &expression : node->expressions) {
+			if (expression->type == ExpressionType::BOUND_COLUMN_REF) {
 				auto column = dynamic_cast<BoundColumnRefExpression *>(expression.get());
 				auto column_index = to_string(column->binding.column_index);
 				auto table_index = to_string(column->binding.table_index);
@@ -65,22 +64,22 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, column_map);
 	}
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
-		auto node = dynamic_cast<LogicalAggregate*>(plan.get());
+		auto node = dynamic_cast<LogicalAggregate *>(plan.get());
 		auto par = node->ParamsToString();
 		auto names = node->GetName();
 		auto binds = node->GetColumnBindings();
 		vector<string> group_names;
 		int counter = 0;
-		for(auto &grp: node->groups) {
+		for (auto &grp : node->groups) {
 			group_names.push_back(grp->GetName());
 			// assuming that these bindings are generated in a +2 table_index
 			// Need to fix and find actual reason
-			auto id = to_string(binds[counter].table_index - 2) + "." +  to_string(binds[counter].column_index);
+			auto id = to_string(binds[counter].table_index - 2) + "." + to_string(binds[counter].column_index);
 			column_map[id] = grp->GetName();
 			counter++;
 		}
 		vector<string> aggregate_function;
-		for(auto &grp: node->expressions) {
+		for (auto &grp : node->expressions) {
 			aggregate_function.push_back(grp->GetName());
 		}
 		auto node_id = cur_parent + "_" + node->GetName();
@@ -93,18 +92,18 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	case LogicalOperatorType::LOGICAL_ORDER_BY: {
 		auto node = dynamic_cast<LogicalOrder *>(plan.get());
 		auto ql_order_by = new DuckASTOrderBy();
-		for(auto &order: node->orders) {
+		for (auto &order : node->orders) {
 			auto name = order.expression->GetName();
 			string order_type = "";
-			switch(order.type) {
-				case OrderType::DESCENDING: {
-					order_type = "DESC";
-					break;
-				}
-				case OrderType::ASCENDING: {
-					order_type = "ASC";
-					break;
-				}
+			switch (order.type) {
+			case OrderType::DESCENDING: {
+				order_type = "DESC";
+				break;
+			}
+			case OrderType::ASCENDING: {
+				order_type = "ASC";
+				break;
+			}
 			}
 			ql_order_by->add_order_column(name, order_type);
 		}
@@ -126,22 +125,23 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto column_names = node->GetTable()->GetColumns().GetColumnNames();
 		auto current_table_index = node->GetTableIndex();
 		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
-		for(int i = 0; i < bindings.size(); i++) {
+		for (int i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];
-			cur_col_map[to_string(cur_binding.table_index)+"."+to_string(cur_binding.column_index)] = column_names[column_ids[i]];
+			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
+			    column_names[column_ids[i]];
 		}
 		unordered_map<string, string> alias_map;
-		for(auto curmp: cur_col_map) {
+		for (auto curmp : cur_col_map) {
 			auto alias = column_map[curmp.first];
-			if(alias == curmp.second) {
+			if (alias == curmp.second) {
 				alias_map[curmp.second] = "";
-			}else{
+			} else {
 				alias_map[curmp.second] = alias;
 				ql_get_exp->all_columns = false;
 			}
 		}
 		ql_get_exp->alias_map = alias_map;
-		if(ql_get_exp->all_columns && alias_map.size() != column_names.size()) {
+		if (ql_get_exp->all_columns && alias_map.size() != column_names.size()) {
 			ql_get_exp->all_columns = false;
 		}
 
@@ -156,12 +156,12 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 }
 
 void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_string,
-                         std::unordered_map<string, string> &column_names,
-                         std::vector<std::pair<string, string>> &column_aliases, string cur_parent,
-						 string &insert_table_name, bool do_join, unique_ptr<DuckAST> &ql) {
+                             std::unordered_map<string, string> &column_names,
+                             std::vector<std::pair<string, string>> &column_aliases, string cur_parent,
+                             string &insert_table_name, bool do_join, unique_ptr<DuckAST> &ql) {
 
 	// ql->displayTree();
-	if(cur_parent.size() == 0) {
+	if (cur_parent.size() == 0) {
 		cur_parent = "native";
 	}
 	// we reached a root node
@@ -177,7 +177,7 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
 
 		auto ql_exp = new DuckASTGet(table_name, current_table_index[0]);
 		ql_exp->name = node->GetName();
-		if(column_aliases.size() == scan_column_names.size()) {
+		if (column_aliases.size() == scan_column_names.size()) {
 			// ql_exp->column_names = scan_column_names;
 		} else {
 			ql_exp->all_columns = true;
@@ -185,11 +185,11 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
 
 		ql_exp->table_index = current_table_index[0];
 		auto fin_exp = (shared_ptr<DuckASTBaseExpression>)ql_exp;
-		ql->insert(fin_exp, cur_parent + "_" + ql_exp->name, DuckASTExpressionType::GET,cur_parent);
+		ql->insert(fin_exp, cur_parent + "_" + ql_exp->name, DuckASTExpressionType::GET, cur_parent);
 		// we don't need the table function here; we assume it is a simple scan
 		string from_string = "";
 
-		if(!do_join){
+		if (!do_join) {
 			from_string = "from " + table_name + "\n";
 		}
 
@@ -266,8 +266,6 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
 		} else {
 			// uh oh
 		}
-
-
 	}
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		// we cannot use ParamsToString here because we lose the aliases
@@ -340,7 +338,8 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
 		}
 
 		// plan_string += "\n";
-		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, cur_parent, insert_table_name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, cur_parent,
+		                               insert_table_name, false, ql);
 	}
 
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
@@ -372,39 +371,44 @@ void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_str
 		auto fin_exp = (shared_ptr<DuckASTBaseExpression>)exp;
 		auto cur_id = cur_parent + "_" + node->GetName();
 		ql->insert(fin_exp, cur_parent + "_" + node->GetName(), DuckASTExpressionType::PROJECTION, cur_parent);
-		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, cur_id, insert_table_name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, cur_id,
+		                               insert_table_name, false, ql);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// basically the same logic as the logical get
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
 		plan_string = "where " + node->ParamsToString() + "\n" + plan_string;
-		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", insert_table_name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "",
+		                               insert_table_name, false, ql);
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
 		// this should be transformed into an upsert
 		auto node = dynamic_cast<LogicalInsert *>(plan.get());
-		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", node->table.name, false, ql);
+		return LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "",
+		                               node->table.name, false, ql);
 	}
 	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT: {
 		// Tacle Statements Like
 		// SELECT titanic.*, titanic2.* FROM titanic CROSS JOIN titanic2;
-		auto node = dynamic_cast<LogicalCrossProduct* >(plan.get());
+		auto node = dynamic_cast<LogicalCrossProduct *>(plan.get());
 		auto table = node->GetTableIndex();
 		auto &children = node->children;
 		auto right_projection = dynamic_cast<LogicalGet *>(children.back().get());
 		// auto left_projection = dynamic_cast<LogicalGet *>(children.front().get());
 		auto right_table_name = right_projection->GetTable().get()->name;
 		plan_string = plan_string + "cross join " + right_table_name;
-		LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", insert_table_name, false, ql);
-		return LogicalPlanToString_old(plan->children[1], plan_string, column_names, column_aliases, "", insert_table_name, true, ql);
+		LogicalPlanToString_old(plan->children[0], plan_string, column_names, column_aliases, "", insert_table_name,
+		                        false, ql);
+		return LogicalPlanToString_old(plan->children[1], plan_string, column_names, column_aliases, "",
+		                               insert_table_name, true, ql);
 	}
-	// case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
-	// 	// Tackles Statements like
-	// 	// SELECT a.name, b.name FROM a JOIN b ON a.name = b.name;
-	// 	auto node = dynamic_cast<LogicalComparisonJoin *>(plan.get());	
-	// 	plan_string = "join " + plan_string;
-	// 	// auto exp_bnds = node->GetExpressionBindings();
-	// }
+		// case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
+		// 	// Tackles Statements like
+		// 	// SELECT a.name, b.name FROM a JOIN b ON a.name = b.name;
+		// 	auto node = dynamic_cast<LogicalComparisonJoin *>(plan.get());
+		// 	plan_string = "join " + plan_string;
+		// 	// auto exp_bnds = node->GetExpressionBindings();
+		// }
 	}
 }
 

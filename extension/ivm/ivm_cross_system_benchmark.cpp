@@ -71,8 +71,8 @@ void RunIVMCrossSystemBenchmark(double scale_factor, int percentage_insertions, 
 			std::cout << "Error creating the groups table: " << r << std::endl;
 			break;
 		}
-		auto copy_groups = "COPY groups FROM '/tmp/data/sf" + DoubleToString(scale_factor) +
-		                   "/groups.tbl' (DELIMITER ',');";
+		auto copy_groups =
+		    "COPY groups FROM '/tmp/data/sf" + DoubleToString(scale_factor) + "/groups.tbl' (DELIMITER ',');";
 		r = PQresultErrorMessage(PQexec(conn, copy_groups.c_str()));
 		auto end_time = std::chrono::high_resolution_clock::now();
 		if (r == nullptr) {
@@ -123,8 +123,8 @@ void RunIVMCrossSystemBenchmark(double scale_factor, int percentage_insertions, 
 		          << "Rows inserted in the materialized view: " << Format(count_query_groups) << "\n";
 
 		// inserting new data in the delta table
-		auto copy_delta_groups = "COPY delta_groups FROM '/tmp/data/sf" + DoubleToString(scale_factor) + "/groups_new_" +
-		                         to_string(percentage_insertions) + ".tbl' (DELIMITER ',');";
+		auto copy_delta_groups = "COPY delta_groups FROM '/tmp/data/sf" + DoubleToString(scale_factor) +
+		                         "/groups_new_" + to_string(percentage_insertions) + ".tbl' (DELIMITER ',');";
 		r = PQresultErrorMessage(PQexec(conn, copy_delta_groups.c_str()));
 		if (r == nullptr) {
 			std::cout << "Error copying the delta groups table: " << r << std::endl;
@@ -370,8 +370,8 @@ void RunIVMCrossSystemBenchmark(double scale_factor, int percentage_insertions, 
 	}
 
 	// todo this drops everything, create a new schema instead
-	//PQexec(conn, "DROP SCHEMA public CASCADE;");
-	//PQexec(conn, "CREATE SCHEMA public;");
+	// PQexec(conn, "DROP SCHEMA public CASCADE;");
+	// PQexec(conn, "CREATE SCHEMA public;");
 	PQfinish(conn);
 
 	auto total_time = materialized_view_time + index_time + compile_time + join_time + insert_time + upsert_time +

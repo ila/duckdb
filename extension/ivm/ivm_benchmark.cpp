@@ -13,9 +13,9 @@
 
 namespace duckdb {
 
-std::mt19937 generator(std::random_device{}());
+std::mt19937 generator(std::random_device {}());
 
-string Format(const string& number_str) {
+string Format(const string &number_str) {
 	std::string formatted_number;
 
 	if (!number_str.empty() && std::isdigit(number_str[0])) {
@@ -145,7 +145,8 @@ void CreateTable(double scale_factor, int insertions) {
 		for (int i = 1; i <= num_insertions; ++i) {
 			// adding 1000 as arbitrary value
 			// the last 1 represents insertions
-			outfile << "Group_" << (i % 3) + 1000 << "," << GetRandomValue() << "," << "1\n";
+			outfile << "Group_" << (i % 3) + 1000 << "," << GetRandomValue() << ","
+			        << "1\n";
 		}
 	}
 }

@@ -13,23 +13,22 @@
 
 namespace duckdb {
 
-void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int percentage_updates, int percentage_deletes) {
+void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int percentage_updates,
+                           int percentage_deletes) {
 
 	// usage: call ivm_benchmark('groups', 1, 10, 10, 10);
 
 	/*
 	 *
 	 * insert or replace into query_groups
-		with ivm_cte AS (
-		select group_index,
-				sum(case when _duckdb_ivm_multiplicity = false then -sum(group_value) else sum(group_value) end) as sum(group_value)
-		from delta_query_groups
-		group by group_index)
-		select query_groups.group_index,
-				sum(query_groups.sum(group_value) + delta_query_groups.sum(group_value))
-		from ivm_cte as delta_query_groups
-		left join query_groups on query_groups.group_index = delta_query_groups.group_index
-		group by query_groups.group_index;
+	    with ivm_cte AS (
+	    select group_index,
+	            sum(case when _duckdb_ivm_multiplicity = false then -sum(group_value) else sum(group_value) end) as
+	 sum(group_value) from delta_query_groups group by group_index) select query_groups.group_index,
+	            sum(query_groups.sum(group_value) + delta_query_groups.sum(group_value))
+	    from ivm_cte as delta_query_groups
+	    left join query_groups on query_groups.group_index = delta_query_groups.group_index
+	    group by query_groups.group_index;
 
 	 */
 
@@ -59,7 +58,8 @@ void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int p
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Loaded groups..."
 	          << "\n";
 	auto count_groups = con.Query("SELECT COUNT(*) FROM groups;")->GetValue(0, 0).ToString();
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Rows inserted in the base table: " << Format(count_groups) << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ")
+	          << "Rows inserted in the base table: " << Format(count_groups) << "\n";
 
 	// storing query 1 in a string for future usage
 	// note: this is slightly different from query 1, since the average was removed
@@ -85,7 +85,8 @@ void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int p
 	end_time = std::chrono::high_resolution_clock::now();
 	auto index_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..."
+	          << "\n";
 
 	auto count_query_groups = con.Query("SELECT COUNT(*) FROM query_groups;")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
@@ -98,8 +99,8 @@ void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int p
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "New data inserted..."
 	          << "\n";
 	auto count_delta_groups = con.Query("SELECT COUNT(*) FROM delta_groups;")->GetValue(0, 0).ToString();
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Rows inserted in delta_groups: "
-	          << Format(count_delta_groups) << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ")
+	          << "Rows inserted in delta_groups: " << Format(count_delta_groups) << "\n";
 
 	// running the queries generates a file since our database is in memory
 	// we want to see each query time individually -> we save the result to a file and then parse it
@@ -131,8 +132,9 @@ void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int p
 	          << "Rows inserted in the delta view: " << Format(count_delta_query_groups) << "\n";
 
 	// joining query_groups with delta_query_groups
-	std::cout << std::put_time(std::localtime(&now), "%c ")
-	          << "Left join: " << Format(count_query_groups) << " x " << Format(count_delta_query_groups) << " rows" << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Left join: " << Format(count_query_groups) << " x "
+	          << Format(count_delta_query_groups) << " rows"
+	          << "\n";
 	// now we measure the performance of the join with and without adaptive radix tree
 	auto join_query = ExtractSelect(upsert_query);
 	start_time = std::chrono::high_resolution_clock::now();
@@ -184,7 +186,8 @@ void RunIVMGroupsBenchmark(double scale_factor, int percentage_insertions, int p
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Data copy performed..."
 	          << "\n";
 	auto count_groups_new = con.Query("SELECT COUNT(*) FROM groups;")->GetValue(0, 0).ToString();
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Total rows in the groups table: " << Format(count_groups_new) << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ")
+	          << "Total rows in the groups table: " << Format(count_groups_new) << "\n";
 
 	start_time = std::chrono::high_resolution_clock::now();
 	con.Query(query_groups);

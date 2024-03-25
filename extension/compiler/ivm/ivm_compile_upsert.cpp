@@ -125,7 +125,7 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	return upsert_query;
 }
 
-string CompileSimpleAggregates(string &view_name, const vector<string>& column_names) {
+string CompileSimpleAggregates(string &view_name, const vector<string> &column_names) {
 	// this is the case of SELECT COUNT(*) / SUM(column) without aggregation columns
 	// we need to rewrite the query as a sum/difference of the multiplicity column
 	/*
@@ -155,7 +155,7 @@ string CompileSimpleAggregates(string &view_name, const vector<string>& column_n
 	return update_query;
 }
 
-string CompileProjectionsFilters(string &view_name, const vector<string>& column_names) {
+string CompileProjectionsFilters(string &view_name, const vector<string> &column_names) {
 	// todo test with multiple insertions and deletions of the same row (updates)
 	// we handle filters by performing a union
 	// rewrite the query as union of the true multiplicity and difference of the false ones

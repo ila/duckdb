@@ -18,7 +18,7 @@ public:
 	void Load(DuckDB &db) override;
 	string Name() override;
 	static void WriteFile(const string &filename, bool append, const string &compiled_query);
-	static string ReadFile(const string& file_path);
+	static string ReadFile(const string &file_path);
 	static string ExtractTableName(const string &sql);
 	static string EscapeSingleQuotes(const string &input);
 	static void ReplaceMaterializedView(string &query);

@@ -47,12 +47,6 @@ struct DoIVMDemoData : public GlobalTableFunctionState {
 	idx_t offset;
 };
 
-struct DoLogicalPlanToStringData: public GlobalTableFunctionState {
-	DoLogicalPlanToStringData() : offset(0) {
-	}
-	idx_t offset;
-};
-
 unique_ptr<GlobalTableFunctionState> DoIVMInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto result = make_uniq<DoIVMData>();
 	return std::move(result);
@@ -63,7 +57,7 @@ static unique_ptr<TableRef> DoIVM(ClientContext &context, TableFunctionBindInput
 }
 
 static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &context, TableFunctionBindInput &input,
-                                                  vector<LogicalType> &return_types, vector<string> &names) {
+                                                           vector<LogicalType> &return_types, vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -102,7 +96,7 @@ static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &contex
 }
 
 static duckdb::unique_ptr<FunctionData> DoIVMDemoBind(ClientContext &context, TableFunctionBindInput &input,
-                                                           vector<LogicalType> &return_types, vector<string> &names) {
+                                                      vector<LogicalType> &return_types, vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -123,7 +117,8 @@ static duckdb::unique_ptr<FunctionData> DoIVMDemoBind(ClientContext &context, Ta
 }
 
 static duckdb::unique_ptr<FunctionData> DoLogicalPlanToStringBind(ClientContext &context, TableFunctionBindInput &input,
-                                                           vector<LogicalType> &return_types, vector<string> &names) {
+                                                                  vector<LogicalType> &return_types,
+                                                                  vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -143,7 +138,6 @@ static duckdb::unique_ptr<FunctionData> DoLogicalPlanToStringBind(ClientContext 
 
 	return std::move(result);
 }
-
 
 static void DoIVMFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto &data = dynamic_cast<DoIVMData &>(*data_p.global_state);
@@ -277,15 +271,16 @@ static void LoadInternal(DatabaseInstance &instance) {
 	TableFunction ivm_func("DoIVM", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMFunction,
 	                       DoIVMBind, DoIVMInit);
 
-	TableFunction ivm_benchmark_func("IVMBenchmark", {LogicalType::VARCHAR, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER}, DoIVMBenchmarkFunction,
-	                       DoIVMBenchmarkBind, DoIVMBenchmarkInit);
+	TableFunction ivm_benchmark_func(
+	    "IVMBenchmark",
+	    {LogicalType::VARCHAR, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
+	    DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
-	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR}, DoIVMDemoFunction,
-	                                 DoIVMDemoBind, DoIVMDemoInit);
+	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR}, DoIVMDemoFunction, DoIVMDemoBind, DoIVMDemoInit);
 
-	TableFunction logical_plan_to_string_func("LogicalPlanToString", {LogicalType::VARCHAR}, DoLogicalPlanToStringFunction,
-	                                 DoLogicalPlanToStringBind, DoLogicalPlanToStringInit);
-
+	TableFunction logical_plan_to_string_func("LogicalPlanToString", {LogicalType::VARCHAR},
+	                                          DoLogicalPlanToStringFunction, DoLogicalPlanToStringBind,
+	                                          DoLogicalPlanToStringInit);
 
 	con.BeginTransaction();
 	auto &catalog = Catalog::GetSystemCatalog(*con.context);
@@ -324,7 +319,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	logical_plan_to_string_func.named_parameters["sql_string"];
 	CreateTableFunctionInfo logical_plan_to_string_func_info(logical_plan_to_string_func);
 	catalog.CreateTableFunction(*con.context, &logical_plan_to_string_func_info);
-	con.Commit();	
+	con.Commit();
 
 	// this is called at the database startup and every time a query fails
 	auto upsert_delta_func = PragmaFunction::PragmaCall(
