@@ -23,6 +23,8 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	map<string, string> colm_aliases;
 	// LogicalPlanToString_old(plan, plan_string, column_names, column_aliases, "", insert_table_name, false, prj);
 	LogicalPlanToString(plan, plan_string, "", prj, colm_aliases);
+	DuckAST::printAST(prj->root);
+
 	Printer::Print("Display!-------------");
 	prj->generateString(plan_string);
 	Printer::Print(plan_string);
@@ -52,7 +54,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto expr = (shared_ptr<DuckASTBaseExpression>)(ql_proj_exp);
 		auto node_id = cur_parent + "_" + ql_proj_exp->name;
 		ql_tree->insert(expr, node_id, DuckASTExpressionType::PROJECTION, cur_parent);
-		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, ql_proj_exp->column_alaises);
+		return LogicalPlanToString(plan->children[0], plan_string, node_id, ql_tree, ql_proj_exp->column_aliases);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());

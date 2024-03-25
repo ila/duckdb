@@ -45,7 +45,7 @@ public:
 
 class DuckASTProjection : public DuckASTBaseExpression {
 public:
-	std::map<string, string> column_alaises;
+	std::map<string, string> column_aliases;
 	DuckASTProjection();
 	DuckASTProjection(string name);
 	~DuckASTProjection() override;
@@ -107,7 +107,6 @@ public:
 };
 class DuckAST {
 private:
-	shared_ptr<DuckASTNode> root;
 	bool insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, shared_ptr<DuckASTNode> curNode);
 	void displayTree_t(shared_ptr<DuckASTNode> node);
 	void generateString_t(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
@@ -117,8 +116,10 @@ public:
 	DuckAST();
 	void insert(shared_ptr<DuckASTBaseExpression> &expr, string id, DuckASTExpressionType type, string parent_id);
 	DuckASTNode get_node(string node_id);
-	void displayTree();
 	void generateString(string &plan_string);
+	static void printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix = "", bool isLast = true);
+	void printAST(shared_ptr<duckdb::DuckAST> ast);
+	shared_ptr<DuckASTNode> root;
 };
 } // namespace duckdb
 

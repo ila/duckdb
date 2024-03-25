@@ -1,5 +1,7 @@
 #include "data_representation.hpp"
 
+#include <iostream>
+
 /*
  * Refer: https://gist.github.com/destrex271/b3693b54bce6035749228aa45709b0e1 for extra notes
  */
@@ -29,7 +31,7 @@ DuckASTProjection::~DuckASTProjection() {
 }
 
 void DuckASTProjection::add_column(string table_index, string column_index, string alias) {
-	this->column_alaises[table_index + "." + column_index] = alias;
+	this->column_aliases[table_index + "." + column_index] = alias;
 }
 
 // DuckASTAggregate
@@ -136,48 +138,6 @@ void DuckAST::insert(shared_ptr<DuckASTBaseExpression> &expr, string id, DuckAST
 	} else {
 		Printer::Print("Unable to find element");
 	}
-}
-
-void DuckAST::displayTree_t(shared_ptr<DuckASTNode> node) {
-	if (node == nullptr)
-		return;
-	Printer::Print(node->id);
-
-	// Cast according to Nde Type
-	switch (node->type) {
-	case DuckASTExpressionType::FILTER: {
-		auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
-		Printer::Print("Where " + exp->filter_condition);
-		break;
-	}
-	case DuckASTExpressionType::GET: {
-		auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
-		Printer::Print(exp->table_name);
-		Printer::Print("Columns IN GET: ");
-		for (auto col : exp->alias_map) {
-			Printer::Print(col.first + " as " + col.second);
-		}
-		break;
-	}
-	case DuckASTExpressionType::PROJECTION: {
-		auto exp = dynamic_cast<DuckASTProjection *>(node->expr.get());
-		Printer::Print("Columns to select in PROJJ:");
-		for (auto col : exp->column_alaises) {
-			Printer::Print(col.first + "+" + col.second);
-		}
-		break;
-	}
-	}
-
-	for (auto child : node->children) {
-		displayTree_t(child);
-	}
-}
-
-void DuckAST::displayTree() {
-	if (root == nullptr)
-		return;
-	this->displayTree_t(root);
 }
 
 void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
@@ -296,6 +256,32 @@ void DuckAST::generateString(string &plan_string) {
 	vector<string> addcols;
 	this->generateString_t(root, plan_string, addcols);
 	plan_string += ";";
+}
+
+
+void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool isLast) {
+	std::cout << prefix;
+	std::cout << (isLast ? "└── " : "├── ");
+	if (node->expr != nullptr) {
+		std::cout << "Node: " << node->Name() << ", Type: " << node->type << ", Expression: " << node->expr->name << std::endl;
+	} else {
+		std::cout << "Node ID: " << node->id << ", Type: " << node->type << std::endl;
+	}
+
+	// Recursively print children
+	for (size_t i = 0; i < node->children.size(); ++i) {
+		printAST(node->children[i], prefix + (isLast ? "    " : "│   "), i == node->children.size() - 1);
+	}
+}
+
+void DuckAST::printAST(shared_ptr<duckdb::DuckAST> ast) {
+	// Print AST starting from the root
+	if (ast->root != nullptr) {
+		std::cout << "root\n" << std::endl;
+		printAST(ast->root, "", false);
+	} else {
+		std::cout << "Empty AST" << std::endl;
+	}
 }
 
 // DuckASTNode DuckAST::get_node(string node_id, shared_ptr<DuckASTNode> node=nullptr) {
