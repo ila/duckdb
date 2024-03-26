@@ -63,7 +63,8 @@ void GenerateLineitem(double scale_factor, double percentage_insertions) {
 	}
 }
 
-void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int percentage_updates, int percentage_deletes) {
+void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int percentage_updates,
+                             int percentage_deletes) {
 
 	// usage: call ivm_benchmark('lineitem', 1, 10, 10, 10);
 	// todo: fix all the paths (this only works copying dists.dss in the debug folder)
@@ -97,7 +98,8 @@ void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Loaded lineitem..."
 	          << "\n";
 	auto count_lineitem = con.Query("SELECT COUNT(*) FROM lineitem;")->GetValue(0, 0).ToString();
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Rows inserted in lineitem: " << Format(count_lineitem) << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Rows inserted in lineitem: " << Format(count_lineitem)
+	          << "\n";
 
 	// storing query 1 in a string for future usage
 	// note: this is slightly different from query 1, since the average was removed
@@ -126,7 +128,8 @@ void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int
 	end_time = std::chrono::high_resolution_clock::now();
 	auto index_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..."
+	          << "\n";
 
 	auto count_query_1 = con.Query("SELECT COUNT(*) FROM query_1;")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
@@ -141,8 +144,8 @@ void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "New data inserted..."
 	          << "\n";
 	auto count_delta_lineitem = con.Query("SELECT COUNT(*) FROM delta_lineitem;")->GetValue(0, 0).ToString();
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Rows inserted in delta_lineitem: "
-	          << Format(count_delta_lineitem) << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ")
+	          << "Rows inserted in delta_lineitem: " << Format(count_delta_lineitem) << "\n";
 
 	// running the queries generates a file since our database is in memory
 	// we want to see each query time individually -> we save the result to a file and then parse it
@@ -173,8 +176,9 @@ void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int
 	std::cout << std::put_time(std::localtime(&now), "%c ")
 	          << "Rows inserted in the delta view: " << Format(count_delta_query_1) << "\n";
 
-	std::cout << std::put_time(std::localtime(&now), "%c ")
-	          << "Left join: " << Format(count_query_1) << " x " << Format(count_delta_query_1) << " rows" << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Left join: " << Format(count_query_1) << " x "
+	          << Format(count_delta_query_1) << " rows"
+	          << "\n";
 
 	// now we measure the performance of the join with and without adaptive radix tree
 	auto join_query = ExtractSelect(upsert_query);
@@ -231,7 +235,8 @@ void RunIVMLineitemBenchmark(double scale_factor, int percentage_insertions, int
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Data copy performed..."
 	          << "\n";
 	auto count_lineitem_new = con.Query("SELECT COUNT(*) FROM lineitem;")->GetValue(0, 0).ToString();
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Total rows in lineitem: " << Format(count_lineitem_new) << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Total rows in lineitem: " << Format(count_lineitem_new)
+	          << "\n";
 
 	start_time = std::chrono::high_resolution_clock::now();
 	con.Query(query_1_tpch);

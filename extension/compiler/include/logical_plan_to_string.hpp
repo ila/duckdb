@@ -19,16 +19,22 @@
 #include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
-#include "duckdb/planner/operator/logical_create_table.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
+#include "duckdb/planner/operator/logical_join.hpp"
+#include "duckdb/planner/operator/logical_cross_product.hpp"
+#include "duckdb/planner/operator/logical_order.hpp"
+#include "data_representation.hpp"
 
 namespace duckdb {
-string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan);
-void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan, string &plan_string,
-                         std::unordered_map<string, string> &column_names,
-                         std::vector<std::pair<string, string>> &column_aliases, string &insert_table_name);
+string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
+void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string, string cur_parent,
+                         unique_ptr<DuckAST> &ql_tree, map<string, string> &alias_map);
+void LogicalPlanToString_old(unique_ptr<LogicalOperator> &plan, string &plan_string,
+                             std::unordered_map<string, string> &column_names,
+                             std::vector<std::pair<string, string>> &column_aliases, string cur_parent,
+                             string &insert_table_name, bool do_join, unique_ptr<DuckAST> &ql);
 } // namespace duckdb
 
 #endif // DUCKDB_LOGICAL_PLAN_TO_STRING_HPP

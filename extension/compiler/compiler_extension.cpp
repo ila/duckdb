@@ -2,6 +2,10 @@
 
 #include "duckdb.hpp"
 #include "duckdb/main/extension_util.hpp"
+#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
+#include "duckdb/parser/parser.hpp"
+#include "duckdb/planner/planner.hpp"
+#include "include/logical_plan_to_string.hpp"
 
 #include <fstream>
 #include <regex>
@@ -10,9 +14,108 @@ namespace duckdb {
 // common functions to parse SQL strings
 // used both in the IVM and RDDA extensions
 
-void CompilerExtension::Load(DuckDB &db) {
-	// do nothing
+// table function definitions
+//------------------------------------------------------------------------------
+struct LogicalPlanToStringTestData : public GlobalTableFunctionState {
+	LogicalPlanToStringTestData() : offset(0) {
+	}
+	idx_t offset;
+};
+
+unique_ptr<GlobalTableFunctionState> LogicalPlanToStringTestInit(ClientContext &context,
+                                                                 TableFunctionInitInput &input) {
+	auto result = make_uniq<LogicalPlanToStringTestData>();
+	return std::move(result);
 }
+
+static unique_ptr<TableRef> LogicalPlanToStringTest(ClientContext &context, TableFunctionBindInput &input) {
+	return nullptr;
+}
+
+struct LogicalPlanToStringTestFunctionData : public TableFunctionData {
+	LogicalPlanToStringTestFunctionData() {
+	}
+};
+
+static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContext &context,
+                                                                    TableFunctionBindInput &input,
+                                                                    vector<LogicalType> &return_types,
+                                                                    vector<string> &names) {
+	// called when the pragma is executed
+	// specifies the output format of the query (columns)
+	// display the outputs (do not remove)
+	auto query = StringValue::Get(input.inputs[0]);
+
+	input.named_parameters["query"] = query;
+
+	// do something here
+	// Printer::Print("Path is: "+ sql_string);
+	// DuckDB db("../../data/testdb.db");
+	// todo:
+	// if (!context.db->config.options.database_path.empty()) {
+	// 	db_path = context.db->GetFileSystem().GetWorkingDirectory();
+	// }
+
+	Parser parser;
+	parser.ParseQuery(query);
+	auto statement = parser.statements[0].get();
+	Planner planner(context);
+	planner.CreatePlan(statement->Copy());
+	planner.plan->Print();
+
+	string planString = LogicalPlanToString(planner.plan);
+	Printer::Print("String: " + planString);
+
+	// create result set using column bindings returned by the planner
+	auto result = make_uniq<LogicalPlanToStringTestFunctionData>();
+
+	return_types.emplace_back(LogicalTypeId::BOOLEAN);
+	names.emplace_back("Done");
+
+	return std::move(result);
+}
+
+static void LogicalPlanToStringTestFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	auto &data = dynamic_cast<LogicalPlanToStringTestData &>(*data_p.global_state);
+	if (data.offset >= 1) {
+		// finished returning values
+		return;
+	}
+	return;
+}
+
+//------------------------------------------------------------------------------
+
+static void LoadInternal(DatabaseInstance &instance) {
+
+	// add a compiler extension
+	// auto &db_config = duckdb::DBConfig::GetConfig(instance);
+	// eventual flags for the compiler extension go here
+	// db_config.AddExtensionOption("ivm_files_path", "path for compiled files", LogicalType::VARCHAR);
+
+	Connection con(instance);
+	auto compiler = duckdb::CompilerExtension();
+
+	// db_config.parser_extensions.push_back(ivm_parser);
+	// db_config.optimizer_extensions.push_back(ivm_rewrite_rule);
+
+	TableFunction lpts_func("LogicalPlanToStringTest", {LogicalType::VARCHAR}, LogicalPlanToStringTestFunction,
+	                        LogicalPlanToStringTestBind, LogicalPlanToStringTestInit);
+
+	con.BeginTransaction();
+	auto &catalog = Catalog::GetSystemCatalog(*con.context);
+	lpts_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(LogicalPlanToStringTest);
+	lpts_func.name = "lpts_test";
+	lpts_func.named_parameters["query"];
+	CreateTableFunctionInfo lpts_func_info(lpts_func);
+	catalog.CreateTableFunction(*con.context, &lpts_func_info);
+	con.Commit();
+}
+
+void CompilerExtension::Load(DuckDB &db) {
+	LoadInternal(*db.instance);
+}
+
 string CompilerExtension::Name() {
 	return "compiler";
 }
@@ -28,7 +131,7 @@ void CompilerExtension::WriteFile(const string &filename, bool append, const str
 	file.close();
 }
 
-string CompilerExtension::ReadFile(const string& file_path) {
+string CompilerExtension::ReadFile(const string &file_path) {
 	string content;
 	std::ifstream file(file_path);
 	if (file.is_open()) {
@@ -43,7 +146,8 @@ string CompilerExtension::ReadFile(const string& file_path) {
 
 string CompilerExtension::ExtractTableName(const string &sql) {
 	// todo check if the regex covers all cases
-	std::regex table_name_regex(R"(create\s+table\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)(?:\s*\([^)]*\)|\s+as\s+(.*)))");
+	std::regex table_name_regex(
+	    R"(create\s+table\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)(?:\s*\([^)]*\)|\s+as\s+(.*)))");
 
 	std::smatch match;
 	if (std::regex_search(sql, match, table_name_regex)) {
@@ -54,7 +158,8 @@ string CompilerExtension::ExtractTableName(const string &sql) {
 }
 
 string CompilerExtension::ExtractViewName(const string &sql) {
-	std::regex view_name_regex(R"(create\s+(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)(?:\s*\([^)]*\)|\s+as\s+(.*)))");
+	std::regex view_name_regex(
+	    R"(create\s+(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)(?:\s*\([^)]*\)|\s+as\s+(.*)))");
 	std::smatch match;
 	if (std::regex_search(sql, match, view_name_regex)) {
 		return match[1].str();
@@ -114,7 +219,7 @@ string CompilerExtension::SQLToLowercase(const string &sql) {
 	return lowercase_stream.str();
 }
 
-void CompilerExtension::ReplaceCount(string& query) {
+void CompilerExtension::ReplaceCount(string &query) {
 	std::regex pattern("(count\\((\\*|\\w+)\\))(?![^()]*\\bas\\b)", std::regex_constants::icase);
 	query = std::regex_replace(query, pattern, "count($2) as count_$2");
 
@@ -122,7 +227,7 @@ void CompilerExtension::ReplaceCount(string& query) {
 	query = std::regex_replace(query, std::regex("count_\\*"), "count_star");
 }
 
-void CompilerExtension::ReplaceSum(string& query) {
+void CompilerExtension::ReplaceSum(string &query) {
 	std::regex pattern("(sum\\((\\w+)\\))(?![^()]*\\bas\\b)", std::regex_constants::icase);
 	query = std::regex_replace(query, pattern, "sum($2) as sum_$2");
 }

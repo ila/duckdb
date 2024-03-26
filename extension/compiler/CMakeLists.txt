@@ -8,14 +8,24 @@ include_directories(include include/openivm include/rdda)
 
 add_library(
         compiler_extension STATIC
-        compiler_extension.cpp openivm/openivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
-        rdda/rdda_parse_view.cpp rdda/rdda_parse_select.cpp)
+        compiler_extension.cpp
+        openivm/openivm_compile_upsert.cpp
+        rdda/rdda_parse_table.cpp
+        rdda/rdda_parse_view.cpp
+        rdda/rdda_parse_select.cpp
+        logical_plan_to_string.cpp
+        data_representation.cpp)
 
 add_executable(
         compiler
         compiler_library.cpp
-        compiler_extension.cpp openivm/openivm_compile_upsert.cpp rdda/rdda_parse_table.cpp
-        rdda/rdda_parse_view.cpp rdda/rdda_parse_select.cpp)
+        compiler_extension.cpp
+        openivm/openivm_compile_upsert.cpp
+        rdda/rdda_parse_table.cpp
+        rdda/rdda_parse_view.cpp
+        rdda/rdda_parse_select.cpp
+        data_representation.cpp
+        logical_plan_to_string.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(
@@ -26,7 +36,9 @@ build_loadable_extension(
         openivm/openivm_compile_upsert.cpp
         rdda/rdda_parse_table.cpp
         rdda/rdda_parse_view.cpp
-        rdda/rdda_parse_select.cpp)
+        rdda/rdda_parse_select.cpp
+        logical_plan_to_string.cpp
+        data_representation.cpp)
 
 install(
         TARGETS compiler_extension

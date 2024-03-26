@@ -9,15 +9,14 @@
 #include <iostream>
 #include <string>
 
-SQLCompiler::SQLCompiler(const std::string& schema_file, const std::string& materialized_view_file, bool apply_updates)
+SQLCompiler::SQLCompiler(const std::string &schema_file, const std::string &materialized_view_file, bool apply_updates)
     : schema_file(schema_file), materialized_view_file(materialized_view_file), apply_updates(apply_updates) {
 }
 
 void SQLCompiler::Compile() {
-
 }
 
-std::string ExtractParentFolder(const std::string& file_path) {
+std::string ExtractParentFolder(const std::string &file_path) {
 	size_t last_slash = file_path.find_last_of('/');
 
 	if (last_slash != std::string::npos) {
@@ -30,12 +29,12 @@ std::string ExtractParentFolder(const std::string& file_path) {
 
 class FileNotFoundException : public std::exception {
 public:
-	const char* what() const throw() override {
+	const char *what() const throw() override {
 		return "File not found.";
 	}
 };
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 
 	// export database:
 	// EXPORT DATABASE '../test_sales' (FORMAT CSV);
@@ -51,7 +50,10 @@ int main(int argc, char* argv[]) {
 	std::string sql_dialect = "duckdb";
 
 	if (argc < 2) {
-		std::cerr << "Usage: " << argv[0] << " [-s <schema-file> | -d <db-file>] [-m <materialized-view-file>] [-u] [-e <database-engine>] [-q <sql-dialect>]" << std::endl;
+		std::cerr << "Usage: " << argv[0]
+		          << " [-s <schema-file> | -d <db-file>] [-m <materialized-view-file>] [-u] [-e <database-engine>] [-q "
+		             "<sql-dialect>]"
+		          << std::endl;
 		return 1;
 	}
 
@@ -150,13 +152,12 @@ int main(int argc, char* argv[]) {
 				con.Query(materialized_view);
 				auto res = con.Query("pragma ivm_upsert('memory', 'main', 'product_sales');");
 			}
-
 		}
 
-	} catch (const FileNotFoundException& e) {
+	} catch (const FileNotFoundException &e) {
 		std::cerr << "File not found: " << e.what() << '\n';
 		return 1;
-	} catch (const std::exception& e) {
+	} catch (const std::exception &e) {
 		std::cerr << "Error: " << e.what() << '\n';
 		return 1;
 	}

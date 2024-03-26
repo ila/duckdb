@@ -96,7 +96,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	plan = optimizer.Optimize(move(plan));
 
 	con.Rollback();
-	ivm_query += LogicalPlanToString(context, plan);
+	ivm_query += LogicalPlanToString(plan);
 
 	// string select_query = "SELECT * FROM delta_" + view_name + ";";
 
