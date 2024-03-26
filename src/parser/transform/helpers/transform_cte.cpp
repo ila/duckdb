@@ -31,11 +31,10 @@ void Transformer::ExtractCTEsRecursive(CommonTableExpressionMap &cte_map) {
 	}
 }
 
-void Transformer::TransformCTE(duckdb_libpgquery::PGWithClause &de_with_clause, CommonTableExpressionMap &cte_map,
-                               vector<unique_ptr<CTENode>> &materialized_ctes) {
-	// TODO: might need to update in case of future lawsuit
+void Transformer::TransformCTE(duckdb_libpgquery::PGWithClause &de_with_clause, CommonTableExpressionMap &cte_map) {
 	stored_cte_map.push_back(&cte_map);
 
+	// TODO: might need to update in case of future lawsuit
 	D_ASSERT(de_with_clause.ctes);
 	for (auto cte_ele = de_with_clause.ctes->head; cte_ele != nullptr; cte_ele = cte_ele->next) {
 		auto info = make_uniq<CommonTableExpressionInfo>();
@@ -88,12 +87,6 @@ void Transformer::TransformCTE(duckdb_libpgquery::PGWithClause &de_with_clause, 
 #else
 		if (cte.ctematerialized == duckdb_libpgquery::PGCTEMaterializeAlways) {
 #endif
-			auto materialize = make_uniq<CTENode>();
-			materialize->query = info->query->node->Copy();
-			materialize->ctename = cte_name;
-			materialize->aliases = info->aliases;
-			materialized_ctes.push_back(std::move(materialize));
-
 			info->materialized = CTEMaterialize::CTE_MATERIALIZE_ALWAYS;
 		}
 

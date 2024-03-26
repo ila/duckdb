@@ -46,7 +46,7 @@ public:
 	static StorageManager &Get(Catalog &catalog);
 
 	//! Initialize a database or load an existing database from the given path
-	void Initialize();
+	void Initialize(optional_ptr<ClientContext> context);
 
 	DatabaseInstance &GetDatabase();
 	AttachedDatabase &GetAttached() {
@@ -54,13 +54,14 @@ public:
 	}
 
 	//! Get the WAL of the StorageManager, returns nullptr if in-memory
-	optional_ptr<WriteAheadLog> GetWriteAheadLog() {
-		return wal.get();
-	}
+	optional_ptr<WriteAheadLog> GetWriteAheadLog();
 
+	//! Returns the database file path
 	string GetDBPath() {
 		return path;
 	}
+	//! The path to the WAL, derived from the database file path
+	string GetWALPath();
 	bool InMemory();
 
 	virtual bool AutomaticCheckpoint(idx_t estimated_wal_bytes) = 0;
@@ -72,10 +73,10 @@ public:
 	virtual shared_ptr<TableIOManager> GetTableIOManager(BoundCreateTableInfo *info) = 0;
 
 protected:
-	virtual void LoadDatabase() = 0;
+	virtual void LoadDatabase(optional_ptr<ClientContext> context = nullptr) = 0;
 
 protected:
-	//! The database this storagemanager belongs to
+	//! The database this storage manager belongs to
 	AttachedDatabase &db;
 	//! The path of the database
 	string path;
@@ -83,11 +84,14 @@ protected:
 	unique_ptr<WriteAheadLog> wal;
 	//! Whether or not the database is opened in read-only mode
 	bool read_only;
+	//! When loading a database, we do not yet set the wal-field. Therefore, GetWriteAheadLog must
+	//! return nullptr when loading a database
+	bool load_complete = false;
 
 public:
 	template <class TARGET>
 	TARGET &Cast() {
-		D_ASSERT(dynamic_cast<TARGET *>(this));
+		DynamicCastCheck<TARGET>(this);
 		return reinterpret_cast<TARGET &>(*this);
 	}
 	template <class TARGET>
@@ -117,6 +121,6 @@ public:
 	shared_ptr<TableIOManager> GetTableIOManager(BoundCreateTableInfo *info) override;
 
 protected:
-	void LoadDatabase() override;
+	void LoadDatabase(optional_ptr<ClientContext> context = nullptr) override;
 };
 } // namespace duckdb

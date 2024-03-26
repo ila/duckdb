@@ -1,4 +1,5 @@
-#include "duckdb/optimizer/column_lifetime_optimizer.hpp"
+#include "duckdb/optimizer/column_lifetime_analyzer.hpp"
+
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
@@ -110,6 +111,12 @@ void ColumnLifetimeAnalyzer::VisitOperator(LogicalOperator &op) {
 		analyzer.VisitOperator(*op.children[0]);
 		return;
 	}
+	case LogicalOperatorType::LOGICAL_ORDER_BY:
+		// order by, for now reference all columns
+		// FIXME: for ORDER BY we remove columns below an ORDER BY, we just need to make sure that the projections are
+		// updated
+		everything_referenced = true;
+		break;
 	case LogicalOperatorType::LOGICAL_DISTINCT: {
 		// distinct, all projected columns are used for the DISTINCT computation
 		// mark all columns as used and continue to the children
@@ -133,6 +140,12 @@ void ColumnLifetimeAnalyzer::VisitOperator(LogicalOperator &op) {
 
 		// then generate the projection map
 		GenerateProjectionMap(op.children[0]->GetColumnBindings(), unused_bindings, filter.projection_map);
+		auto bindings = filter.GetColumnBindings();
+
+		if (bindings.empty()) {
+			return;
+		}
+
 		return;
 	}
 	default:

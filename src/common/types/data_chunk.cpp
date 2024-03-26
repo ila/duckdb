@@ -238,7 +238,7 @@ void DataChunk::Serialize(Serializer &serializer) const {
 
 	// write the count
 	auto row_count = size();
-	serializer.WriteProperty<sel_t>(100, "rows", row_count);
+	serializer.WriteProperty<sel_t>(100, "rows", NumericCast<sel_t>(row_count));
 
 	// we should never try to serialize empty data chunks
 	auto column_count = ColumnCount();
@@ -303,6 +303,15 @@ void DataChunk::Slice(DataChunk &other, const SelectionVector &sel, idx_t count_
 			data[col_offset + c].Slice(other.data[c], sel, count_p);
 		}
 	}
+}
+
+void DataChunk::Slice(idx_t offset, idx_t slice_count) {
+	D_ASSERT(offset + slice_count <= size());
+	SelectionVector sel(slice_count);
+	for (idx_t i = 0; i < slice_count; i++) {
+		sel.set_index(i, offset + i);
+	}
+	Slice(sel, slice_count);
 }
 
 unsafe_unique_array<UnifiedVectorFormat> DataChunk::ToUnifiedFormat() {

@@ -14,8 +14,9 @@
 #include "duckdb/parser/expression/cast_expression.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/query_node/select_node.hpp"
-
+#include "duckdb/common/numeric_utils.hpp"
 #include "duckdb/common/string_util.hpp"
+
 #include <algorithm>
 
 namespace duckdb {
@@ -34,7 +35,7 @@ string SanitizeExportIdentifier(const string &str) {
 
 		if (c >= 'A' && c <= 'Z') {
 			// To lowercase
-			result[i] = tolower(c);
+			result[i] = NumericCast<char>(tolower(c));
 		} else {
 			// Substitute to underscore
 			result[i] = '_';
@@ -127,6 +128,11 @@ static LogicalType AlterLogicalType(const LogicalType &original, copy_supports_t
 	case LogicalTypeId::LIST: {
 		auto child = AlterLogicalType(ListType::GetChildType(original), type_check);
 		return LogicalType::LIST(child);
+	}
+	case LogicalTypeId::ARRAY: {
+		// Attempt to convert the array to a list
+		auto &child = ArrayType::GetChildType(original);
+		return AlterLogicalType(LogicalType::LIST(child), type_check);
 	}
 	case LogicalTypeId::STRUCT: {
 		auto &original_children = StructType::GetChildTypes(original);
@@ -284,7 +290,7 @@ BoundStatement Binder::Bind(ExportStatement &stmt) {
 			auto full_path = fs.JoinPath(directory, name);
 			info->file_path = full_path;
 			auto insert_result = table_name_index.insert(info->file_path);
-			if (insert_result.second == true) {
+			if (insert_result.second) {
 				// this name was not yet taken: take it
 				break;
 			}
@@ -326,7 +332,7 @@ BoundStatement Binder::Bind(ExportStatement &stmt) {
 		if (child_operator) {
 			// use UNION ALL to combine the individual copy statements into a single node
 			auto copy_union = make_uniq<LogicalSetOperation>(GenerateTableIndex(), 1, std::move(child_operator),
-			                                                 std::move(plan), LogicalOperatorType::LOGICAL_UNION);
+			                                                 std::move(plan), LogicalOperatorType::LOGICAL_UNION, true);
 			child_operator = std::move(copy_union);
 		} else {
 			child_operator = std::move(plan);

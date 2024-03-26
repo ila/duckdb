@@ -209,13 +209,33 @@ unique_ptr<SQLStatement> Transformer::TransformStatementInternal(duckdb_libpgque
 		return TransformDetach(PGCast<duckdb_libpgquery::PGDetachStmt>(stmt));
 	case duckdb_libpgquery::T_PGUseStmt:
 		return TransformUse(PGCast<duckdb_libpgquery::PGUseStmt>(stmt));
+	case duckdb_libpgquery::T_PGCopyDatabaseStmt:
+		return TransformCopyDatabase(PGCast<duckdb_libpgquery::PGCopyDatabaseStmt>(stmt));
+	case duckdb_libpgquery::T_PGCreateSecretStmt:
+		return TransformSecret(PGCast<duckdb_libpgquery::PGCreateSecretStmt>(stmt));
+	case duckdb_libpgquery::T_PGDropSecretStmt:
+		return TransformDropSecret(PGCast<duckdb_libpgquery::PGDropSecretStmt>(stmt));
+	case duckdb_libpgquery::T_PGCommentOnStmt:
+		return TransformCommentOn(PGCast<duckdb_libpgquery::PGCommentOnStmt>(stmt));
 	default:
 		throw NotImplementedException(NodetypeToString(stmt.type));
 	}
 }
 
-unique_ptr<QueryNode> Transformer::TransformMaterializedCTE(unique_ptr<QueryNode> root,
-                                                            vector<unique_ptr<CTENode>> &materialized_ctes) {
+unique_ptr<QueryNode> Transformer::TransformMaterializedCTE(unique_ptr<QueryNode> root) {
+	// Extract materialized CTEs from cte_map
+	vector<unique_ptr<CTENode>> materialized_ctes;
+	for (auto &cte : root->cte_map.map) {
+		auto &cte_entry = cte.second;
+		if (cte_entry->materialized == CTEMaterialize::CTE_MATERIALIZE_ALWAYS) {
+			auto mat_cte = make_uniq<CTENode>();
+			mat_cte->ctename = cte.first;
+			mat_cte->query = cte_entry->query->node->Copy();
+			mat_cte->aliases = cte_entry->aliases;
+			materialized_ctes.push_back(std::move(mat_cte));
+		}
+	}
+
 	while (!materialized_ctes.empty()) {
 		unique_ptr<CTENode> node_result;
 		node_result = std::move(materialized_ctes.back());
@@ -226,6 +246,20 @@ unique_ptr<QueryNode> Transformer::TransformMaterializedCTE(unique_ptr<QueryNode
 	}
 
 	return root;
+}
+
+void Transformer::SetQueryLocation(ParsedExpression &expr, int query_location) {
+	if (query_location < 0) {
+		return;
+	}
+	expr.query_location = optional_idx(idx_t(query_location));
+}
+
+void Transformer::SetQueryLocation(TableRef &ref, int query_location) {
+	if (query_location < 0) {
+		return;
+	}
+	ref.query_location = optional_idx(idx_t(query_location));
 }
 
 } // namespace duckdb

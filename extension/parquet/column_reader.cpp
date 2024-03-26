@@ -16,11 +16,11 @@
 #include "templated_column_reader.hpp"
 #include "utf8proc_wrapper.hpp"
 #include "zstd.h"
+#include "lz4.hpp"
 
 #ifndef DUCKDB_AMALGAMATION
 #include "duckdb/common/types/bit.hpp"
 #include "duckdb/common/types/blob.hpp"
-#include "duckdb/common/types/chunk_collection.hpp"
 #endif
 
 namespace duckdb {
@@ -181,11 +181,7 @@ idx_t ColumnReader::GroupRowsAvailable() {
 }
 
 unique_ptr<BaseStatistics> ColumnReader::Stats(idx_t row_group_idx_p, const vector<ColumnChunk> &columns) {
-	if (Type().id() == LogicalTypeId::LIST || Type().id() == LogicalTypeId::STRUCT ||
-	    Type().id() == LogicalTypeId::MAP) {
-		return nullptr;
-	}
-	return ParquetStatisticsUtils::TransformColumnStatistics(Schema(), Type(), columns[file_idx]);
+	return ParquetStatisticsUtils::TransformColumnStatistics(*this, columns);
 }
 
 void ColumnReader::Plain(shared_ptr<ByteBuffer> plain_data, uint8_t *defines, idx_t num_values, // NOLINT
@@ -246,7 +242,7 @@ void ColumnReader::PrepareRead(parquet_filter_t &filter) {
 	bss_decoder.reset();
 	block.reset();
 	PageHeader page_hdr;
-	page_hdr.read(protocol);
+	reader.Read(page_hdr, *protocol);
 
 	switch (page_hdr.type) {
 	case PageType::DATA_PAGE_V2:
@@ -287,7 +283,7 @@ void ColumnReader::PreparePageV2(PageHeader &page_hdr) {
 		uncompressed = true;
 	}
 	if (uncompressed) {
-		trans.read(block->ptr, page_hdr.compressed_page_size);
+		reader.ReadData(*protocol, block->ptr, page_hdr.compressed_page_size);
 		return;
 	}
 
@@ -299,7 +295,7 @@ void ColumnReader::PreparePageV2(PageHeader &page_hdr) {
 	auto compressed_bytes = page_hdr.compressed_page_size - uncompressed_bytes;
 
 	AllocateCompressed(compressed_bytes);
-	trans.read(compressed_buffer.ptr, compressed_bytes);
+	reader.ReadData(*protocol, compressed_buffer.ptr, compressed_bytes);
 
 	DecompressInternal(chunk->meta_data.codec, compressed_buffer.ptr, compressed_bytes, block->ptr + uncompressed_bytes,
 	                   page_hdr.uncompressed_page_size - uncompressed_bytes);
@@ -318,19 +314,17 @@ void ColumnReader::AllocateCompressed(idx_t size) {
 }
 
 void ColumnReader::PreparePage(PageHeader &page_hdr) {
-	auto &trans = reinterpret_cast<ThriftFileTransport &>(*protocol->getTransport());
-
 	AllocateBlock(page_hdr.uncompressed_page_size + 1);
 	if (chunk->meta_data.codec == CompressionCodec::UNCOMPRESSED) {
 		if (page_hdr.compressed_page_size != page_hdr.uncompressed_page_size) {
 			throw std::runtime_error("Page size mismatch");
 		}
-		trans.read((uint8_t *)block->ptr, page_hdr.compressed_page_size);
+		reader.ReadData(*protocol, block->ptr, page_hdr.compressed_page_size);
 		return;
 	}
 
 	AllocateCompressed(page_hdr.compressed_page_size + 1);
-	trans.read((uint8_t *)compressed_buffer.ptr, page_hdr.compressed_page_size);
+	reader.ReadData(*protocol, compressed_buffer.ptr, page_hdr.compressed_page_size);
 
 	DecompressInternal(chunk->meta_data.codec, compressed_buffer.ptr, page_hdr.compressed_page_size, block->ptr,
 	                   page_hdr.uncompressed_page_size);
@@ -346,6 +340,13 @@ void ColumnReader::DecompressInternal(CompressionCodec::type codec, const_data_p
 		s.Decompress(const_char_ptr_cast(src), src_size, char_ptr_cast(dst), dst_size);
 		break;
 	}
+	case CompressionCodec::LZ4_RAW: {
+		auto res = duckdb_lz4::LZ4_decompress_safe(const_char_ptr_cast(src), char_ptr_cast(dst), src_size, dst_size);
+		if (res != NumericCast<int>(dst_size)) {
+			throw std::runtime_error("LZ4 decompression failure");
+		}
+		break;
+	}
 	case CompressionCodec::SNAPPY: {
 		{
 			size_t uncompressed_size = 0;
@@ -353,7 +354,7 @@ void ColumnReader::DecompressInternal(CompressionCodec::type codec, const_data_p
 			if (!res) {
 				throw std::runtime_error("Snappy decompression failure");
 			}
-			if (uncompressed_size != (size_t)dst_size) {
+			if (uncompressed_size != dst_size) {
 				throw std::runtime_error("Snappy decompression failure: Uncompressed data size mismatch");
 			}
 		}
@@ -365,16 +366,17 @@ void ColumnReader::DecompressInternal(CompressionCodec::type codec, const_data_p
 	}
 	case CompressionCodec::ZSTD: {
 		auto res = duckdb_zstd::ZSTD_decompress(dst, dst_size, src, src_size);
-		if (duckdb_zstd::ZSTD_isError(res) || res != (size_t)dst_size) {
+		if (duckdb_zstd::ZSTD_isError(res) || res != dst_size) {
 			throw std::runtime_error("ZSTD Decompression failure");
 		}
 		break;
 	}
+
 	default: {
 		std::stringstream codec_name;
 		codec_name << codec;
 		throw std::runtime_error("Unsupported compression codec \"" + codec_name.str() +
-		                         "\". Supported options are uncompressed, gzip, snappy or zstd");
+		                         "\". Supported options are uncompressed, gzip, lz4_raw, snappy or zstd");
 	}
 	}
 }
@@ -1011,7 +1013,23 @@ idx_t CastColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, data
 			}
 		}
 	}
-	VectorOperations::DefaultCast(intermediate_vector, result, amount);
+	string error_message;
+	bool all_succeeded = VectorOperations::DefaultTryCast(intermediate_vector, result, amount, &error_message);
+	if (!all_succeeded) {
+		string extended_error;
+		extended_error =
+		    StringUtil::Format("In file \"%s\" the column \"%s\" has type %s, but we are trying to read it as type %s.",
+		                       reader.file_name, schema.name, intermediate_vector.GetType(), result.GetType());
+		extended_error += "\nThis can happen when reading multiple Parquet files. The schema information is taken from "
+		                  "the first Parquet file by default. Possible solutions:\n";
+		extended_error += "* Enable the union_by_name=True option to combine the schema of all Parquet files "
+		                  "(duckdb.org/docs/data/multiple_files/combining_schemas)\n";
+		extended_error += "* Use a COPY statement to automatically derive types from an existing table.";
+		throw ConversionException(
+		    "In Parquet reader of file \"%s\": failed to cast column \"%s\" from type %s to %s: %s\n\n%s",
+		    reader.file_name, schema.name, intermediate_vector.GetType(), result.GetType(), error_message,
+		    extended_error);
+	}
 	return amount;
 }
 
@@ -1139,8 +1157,8 @@ struct DecimalParquetValueConversion {
 			byte_len = plain_data.read<uint32_t>();
 		}
 		plain_data.available(byte_len);
-		auto res =
-		    ParquetDecimalUtils::ReadDecimalValue<DUCKDB_PHYSICAL_TYPE>(const_data_ptr_cast(plain_data.ptr), byte_len);
+		auto res = ParquetDecimalUtils::ReadDecimalValue<DUCKDB_PHYSICAL_TYPE>(const_data_ptr_cast(plain_data.ptr),
+		                                                                       byte_len, reader.Schema());
 
 		plain_data.inc(byte_len);
 		return res;
@@ -1194,9 +1212,37 @@ static unique_ptr<ColumnReader> CreateDecimalReaderInternal(ParquetReader &reade
 	case PhysicalType::INT128:
 		return make_uniq<DecimalColumnReader<hugeint_t, FIXED_LENGTH>>(reader, type_p, schema_p, file_idx_p, max_define,
 		                                                               max_repeat);
+	case PhysicalType::DOUBLE:
+		return make_uniq<DecimalColumnReader<double, FIXED_LENGTH>>(reader, type_p, schema_p, file_idx_p, max_define,
+		                                                            max_repeat);
 	default:
 		throw InternalException("Unrecognized type for Decimal");
 	}
+}
+
+template <>
+double ParquetDecimalUtils::ReadDecimalValue(const_data_ptr_t pointer, idx_t size,
+                                             const duckdb_parquet::format::SchemaElement &schema_ele) {
+	double res = 0;
+	bool positive = (*pointer & 0x80) == 0;
+	for (idx_t i = 0; i < size; i += 8) {
+		auto byte_size = MinValue<idx_t>(sizeof(uint64_t), size - i);
+		uint64_t input = 0;
+		auto res_ptr = reinterpret_cast<uint8_t *>(&input);
+		for (idx_t k = 0; k < byte_size; k++) {
+			auto byte = pointer[i + k];
+			res_ptr[sizeof(uint64_t) - k - 1] = positive ? byte : byte ^ 0xFF;
+		}
+		res *= double(NumericLimits<uint64_t>::Maximum()) + 1;
+		res += input;
+	}
+	if (!positive) {
+		res += 1;
+		res /= pow(10, schema_ele.scale);
+		return -res;
+	}
+	res /= pow(10, schema_ele.scale);
+	return res;
 }
 
 unique_ptr<ColumnReader> ParquetDecimalUtils::CreateReader(ParquetReader &reader, const LogicalType &type_p,
@@ -1374,8 +1420,14 @@ unique_ptr<ColumnReader> ColumnReader::CreateReader(ParquetReader &reader, const
 		return make_uniq<TemplatedColumnReader<float, TemplatedParquetValueConversion<float>>>(
 		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::DOUBLE:
-		return make_uniq<TemplatedColumnReader<double, TemplatedParquetValueConversion<double>>>(
-		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
+		switch (schema_p.type) {
+		case Type::BYTE_ARRAY:
+		case Type::FIXED_LEN_BYTE_ARRAY:
+			return ParquetDecimalUtils::CreateReader(reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
+		default:
+			return make_uniq<TemplatedColumnReader<double, TemplatedParquetValueConversion<double>>>(
+			    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
+		}
 	case LogicalTypeId::TIMESTAMP:
 	case LogicalTypeId::TIMESTAMP_TZ:
 		switch (schema_p.type) {
@@ -1437,10 +1489,17 @@ unique_ptr<ColumnReader> ColumnReader::CreateReader(ParquetReader &reader, const
 				break;
 			}
 		}
+		throw NotImplementedException("Unsupported time encoding in Parquet file");
 	case LogicalTypeId::TIME_TZ:
 		if (schema_p.__isset.logicalType && schema_p.logicalType.__isset.TIME) {
-			if (schema_p.logicalType.TIME.unit.__isset.MICROS) {
+			if (schema_p.logicalType.TIME.unit.__isset.MILLIS) {
+				return make_uniq<CallbackColumnReader<int32_t, dtime_tz_t, ParquetIntToTimeMsTZ>>(
+				    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
+			} else if (schema_p.logicalType.TIME.unit.__isset.MICROS) {
 				return make_uniq<CallbackColumnReader<int64_t, dtime_tz_t, ParquetIntToTimeTZ>>(
+				    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
+			} else if (schema_p.logicalType.TIME.unit.__isset.NANOS) {
+				return make_uniq<CallbackColumnReader<int64_t, dtime_tz_t, ParquetIntToTimeNsTZ>>(
 				    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 			}
 		} else if (schema_p.__isset.converted_type) {
@@ -1452,6 +1511,7 @@ unique_ptr<ColumnReader> ColumnReader::CreateReader(ParquetReader &reader, const
 				break;
 			}
 		}
+		throw NotImplementedException("Unsupported time encoding in Parquet file");
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR:
 		return make_uniq<StringColumnReader>(reader, type_p, schema_p, file_idx_p, max_define, max_repeat);

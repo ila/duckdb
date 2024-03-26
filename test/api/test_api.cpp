@@ -70,7 +70,7 @@ TEST_CASE("Test closing database during long running query", "[api]") {
 	auto conn = make_uniq<Connection>(*db);
 	// create the database
 	REQUIRE_NO_FAIL(conn->Query("CREATE TABLE integers(i INTEGER)"));
-	REQUIRE_NO_FAIL(conn->Query("INSERT INTO integers VALUES (1), (2), (3), (NULL)"));
+	REQUIRE_NO_FAIL(conn->Query("INSERT INTO integers FROM range(10000)"));
 	conn->DisableProfiling();
 	// perform a long running query in the background (many cross products)
 	bool correct = true;
@@ -309,6 +309,22 @@ TEST_CASE("Test fetch API", "[api]") {
 	REQUIRE(CHECK_COLUMN(result, 0, {42}));
 }
 
+TEST_CASE("Test fetch API not to completion", "[api]") {
+	auto db = make_uniq<DuckDB>(nullptr);
+	auto conn = make_uniq<Connection>(*db);
+	// remove connection with active stream result
+	auto result = conn->SendQuery("SELECT 42");
+	// close the connection
+	conn.reset();
+	// now try to fetch a chunk, this should not return a nullptr
+	auto chunk = result->Fetch();
+	REQUIRE(chunk);
+	// Only if we would call Fetch again would we Close the QueryResult
+	// this is testing that it can get cleaned up without this.
+
+	db.reset();
+}
+
 TEST_CASE("Test fetch API robustness", "[api]") {
 	auto db = make_uniq<DuckDB>(nullptr);
 	auto conn = make_uniq<Connection>(*db);
@@ -530,7 +546,6 @@ TEST_CASE("Test large number of connections to a single database", "[api]") {
 	REQUIRE(connection_manager.connections.size() == createdConnections);
 
 	for (size_t i = 0; i < toRemove; i++) {
-		auto conn = *connections[0];
 		connections.erase(connections.begin());
 	}
 

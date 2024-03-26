@@ -543,12 +543,26 @@ SELECT excel_text(0.0, '_ $* #,##0.00_ ;_ $* -#,##0.00_ ;_ $*  - ??_ ;_ @_ ')
  $ -    
 
 query T
-SELECT text(1.0, 3.5)
+SELECT text(1.0, '3.5')
 ----
 3.5
 
 statement error
 SELECT text('hello', 1.0)
+----
 
 statement error
 SELECT text('hello', '@')
+----
+
+# Days
+query T
+SELECT excel_text(i, 'dddd') FROM range(7) as t(i);
+----
+Saturday
+Sunday
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday

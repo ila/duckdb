@@ -3,11 +3,11 @@
 // Description: This file contains the vectorized hash implementations
 //===--------------------------------------------------------------------===//
 
-#include "duckdb/common/vector_operations/vector_operations.hpp"
-
 #include "duckdb/common/types/hash.hpp"
 #include "duckdb/common/types/null_value.hpp"
+#include "duckdb/common/uhugeint.hpp"
 #include "duckdb/common/value_operations/value_operations.hpp"
+#include "duckdb/common/vector_operations/vector_operations.hpp"
 
 namespace duckdb {
 
@@ -90,6 +90,8 @@ static inline void StructLoopHash(Vector &input, Vector &hashes, const Selection
 
 template <bool HAS_RSEL, bool FIRST_HASH>
 static inline void ListLoopHash(Vector &input, Vector &hashes, const SelectionVector *rsel, idx_t count) {
+	// FIXME: if we want to be more efficient we shouldn't flatten, but the logic here currently requires it
+	hashes.Flatten(count);
 	auto hdata = FlatVector::GetData<hash_t>(hashes);
 
 	UnifiedVectorFormat idata;
@@ -177,6 +179,45 @@ static inline void ListLoopHash(Vector &input, Vector &hashes, const SelectionVe
 	}
 }
 
+template <bool HAS_RSEL, bool FIRST_HASH>
+static inline void ArrayLoopHash(Vector &input, Vector &hashes, const SelectionVector *rsel, idx_t count) {
+	auto hdata = FlatVector::GetData<hash_t>(hashes);
+
+	if (input.GetVectorType() != VectorType::CONSTANT_VECTOR || input.GetVectorType() != VectorType::FLAT_VECTOR) {
+		input.Flatten(count);
+	}
+
+	UnifiedVectorFormat idata;
+	input.ToUnifiedFormat(count, idata);
+
+	// Hash the children into a temporary
+	auto &child = ArrayVector::GetEntry(input);
+	auto array_size = ArrayType::GetSize(input.GetType());
+	auto is_constant = input.GetVectorType() == VectorType::CONSTANT_VECTOR;
+	auto child_count = array_size * (is_constant ? 1 : count);
+
+	Vector child_hashes(LogicalType::HASH, child_count);
+	if (child_count > 0) {
+		child_hashes.Flatten(child_count);
+		VectorOperations::Hash(child, child_hashes, child_count);
+	}
+	auto chdata = FlatVector::GetData<hash_t>(child_hashes);
+
+	for (idx_t i = 0; i < count; ++i) {
+		const auto ridx = HAS_RSEL ? rsel->get_index(i) : i;
+		const auto lidx = idata.sel->get_index(ridx);
+		const auto offset = lidx * array_size;
+		if (idata.validity.RowIsValid(lidx)) {
+			for (idx_t j = 0; j < array_size; j++) {
+				hdata[ridx] = CombineHashScalar(hdata[ridx], chdata[offset + j]);
+			}
+		} else if (FIRST_HASH) {
+			hdata[ridx] = HashOp::NULL_HASH;
+		}
+		// Empty or NULL non-first elements have no effect.
+	}
+}
+
 template <bool HAS_RSEL>
 static inline void HashTypeSwitch(Vector &input, Vector &result, const SelectionVector *rsel, idx_t count) {
 	D_ASSERT(result.GetType().id() == LogicalType::HASH);
@@ -209,6 +250,9 @@ static inline void HashTypeSwitch(Vector &input, Vector &result, const Selection
 	case PhysicalType::INT128:
 		TemplatedLoopHash<HAS_RSEL, hugeint_t>(input, result, rsel, count);
 		break;
+	case PhysicalType::UINT128:
+		TemplatedLoopHash<HAS_RSEL, uhugeint_t>(input, result, rsel, count);
+		break;
 	case PhysicalType::FLOAT:
 		TemplatedLoopHash<HAS_RSEL, float>(input, result, rsel, count);
 		break;
@@ -226,6 +270,9 @@ static inline void HashTypeSwitch(Vector &input, Vector &result, const Selection
 		break;
 	case PhysicalType::LIST:
 		ListLoopHash<HAS_RSEL, true>(input, result, rsel, count);
+		break;
+	case PhysicalType::ARRAY:
+		ArrayLoopHash<HAS_RSEL, true>(input, result, rsel, count);
 		break;
 	default:
 		throw InvalidTypeException(input.GetType(), "Invalid type for hash");
@@ -342,6 +389,9 @@ static inline void CombineHashTypeSwitch(Vector &hashes, Vector &input, const Se
 	case PhysicalType::INT128:
 		TemplatedLoopCombineHash<HAS_RSEL, hugeint_t>(input, hashes, rsel, count);
 		break;
+	case PhysicalType::UINT128:
+		TemplatedLoopCombineHash<HAS_RSEL, uhugeint_t>(input, hashes, rsel, count);
+		break;
 	case PhysicalType::FLOAT:
 		TemplatedLoopCombineHash<HAS_RSEL, float>(input, hashes, rsel, count);
 		break;
@@ -359,6 +409,9 @@ static inline void CombineHashTypeSwitch(Vector &hashes, Vector &input, const Se
 		break;
 	case PhysicalType::LIST:
 		ListLoopHash<HAS_RSEL, false>(input, hashes, rsel, count);
+		break;
+	case PhysicalType::ARRAY:
+		ArrayLoopHash<HAS_RSEL, false>(input, hashes, rsel, count);
 		break;
 	default:
 		throw InvalidTypeException(input.GetType(), "Invalid type for hash");

@@ -45,6 +45,40 @@ extern "C" WINBASEAPI BOOL WINAPI GetPhysicallyInstalledSystemMemory(PULONGLONG)
 
 namespace duckdb {
 
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_READ;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_WRITE;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_DIRECT_IO;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_FILE_CREATE;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_FILE_CREATE_NEW;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_APPEND;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_PRIVATE;
+constexpr FileOpenFlags FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS;
+
+void FileOpenFlags::Verify() {
+#ifdef DEBUG
+	bool is_read = flags & FileOpenFlags::FILE_FLAGS_READ;
+	bool is_write = flags & FileOpenFlags::FILE_FLAGS_WRITE;
+	bool is_create =
+	    (flags & FileOpenFlags::FILE_FLAGS_FILE_CREATE) || (flags & FileOpenFlags::FILE_FLAGS_FILE_CREATE_NEW);
+	bool is_private = (flags & FileOpenFlags::FILE_FLAGS_PRIVATE);
+	bool null_if_not_exists = flags & FileOpenFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS;
+
+	// require either READ or WRITE (or both)
+	D_ASSERT(is_read || is_write);
+	// CREATE/Append flags require writing
+	D_ASSERT(is_write || !(flags & FileOpenFlags::FILE_FLAGS_APPEND));
+	D_ASSERT(is_write || !(flags & FileOpenFlags::FILE_FLAGS_FILE_CREATE));
+	D_ASSERT(is_write || !(flags & FileOpenFlags::FILE_FLAGS_FILE_CREATE_NEW));
+	// cannot combine CREATE and CREATE_NEW flags
+	D_ASSERT(!(flags & FileOpenFlags::FILE_FLAGS_FILE_CREATE && flags & FileOpenFlags::FILE_FLAGS_FILE_CREATE_NEW));
+
+	// For is_private can only be set along with a create flag
+	D_ASSERT(!is_private || is_create);
+	// FILE_FLAGS_NULL_IF_NOT_EXISTS cannot be combined with CREATE/CREATE_NEW
+	D_ASSERT(!(null_if_not_exists && is_create));
+#endif
+}
+
 FileSystem::~FileSystem() {
 }
 
@@ -54,10 +88,7 @@ FileSystem &FileSystem::GetFileSystem(ClientContext &context) {
 }
 
 bool PathMatched(const string &path, const string &sub_path) {
-	if (path.rfind(sub_path, 0) == 0) {
-		return true;
-	}
-	return false;
+	return path.rfind(sub_path, 0) == 0;
 }
 
 #ifndef _WIN32
@@ -147,7 +178,15 @@ bool FileSystem::IsPathAbsolute(const string &path) {
 	if (StartsWithSingleBackslash(path)) {
 		return true;
 	}
-	// 2) A disk designator with a backslash (e.g., C:\ or C:/)
+	// 2) special "long paths" on windows
+	if (PathMatched(path, "\\\\?\\")) {
+		return true;
+	}
+	// 3) a network path
+	if (PathMatched(path, "\\\\")) {
+		return true;
+	}
+	// 4) A disk designator with a backslash (e.g., C:\ or C:/)
 	auto path_aux = path;
 	path_aux.erase(0, 1);
 	if (PathMatched(path_aux, ":\\") || PathMatched(path_aux, ":/")) {
@@ -210,7 +249,7 @@ string FileSystem::GetWorkingDirectory() {
 
 string FileSystem::JoinPath(const string &a, const string &b) {
 	// FIXME: sanitize paths
-	return a + PathSeparator(a) + b;
+	return a.empty() ? b : a + PathSeparator(a) + b;
 }
 
 string FileSystem::ConvertSeparators(const string &path) {
@@ -281,13 +320,17 @@ string FileSystem::ExpandPath(const string &path) {
 }
 
 // LCOV_EXCL_START
-unique_ptr<FileHandle> FileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
-                                            FileCompressionType compression, FileOpener *opener) {
+unique_ptr<FileHandle> FileSystem::OpenFile(const string &path, FileOpenFlags flags, optional_ptr<FileOpener> opener) {
 	throw NotImplementedException("%s: OpenFile is not implemented!", GetName());
 }
 
 void FileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
 	throw NotImplementedException("%s: Read (with location) is not implemented!", GetName());
+}
+
+bool FileSystem::Trim(FileHandle &handle, idx_t offset_bytes, idx_t length_bytes) {
+	// This is not a required method. Derived FileSystems may optionally override/implement.
+	return false;
 }
 
 void FileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
@@ -472,6 +515,10 @@ int64_t FileHandle::Read(void *buffer, idx_t nr_bytes) {
 	return file_system.Read(*this, buffer, nr_bytes);
 }
 
+bool FileHandle::Trim(idx_t offset_bytes, idx_t length_bytes) {
+	return file_system.Trim(*this, offset_bytes, length_bytes);
+}
+
 int64_t FileHandle::Write(void *buffer, idx_t nr_bytes) {
 	return file_system.Write(*this, buffer, nr_bytes);
 }
@@ -539,7 +586,7 @@ FileType FileHandle::GetType() {
 }
 
 bool FileSystem::IsRemoteFile(const string &path) {
-	const string prefixes[] = {"http://", "https://", "s3://"};
+	const string prefixes[] = {"http://", "https://", "s3://", "s3a://", "s3n://", "gcs://", "gs://", "r2://"};
 	for (auto &prefix : prefixes) {
 		if (StringUtil::StartsWith(path, prefix)) {
 			return true;

@@ -19,6 +19,7 @@
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/expression_binder/index_binder.hpp"
 #include "duckdb/parser/parsed_data/create_index_info.hpp"
+#include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 
 #include <algorithm>
 
@@ -75,17 +76,16 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 			// have to resolve columns of the unique constraint
 			vector<LogicalIndex> keys;
 			logical_index_set_t key_set;
-			if (unique.index.index != DConstants::INVALID_INDEX) {
-				D_ASSERT(unique.index.index < base.columns.LogicalColumnCount());
+			if (unique.HasIndex()) {
+				D_ASSERT(unique.GetIndex().index < base.columns.LogicalColumnCount());
 				// unique constraint is given by single index
-				unique.columns.push_back(base.columns.GetColumn(unique.index).Name());
-				keys.push_back(unique.index);
-				key_set.insert(unique.index);
+				unique.SetColumnName(base.columns.GetColumn(unique.GetIndex()).Name());
+				keys.push_back(unique.GetIndex());
+				key_set.insert(unique.GetIndex());
 			} else {
 				// unique constraint is given by list of names
 				// have to resolve names
-				D_ASSERT(!unique.columns.empty());
-				for (auto &keyname : unique.columns) {
+				for (auto &keyname : unique.GetColumnNames()) {
 					if (!base.columns.ColumnExists(keyname)) {
 						throw ParserException("column \"%s\" named in key does not exist", keyname);
 					}
@@ -101,7 +101,7 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 				}
 			}
 
-			if (unique.is_primary_key) {
+			if (unique.IsPrimaryKey()) {
 				// we can only have one primary key per table
 				if (has_primary_key) {
 					throw ParserException("table \"%s\" has more than one primary key", base.table);
@@ -110,7 +110,7 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 				primary_keys = keys;
 			}
 			info.bound_constraints.push_back(
-			    make_uniq<BoundUniqueConstraint>(std::move(keys), std::move(key_set), unique.is_primary_key));
+			    make_uniq<BoundUniqueConstraint>(std::move(keys), std::move(key_set), unique.IsPrimaryKey()));
 			break;
 		}
 		case ConstraintType::FOREIGN_KEY: {
@@ -170,9 +170,9 @@ void Binder::BindGeneratedColumns(BoundCreateTableInfo &info) {
 	auto binder = Binder::CreateBinder(context);
 	binder->bind_context.AddGenericBinding(table_index, base.table, names, types);
 	auto expr_binder = ExpressionBinder(*binder, context);
-	string ignore;
+	ErrorData ignore;
 	auto table_binding = binder->bind_context.GetBinding(base.table, ignore);
-	D_ASSERT(table_binding && ignore.empty());
+	D_ASSERT(table_binding && !ignore.HasError());
 
 	auto bind_order = info.column_dependency_manager.GetBindOrder(base.columns);
 	logical_index_set_t bound_indices;
@@ -211,10 +211,13 @@ void Binder::BindGeneratedColumns(BoundCreateTableInfo &info) {
 void Binder::BindDefaultValues(const ColumnList &columns, vector<unique_ptr<Expression>> &bound_defaults) {
 	for (auto &column : columns.Physical()) {
 		unique_ptr<Expression> bound_default;
-		if (column.DefaultValue()) {
+		if (column.HasDefaultValue()) {
 			// we bind a copy of the DEFAULT value because binding is destructive
 			// and we want to keep the original expression around for serialization
-			auto default_copy = column.DefaultValue()->Copy();
+			auto default_copy = column.DefaultValue().Copy();
+			if (default_copy->HasParameter()) {
+				throw BinderException("DEFAULT values cannot contain parameters");
+			}
 			ConstantBinder default_binder(*this, context, "DEFAULT value");
 			default_binder.target_type = column.Type();
 			bound_default = default_binder.Bind(default_copy);
@@ -302,17 +305,6 @@ unique_ptr<BoundCreateTableInfo> Binder::BindCreateTableInfo(unique_ptr<CreateIn
 	auto &base = info->Cast<CreateTableInfo>();
 	auto &schema = BindCreateSchema(base);
 	return BindCreateTableInfo(std::move(info), schema);
-}
-
-vector<unique_ptr<Expression>> Binder::BindCreateIndexExpressions(TableCatalogEntry &table, CreateIndexInfo &info) {
-	auto index_binder = IndexBinder(*this, this->context, &table, &info);
-	vector<unique_ptr<Expression>> expressions;
-	expressions.reserve(info.expressions.size());
-	for (auto &expr : info.expressions) {
-		expressions.push_back(index_binder.Bind(expr));
-	}
-
-	return expressions;
 }
 
 } // namespace duckdb

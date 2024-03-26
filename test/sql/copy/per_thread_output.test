@@ -31,10 +31,10 @@ data_3.parquet
 
 # CSV also works
 statement ok
-COPY (FROM bigdata) TO '__TEST_DIR__/per_thread_output_csv' (FORMAT CSV, HEADER TRUE, PER_THREAD_OUTPUT TRUE);
+COPY (FROM bigdata) TO '__TEST_DIR__/per_thread_output_csv' (FORMAT CSV,  PER_THREAD_OUTPUT TRUE);
 
 query I
-SELECT COUNT(*) FROM read_csv('__TEST_DIR__/per_thread_output_csv/*.csv', columns={'col_a': 'INT', 'col_b' : 'INT'}, header=True);
+SELECT COUNT(*) FROM read_csv('__TEST_DIR__/per_thread_output_csv/*.csv', columns={'col_a': 'INT', 'col_b' : 'INT'});
 ----
 10000
 
@@ -59,6 +59,7 @@ SELECT COUNT(*) FROM PARQUET_SCAN('__TEST_DIR__/per_thread_output2/*.parquet')
 # cant write to existing folders
 statement error
 COPY (FROM bigdata) TO '__TEST_DIR__/per_thread_output2/' (FORMAT PARQUET, PER_THREAD_OUTPUT TRUE);
+----
 
 # we have not added anything
 query I
@@ -70,3 +71,4 @@ SELECT COUNT(*) FROM PARQUET_SCAN('__TEST_DIR__/per_thread_output2/*.parquet')
 # this should not work
 statement error
 COPY (FROM bigdata) TO '__TEST_DIR__/per_thread_output3' (FORMAT PARQUET, PER_THREAD_OUTPUT TRUE, USE_TMP_FILE TRUE);
+----

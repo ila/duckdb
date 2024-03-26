@@ -51,6 +51,10 @@ SelectStmt: select_no_parens			%prec UMINUS
 select_with_parens:
 			'(' select_no_parens ')'				{ $$ = $2; }
 			| '(' select_with_parens ')'			{ $$ = $2; }
+			| '(' VariableShowStmt ')'
+		    {
+		    	$$ = $2;
+			}
 		;
 
 /*
@@ -274,6 +278,7 @@ simple_select:
 					PGPivotStmt *n = makeNode(PGPivotStmt);
 					n->source = $2;
 					n->aggrs = $4;
+					n->location = @1;
 					res->pivot = n;
 					$$ = (PGNode *)res;
 				}
@@ -284,6 +289,7 @@ simple_select:
 					n->source = $2;
 					n->aggrs = $4;
 					n->groups = $7;
+					n->location = @1;
 					res->pivot = n;
 					$$ = (PGNode *)res;
 				}
@@ -293,6 +299,7 @@ simple_select:
 					PGPivotStmt *n = makeNode(PGPivotStmt);
 					n->source = $2;
 					n->groups = $5;
+					n->location = @1;
 					res->pivot = n;
 					$$ = (PGNode *)res;
 				}
@@ -312,6 +319,7 @@ simple_select:
 					n->source = $2;
 					n->columns = $4;
 					n->groups = $7;
+					n->location = @1;
 					res->pivot = n;
 					$$ = (PGNode *)res;
 				}
@@ -322,6 +330,7 @@ simple_select:
 					n->source = $2;
 					n->columns = $4;
 					n->aggrs = $6;
+					n->location = @1;
 					res->pivot = n;
 					$$ = (PGNode *)res;
 				}
@@ -333,6 +342,7 @@ simple_select:
 					n->columns = $4;
 					n->aggrs = $6;
 					n->groups = $9;
+					n->location = @1;
 					res->pivot = n;
 					$$ = (PGNode *)res;
 				}
@@ -342,6 +352,7 @@ simple_select:
 					PGPivotStmt *n = makeNode(PGPivotStmt);
 					n->source = $2;
 					n->unpivots = $9;
+					n->location = @1;
 					PGPivot *piv = makeNode(PGPivot);
 					piv->unpivot_columns = list_make1(makeString($7));
 					piv->pivot_value = $4;
@@ -356,6 +367,7 @@ simple_select:
 					PGPivotStmt *n = makeNode(PGPivotStmt);
 					n->source = $2;
 					n->unpivots = list_make1(makeString("value"));
+					n->location = @1;
 					PGPivot *piv = makeNode(PGPivot);
 					piv->unpivot_columns = list_make1(makeString("name"));
 					piv->pivot_value = $4;
@@ -1074,6 +1086,7 @@ table_ref:	relation_expr opt_alias_clause opt_tablesample_clause
 					n->pivots = $6;
 					n->groups = $7;
 					n->alias = $9;
+					n->location = @2;
 					$$ = (PGNode *) n;
 				}
 			| table_ref UNPIVOT opt_include_nulls '(' unpivot_header FOR unpivot_value_list ')' opt_alias_clause
@@ -1084,6 +1097,7 @@ table_ref:	relation_expr opt_alias_clause opt_tablesample_clause
 					n->unpivots = $5;
 					n->pivots = $7;
 					n->alias = $9;
+					n->location = @2;
 					$$ = (PGNode *) n;
 				}
 		;
@@ -1116,7 +1130,8 @@ single_pivot_value:
 	;
 
 pivot_header:
-	d_expr		                 			{ $$ = list_make1($1); }
+	| d_expr	                 			{ $$ = list_make1($1); }
+	| indirection_expr						{ $$ = list_make1($1); }
 	| '(' c_expr_list_opt_comma ')' 		{ $$ = $2; }
 
 pivot_value:
@@ -1625,25 +1640,37 @@ Typename:	SimpleTypename opt_array_bounds
 					$$->arrayBounds = list_make1(makeInteger(-1));
 					$$->setof = true;
 				}
-			| RowOrStruct '(' colid_type_list ')' opt_array_bounds {
-               $$ = SystemTypeName("struct");
-               $$->arrayBounds = $5;
-               $$->typmods = $3;
-               $$->location = @1;
+			| qualified_typename
+				{
+					$$ = makeTypeNameFromNameList($1);
+				}
+			| RowOrStruct '(' colid_type_list ')' opt_array_bounds
+				{
+				   $$ = SystemTypeName("struct");
+				   $$->arrayBounds = $5;
+				   $$->typmods = $3;
+				   $$->location = @1;
                }
-            | MAP '(' type_list ')' opt_array_bounds {
-               $$ = SystemTypeName("map");
-               $$->arrayBounds = $5;
-               $$->typmods = $3;
-               $$->location = @1;
-			}
-			| UNION '(' colid_type_list ')' opt_array_bounds {
-			   $$ = SystemTypeName("union");
-			   $$->arrayBounds = $5;
-			   $$->typmods = $3;
-			   $$->location = @1;
-			}
+            | MAP '(' type_list ')' opt_array_bounds
+            	{
+				   $$ = SystemTypeName("map");
+				   $$->arrayBounds = $5;
+				   $$->typmods = $3;
+				   $$->location = @1;
+				}
+			| UNION '(' colid_type_list ')' opt_array_bounds
+				{
+				   $$ = SystemTypeName("union");
+				   $$->arrayBounds = $5;
+				   $$->typmods = $3;
+				   $$->location = @1;
+				}
 		;
+
+qualified_typename:
+			IDENT '.' IDENT					{ $$ = list_make2(makeString($1), makeString($3)); }
+			| qualified_typename '.' IDENT	{ $$ = lappend($1, makeString($3)); }
+	;
 
 opt_array_bounds:
 			opt_array_bounds '[' ']'
@@ -2010,6 +2037,18 @@ millisecond_keyword:
 microsecond_keyword:
 	MICROSECOND_P | MICROSECONDS_P
 
+week_keyword:
+	WEEK_P | WEEKS_P
+
+decade_keyword:
+	DECADE_P | DECADES_P
+
+century_keyword:
+	CENTURY_P | CENTURIES_P
+
+millennium_keyword:
+	MILLENNIUM_P | MILLENNIA_P
+
 opt_interval:
 			year_keyword
 				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(YEAR), @1)); }
@@ -2027,6 +2066,14 @@ opt_interval:
 				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(MILLISECOND), @1)); }
 			| microsecond_keyword
 				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(MICROSECOND), @1)); }
+			| week_keyword
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(WEEK), @1)); }
+			| decade_keyword
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DECADE), @1)); }
+			| century_keyword
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(CENTURY), @1)); }
+			| millennium_keyword
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(MILLENNIUM), @1)); }
 			| year_keyword TO month_keyword
 				{
 					$$ = list_make1(makeIntConst(INTERVAL_MASK(YEAR) |
@@ -2612,11 +2659,7 @@ b_expr:		c_expr
  * ambiguity to the b_expr syntax.
  */
 c_expr:		d_expr
-			| row {
-				PGFuncCall *n = makeFuncCall(SystemFuncName("row"), $1, @1);
-				$$ = (PGNode *) n;
-			}
-			| indirection_expr opt_extended_indirection
+			| indirection_expr_or_a_expr opt_extended_indirection
 				{
 					if ($2)
 					{
@@ -2632,42 +2675,6 @@ c_expr:		d_expr
 
 d_expr:		columnref								{ $$ = $1; }
 			| AexprConst							{ $$ = $1; }
-			| '#' ICONST
-				{
-					PGPositionalReference *n = makeNode(PGPositionalReference);
-					n->position = $2;
-					n->location = @1;
-					$$ = (PGNode *) n;
-				}
-			| '$' ColLabel
-				{
-					$$ = makeNamedParamRef($2, @1);
-				}
-			| '[' opt_expr_list_opt_comma ']' {
-				PGFuncCall *n = makeFuncCall(SystemFuncName("list_value"), $2, @2);
-				$$ = (PGNode *) n;
-			}
-			| list_comprehension {
-				$$ = $1;
-			}
-			| ARRAY select_with_parens
-				{
-					PGSubLink *n = makeNode(PGSubLink);
-					n->subLinkType = PG_ARRAY_SUBLINK;
-					n->subLinkId = 0;
-					n->testexpr = NULL;
-					n->operName = NULL;
-					n->subselect = $2;
-					n->location = @2;
-					$$ = (PGNode *)n;
-				}
-			| ARRAY '[' opt_expr_list_opt_comma ']' {
-				PGList *func_name = list_make1(makeString("construct_array"));
-				PGFuncCall *n = makeFuncCall(func_name, $3, @1);
-				$$ = (PGNode *) n;
-			}
-			| case_expr
-				{ $$ = $1; }
 			| select_with_parens			%prec UMINUS
 				{
 					PGSubLink *n = makeNode(PGSubLink);
@@ -2723,9 +2730,23 @@ d_expr:		columnref								{ $$ = $1; }
 			  }
 		;
 
+indirection_expr_or_a_expr:
+			'(' a_expr ')'
+				{
+					$$ = $2;
+				}
+			| indirection_expr
+				{
+					$$ = $1;
+				}
+			| row {
+				PGFuncCall *n = makeFuncCall(SystemFuncName("row"), $1, @1);
+				$$ = (PGNode *) n;
+			}
+		;
 
-
-indirection_expr:		'?'
+indirection_expr:
+			'?'
 				{
 					$$ = makeParamRef(0, @1);
 				}
@@ -2735,10 +2756,6 @@ indirection_expr:		'?'
 					p->number = $1;
 					p->location = @1;
 					$$ = (PGNode *) p;
-				}
-			| '(' a_expr ')'
-				{
-					$$ = $2;
 				}
 			| struct_expr
 				{
@@ -2764,6 +2781,42 @@ indirection_expr:		'?'
 			| func_expr
 				{
 					$$ = $1;
+				}
+			| case_expr
+				{ $$ = $1; }
+			| '[' opt_expr_list_opt_comma ']' {
+				PGFuncCall *n = makeFuncCall(SystemFuncName("list_value"), $2, @2);
+				$$ = (PGNode *) n;
+			}
+			| list_comprehension {
+				$$ = $1;
+			}
+			| ARRAY select_with_parens
+				{
+					PGSubLink *n = makeNode(PGSubLink);
+					n->subLinkType = PG_ARRAY_SUBLINK;
+					n->subLinkId = 0;
+					n->testexpr = NULL;
+					n->operName = NULL;
+					n->subselect = $2;
+					n->location = @2;
+					$$ = (PGNode *)n;
+				}
+			| ARRAY '[' opt_expr_list_opt_comma ']' {
+				PGList *func_name = list_make1(makeString("construct_array"));
+				PGFuncCall *n = makeFuncCall(func_name, $3, @1);
+				$$ = (PGNode *) n;
+			}
+			| '#' ICONST
+				{
+					PGPositionalReference *n = makeNode(PGPositionalReference);
+					n->position = $2;
+					n->location = @1;
+					$$ = (PGNode *) n;
+				}
+			| '$' ColLabel
+				{
+					$$ = makeNamedParamRef($2, @1);
 				}
 		;
 
@@ -2916,8 +2969,8 @@ func_expr_common_subexpr:
 				}
 			| POSITION '(' position_list ')'
 				{
-					/* position(A in B) is converted to position(B, A) */
-					$$ = (PGNode *) makeFuncCall(SystemFuncName("position"), $3, @1);
+					/* position(A in B) is converted to position_inverse(A, B) */
+					$$ = (PGNode *) makeFuncCall(SystemFuncName("__internal_position_operator"), $3, @1);
 				}
 			| SUBSTRING '(' substr_list ')'
 				{
@@ -3080,7 +3133,7 @@ window_specification: '(' opt_existing_window_name opt_partition_clause
 		;
 
 /*
- * If we see PARTITION, RANGE, or ROWS as the first token after the '('
+ * If we see PARTITION, RANGE, ROWS or GROUPS as the first token after the '('
  * of a window_specification, we want the assumption to be that there is
  * no existing_window_name; but those keywords are unreserved and so could
  * be ColIds.  We fix this by making them have the same precedence as IDENT
@@ -3100,26 +3153,36 @@ opt_partition_clause: PARTITION BY expr_list		{ $$ = $3; }
 /*
  * For frame clauses, we return a PGWindowDef, but only some fields are used:
  * frameOptions, startOffset, and endOffset.
- *
- * This is only a subset of the full SQL:2008 frame_clause grammar.
- * We don't support <window frame exclusion> yet.
  */
 opt_frame_clause:
-			RANGE frame_extent
+			RANGE frame_extent opt_window_exclusion_clause
 				{
 					PGWindowDef *n = $2;
+
 					n->frameOptions |= FRAMEOPTION_NONDEFAULT | FRAMEOPTION_RANGE;
+					n->frameOptions |= $3;
 					$$ = n;
 				}
-			| ROWS frame_extent
+			| ROWS frame_extent opt_window_exclusion_clause
 				{
 					PGWindowDef *n = $2;
+
 					n->frameOptions |= FRAMEOPTION_NONDEFAULT | FRAMEOPTION_ROWS;
+					n->frameOptions |= $3;
+					$$ = n;
+				}
+			| GROUPS frame_extent opt_window_exclusion_clause
+				{
+					PGWindowDef *n = $2;
+
+					n->frameOptions |= FRAMEOPTION_NONDEFAULT | FRAMEOPTION_GROUPS;
+					n->frameOptions |= $3;
 					$$ = n;
 				}
 			| /*EMPTY*/
 				{
 					PGWindowDef *n = makeNode(PGWindowDef);
+
 					n->frameOptions = FRAMEOPTION_DEFAULTS;
 					n->startOffset = NULL;
 					n->endOffset = NULL;
@@ -3130,13 +3193,14 @@ opt_frame_clause:
 frame_extent: frame_bound
 				{
 					PGWindowDef *n = $1;
+
 					/* reject invalid cases */
 					if (n->frameOptions & FRAMEOPTION_START_UNBOUNDED_FOLLOWING)
 						ereport(ERROR,
 								(errcode(PG_ERRCODE_WINDOWING_ERROR),
 								 errmsg("frame start cannot be UNBOUNDED FOLLOWING"),
 								 parser_errposition(@1)));
-					if (n->frameOptions & FRAMEOPTION_START_VALUE_FOLLOWING)
+					if (n->frameOptions & FRAMEOPTION_START_OFFSET_FOLLOWING)
 						ereport(ERROR,
 								(errcode(PG_ERRCODE_WINDOWING_ERROR),
 								 errmsg("frame starting from following row cannot end with current row"),
@@ -3148,6 +3212,7 @@ frame_extent: frame_bound
 				{
 					PGWindowDef *n1 = $2;
 					PGWindowDef *n2 = $4;
+
 					/* form merged options */
 					int		frameOptions = n1->frameOptions;
 					/* shift converts START_ options to END_ options */
@@ -3165,13 +3230,13 @@ frame_extent: frame_bound
 								 errmsg("frame end cannot be UNBOUNDED PRECEDING"),
 								 parser_errposition(@4)));
 					if ((frameOptions & FRAMEOPTION_START_CURRENT_ROW) &&
-						(frameOptions & FRAMEOPTION_END_VALUE_PRECEDING))
+						(frameOptions & FRAMEOPTION_END_OFFSET_PRECEDING))
 						ereport(ERROR,
 								(errcode(PG_ERRCODE_WINDOWING_ERROR),
 								 errmsg("frame starting from current row cannot have preceding rows"),
 								 parser_errposition(@4)));
-					if ((frameOptions & FRAMEOPTION_START_VALUE_FOLLOWING) &&
-						(frameOptions & (FRAMEOPTION_END_VALUE_PRECEDING |
+					if ((frameOptions & FRAMEOPTION_START_OFFSET_FOLLOWING) &&
+						(frameOptions & (FRAMEOPTION_END_OFFSET_PRECEDING |
 										 FRAMEOPTION_END_CURRENT_ROW)))
 						ereport(ERROR,
 								(errcode(PG_ERRCODE_WINDOWING_ERROR),
@@ -3192,6 +3257,7 @@ frame_bound:
 			UNBOUNDED PRECEDING
 				{
 					PGWindowDef *n = makeNode(PGWindowDef);
+
 					n->frameOptions = FRAMEOPTION_START_UNBOUNDED_PRECEDING;
 					n->startOffset = NULL;
 					n->endOffset = NULL;
@@ -3200,6 +3266,7 @@ frame_bound:
 			| UNBOUNDED FOLLOWING
 				{
 					PGWindowDef *n = makeNode(PGWindowDef);
+
 					n->frameOptions = FRAMEOPTION_START_UNBOUNDED_FOLLOWING;
 					n->startOffset = NULL;
 					n->endOffset = NULL;
@@ -3208,6 +3275,7 @@ frame_bound:
 			| CURRENT_P ROW
 				{
 					PGWindowDef *n = makeNode(PGWindowDef);
+
 					n->frameOptions = FRAMEOPTION_START_CURRENT_ROW;
 					n->startOffset = NULL;
 					n->endOffset = NULL;
@@ -3216,7 +3284,8 @@ frame_bound:
 			| a_expr PRECEDING
 				{
 					PGWindowDef *n = makeNode(PGWindowDef);
-					n->frameOptions = FRAMEOPTION_START_VALUE_PRECEDING;
+
+					n->frameOptions = FRAMEOPTION_START_OFFSET_PRECEDING;
 					n->startOffset = $1;
 					n->endOffset = NULL;
 					$$ = n;
@@ -3224,11 +3293,20 @@ frame_bound:
 			| a_expr FOLLOWING
 				{
 					PGWindowDef *n = makeNode(PGWindowDef);
-					n->frameOptions = FRAMEOPTION_START_VALUE_FOLLOWING;
+
+					n->frameOptions = FRAMEOPTION_START_OFFSET_FOLLOWING;
 					n->startOffset = $1;
 					n->endOffset = NULL;
 					$$ = n;
 				}
+		;
+
+opt_window_exclusion_clause:
+			EXCLUDE CURRENT_P ROW	{ $$ = FRAMEOPTION_EXCLUDE_CURRENT_ROW; }
+			| EXCLUDE GROUP_P		{ $$ = FRAMEOPTION_EXCLUDE_GROUP; }
+			| EXCLUDE TIES			{ $$ = FRAMEOPTION_EXCLUDE_TIES; }
+			| EXCLUDE NO OTHERS		{ $$ = 0; }
+			| /*EMPTY*/				{ $$ = 0; }
 		;
 
 
@@ -3485,6 +3563,10 @@ extract_arg:
 			| second_keyword								{ $$ = (char*) "second"; }
 			| millisecond_keyword							{ $$ = (char*) "millisecond"; }
 			| microsecond_keyword							{ $$ = (char*) "microsecond"; }
+			| week_keyword									{ $$ = (char*) "week"; }
+			| decade_keyword								{ $$ = (char*) "decade"; }
+			| century_keyword								{ $$ = (char*) "century"; }
+			| millennium_keyword							{ $$ = (char*) "millennium"; }
 			| Sconst										{ $$ = $1; }
 		;
 
@@ -3513,7 +3595,7 @@ overlay_placing:
 /* position_list uses b_expr not a_expr to avoid conflict with general IN */
 
 position_list:
-			b_expr IN_P b_expr						{ $$ = list_make2($3, $1); }
+			b_expr IN_P b_expr						{ $$ = list_make2($1, $3); }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 

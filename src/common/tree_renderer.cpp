@@ -1,12 +1,13 @@
 #include "duckdb/common/tree_renderer.hpp"
-#include "duckdb/planner/logical_operator.hpp"
-#include "duckdb/execution/physical_operator.hpp"
-#include "duckdb/common/string_util.hpp"
+
 #include "duckdb/common/pair.hpp"
-#include "duckdb/execution/operator/join/physical_delim_join.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
+#include "duckdb/execution/operator/join/physical_delim_join.hpp"
 #include "duckdb/execution/operator/scan/physical_positional_scan.hpp"
+#include "duckdb/execution/physical_operator.hpp"
 #include "duckdb/parallel/pipeline.hpp"
+#include "duckdb/planner/logical_operator.hpp"
 #include "utf8proc_wrapper.hpp"
 
 #include <sstream>
@@ -378,7 +379,8 @@ public:
 template <>
 bool TreeChildrenIterator::HasChildren(const PhysicalOperator &op) {
 	switch (op.type) {
-	case PhysicalOperatorType::DELIM_JOIN:
+	case PhysicalOperatorType::LEFT_DELIM_JOIN:
+	case PhysicalOperatorType::RIGHT_DELIM_JOIN:
 	case PhysicalOperatorType::POSITIONAL_SCAN:
 		return true;
 	default:
@@ -391,7 +393,7 @@ void TreeChildrenIterator::Iterate(const PhysicalOperator &op,
 	for (auto &child : op.children) {
 		callback(*child);
 	}
-	if (op.type == PhysicalOperatorType::DELIM_JOIN) {
+	if (op.type == PhysicalOperatorType::LEFT_DELIM_JOIN || op.type == PhysicalOperatorType::RIGHT_DELIM_JOIN) {
 		auto &delim = op.Cast<PhysicalDelimJoin>();
 		callback(*delim.join);
 	} else if ((op.type == PhysicalOperatorType::POSITIONAL_SCAN)) {
@@ -481,47 +483,12 @@ unique_ptr<RenderTreeNode> TreeRenderer::CreateNode(const PipelineRenderNode &op
 	return CreateNode(op.op);
 }
 
-string TreeRenderer::ExtractExpressionsRecursive(ExpressionInfo &state) {
-	string result = "\n[INFOSEPARATOR]";
-	result += "\n" + state.function_name;
-	result += "\n" + StringUtil::Format("%.9f", double(state.function_time));
-	if (state.children.empty()) {
-		return result;
-	}
-	// render the children of this node
-	for (auto &child : state.children) {
-		result += ExtractExpressionsRecursive(*child);
-	}
-	return result;
-}
-
 unique_ptr<RenderTreeNode> TreeRenderer::CreateNode(const QueryProfiler::TreeNode &op) {
 	auto result = TreeRenderer::CreateRenderNode(op.name, op.extra_info);
 	result->extra_text += "\n[INFOSEPARATOR]";
 	result->extra_text += "\n" + to_string(op.info.elements);
 	string timing = StringUtil::Format("%.2f", op.info.time);
 	result->extra_text += "\n(" + timing + "s)";
-	if (config.detailed) {
-		for (auto &info : op.info.executors_info) {
-			if (!info) {
-				continue;
-			}
-			for (auto &executor_info : info->roots) {
-				string sample_count = to_string(executor_info->sample_count);
-				result->extra_text += "\n[INFOSEPARATOR]";
-				result->extra_text += "\nsample_count: " + sample_count;
-				string sample_tuples_count = to_string(executor_info->sample_tuples_count);
-				result->extra_text += "\n[INFOSEPARATOR]";
-				result->extra_text += "\nsample_tuples_count: " + sample_tuples_count;
-				string total_count = to_string(executor_info->total_count);
-				result->extra_text += "\n[INFOSEPARATOR]";
-				result->extra_text += "\ntotal_count: " + total_count;
-				for (auto &state : executor_info->root->children) {
-					result->extra_text += ExtractExpressionsRecursive(*state);
-				}
-			}
-		}
-	}
 	return result;
 }
 

@@ -87,7 +87,8 @@ void VerifyAppendColumns(const TupleDataLayout &layout, const vector<column_t> &
 		}
 		// This column will not be appended in the first go - verify that it is fixed-size - we cannot resize heap after
 		const auto physical_type = layout.GetTypes()[col_idx].InternalType();
-		D_ASSERT(physical_type != PhysicalType::VARCHAR && physical_type != PhysicalType::LIST);
+		D_ASSERT(physical_type != PhysicalType::VARCHAR && physical_type != PhysicalType::LIST &&
+		         physical_type != PhysicalType::ARRAY);
 		if (physical_type == PhysicalType::STRUCT) {
 			const auto &struct_layout = layout.GetStructLayout(col_idx);
 			vector<column_t> struct_column_ids;
@@ -140,6 +141,9 @@ static void InitializeVectorFormat(vector<TupleDataVectorFormat> &vector_data, c
 		case PhysicalType::LIST:
 			InitializeVectorFormat(vector_data[col_idx].children, {ListType::GetChildType(type)});
 			break;
+		case PhysicalType::ARRAY:
+			InitializeVectorFormat(vector_data[col_idx].children, {ArrayType::GetChildType(type)});
+			break;
 		default:
 			break;
 		}
@@ -156,6 +160,20 @@ void TupleDataCollection::InitializeChunkState(TupleDataChunkState &chunk_state,
 		GetAllColumnIDsInternal(column_ids, types.size());
 	}
 	InitializeVectorFormat(chunk_state.vector_data, types);
+
+	for (auto &col : column_ids) {
+		auto &type = types[col];
+		if (type.Contains(LogicalTypeId::ARRAY)) {
+			auto cast_type = ArrayType::ConvertToList(type);
+			chunk_state.cached_cast_vector_cache.push_back(
+			    make_uniq<VectorCache>(Allocator::DefaultAllocator(), cast_type));
+			chunk_state.cached_cast_vectors.push_back(make_uniq<Vector>(*chunk_state.cached_cast_vector_cache.back()));
+		} else {
+			chunk_state.cached_cast_vectors.emplace_back();
+			chunk_state.cached_cast_vector_cache.emplace_back();
+		}
+	}
+
 	chunk_state.column_ids = std::move(column_ids);
 }
 
@@ -196,27 +214,7 @@ void TupleDataCollection::AppendUnified(TupleDataPinState &pin_state, TupleDataC
 	}
 
 	Build(pin_state, chunk_state, 0, actual_append_count);
-
-#ifdef DEBUG
-	Vector heap_locations_copy(LogicalType::POINTER);
-	if (!layout.AllConstant()) {
-		VectorOperations::Copy(chunk_state.heap_locations, heap_locations_copy, actual_append_count, 0, 0);
-	}
-#endif
-
 	Scatter(chunk_state, new_chunk, append_sel, actual_append_count);
-
-#ifdef DEBUG
-	// Verify that the size of the data written to the heap is the same as the size we computed it would be
-	if (!layout.AllConstant()) {
-		const auto original_heap_locations = FlatVector::GetData<data_ptr_t>(heap_locations_copy);
-		const auto heap_sizes = FlatVector::GetData<idx_t>(chunk_state.heap_sizes);
-		const auto offset_heap_locations = FlatVector::GetData<data_ptr_t>(chunk_state.heap_locations);
-		for (idx_t i = 0; i < actual_append_count; i++) {
-			D_ASSERT(offset_heap_locations[i] == original_heap_locations[i] + heap_sizes[i]);
-		}
-	}
-#endif
 }
 
 static inline void ToUnifiedFormatInternal(TupleDataVectorFormat &format, Vector &vector, const idx_t count) {
@@ -238,6 +236,29 @@ static inline void ToUnifiedFormatInternal(TupleDataVectorFormat &format, Vector
 		ToUnifiedFormatInternal(reinterpret_cast<TupleDataVectorFormat &>(format.children[0]),
 		                        ListVector::GetEntry(vector), ListVector::GetListSize(vector));
 		break;
+	case PhysicalType::ARRAY: {
+		D_ASSERT(format.children.size() == 1);
+
+		// For arrays, we cheat a bit and pretend that they are lists by creating and assigning list_entry_t's to the
+		// vector This allows us to reuse all the list serialization functions for array types too.
+		auto array_size = ArrayType::GetSize(vector.GetType());
+
+		// How many list_entry_t's do we need to cover the whole child array?
+		// Make sure we round up so its all covered
+		auto child_array_total_size = ArrayVector::GetTotalSize(vector);
+		auto list_entry_t_count = MaxValue((child_array_total_size + array_size) / array_size, count);
+
+		// Create list entries!
+		format.array_list_entries = make_uniq_array<list_entry_t>(list_entry_t_count);
+		for (idx_t i = 0; i < list_entry_t_count; i++) {
+			format.array_list_entries[i].length = array_size;
+			format.array_list_entries[i].offset = i * array_size;
+		}
+		format.unified.data = reinterpret_cast<data_ptr_t>(format.array_list_entries.get());
+
+		ToUnifiedFormatInternal(reinterpret_cast<TupleDataVectorFormat &>(format.children[0]),
+		                        ArrayVector::GetEntry(vector), count * array_size);
+	} break;
 	default:
 		break;
 	}
@@ -392,6 +413,23 @@ void TupleDataCollection::InitializeScan(TupleDataScanState &state, vector<colum
 	state.pin_state.properties = properties;
 	state.segment_index = 0;
 	state.chunk_index = 0;
+
+	auto &chunk_state = state.chunk_state;
+
+	for (auto &col : column_ids) {
+		auto &type = layout.GetTypes()[col];
+
+		if (type.Contains(LogicalTypeId::ARRAY)) {
+			auto cast_type = ArrayType::ConvertToList(type);
+			chunk_state.cached_cast_vector_cache.push_back(
+			    make_uniq<VectorCache>(Allocator::DefaultAllocator(), cast_type));
+			chunk_state.cached_cast_vectors.push_back(make_uniq<Vector>(*chunk_state.cached_cast_vector_cache.back()));
+		} else {
+			chunk_state.cached_cast_vectors.emplace_back();
+			chunk_state.cached_cast_vector_cache.emplace_back();
+		}
+	}
+
 	state.chunk_state.column_ids = std::move(column_ids);
 }
 
@@ -479,7 +517,6 @@ bool TupleDataCollection::NextScanIndex(TupleDataScanState &state, idx_t &segmen
 	chunk_index = state.chunk_index++;
 	return true;
 }
-
 void TupleDataCollection::ScanAtIndex(TupleDataPinState &pin_state, TupleDataChunkState &chunk_state,
                                       const vector<column_t> &column_ids, idx_t segment_index, idx_t chunk_index,
                                       DataChunk &result) {
@@ -487,8 +524,14 @@ void TupleDataCollection::ScanAtIndex(TupleDataPinState &pin_state, TupleDataChu
 	auto &chunk = segment.chunks[chunk_index];
 	segment.allocator->InitializeChunkState(segment, pin_state, chunk_state, chunk_index, false);
 	result.Reset();
+
+	for (idx_t i = 0; i < column_ids.size(); i++) {
+		if (chunk_state.cached_cast_vectors[i]) {
+			chunk_state.cached_cast_vectors[i]->ResetFromCache(*chunk_state.cached_cast_vector_cache[i]);
+		}
+	}
 	Gather(chunk_state.row_locations, *FlatVector::IncrementalSelectionVector(), chunk.count, column_ids, result,
-	       *FlatVector::IncrementalSelectionVector());
+	       *FlatVector::IncrementalSelectionVector(), chunk_state.cached_cast_vectors);
 	result.SetCardinality(chunk.count);
 }
 

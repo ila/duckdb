@@ -5,11 +5,14 @@
 namespace duckdb {
 
 unique_ptr<QueryNode> Transformer::TransformSelectNode(duckdb_libpgquery::PGSelectStmt &select) {
+	unique_ptr<QueryNode> stmt = nullptr;
 	if (select.pivot) {
-		return TransformPivotStatement(select);
+		stmt = TransformPivotStatement(select);
 	} else {
-		return TransformSelectInternal(select);
+		stmt = TransformSelectInternal(select);
 	}
+
+	return TransformMaterializedCTE(std::move(stmt));
 }
 
 unique_ptr<SelectStatement> Transformer::TransformSelect(duckdb_libpgquery::PGSelectStmt &select, bool is_select) {
@@ -30,7 +33,14 @@ unique_ptr<SelectStatement> Transformer::TransformSelect(duckdb_libpgquery::PGSe
 }
 
 unique_ptr<SelectStatement> Transformer::TransformSelect(optional_ptr<duckdb_libpgquery::PGNode> node, bool is_select) {
-	return TransformSelect(PGCast<duckdb_libpgquery::PGSelectStmt>(*node), is_select);
+	switch (node->type) {
+	case duckdb_libpgquery::T_PGVariableShowSelectStmt:
+		return TransformShowSelect(PGCast<duckdb_libpgquery::PGVariableShowSelectStmt>(*node));
+	case duckdb_libpgquery::T_PGVariableShowStmt:
+		return TransformShow(PGCast<duckdb_libpgquery::PGVariableShowStmt>(*node));
+	default:
+		return TransformSelect(PGCast<duckdb_libpgquery::PGSelectStmt>(*node), is_select);
+	}
 }
 
 } // namespace duckdb

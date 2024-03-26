@@ -7,6 +7,9 @@ require vector_size 1024
 
 require skip_reload
 
+# distinct stats sampling is different for different vector sizes
+require no_vector_verification
+
 statement ok
 analyze
 
@@ -15,9 +18,11 @@ vacuum
 
 statement error
 vacuum test
+----
 
 statement error
 analyze test
+----
 
 statement ok
 create table test (i int, j int)
@@ -30,6 +35,7 @@ create view testview as select * from test
 
 statement error
 analyze testview
+----
 
 statement ok
 insert into test select range % 5000, range % 5000 from range(10000)

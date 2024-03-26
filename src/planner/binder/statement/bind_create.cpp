@@ -3,6 +3,7 @@
 #include "duckdb/catalog/catalog_entry/duck_table_entry.hpp"
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
@@ -14,6 +15,7 @@
 #include "duckdb/parser/parsed_data/create_macro_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/tableref/table_function_ref.hpp"
+#include "duckdb/parser/parsed_data/create_secret_info.hpp"
 #include "duckdb/parser/parsed_expression_iterator.hpp"
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/binder.hpp"
@@ -39,6 +41,7 @@
 #include "duckdb/main/attached_database.hpp"
 #include "duckdb/catalog/duck_catalog.hpp"
 #include "duckdb/function/table/table_scan.hpp"
+#include "duckdb/parser/tableref/basetableref.hpp"
 
 namespace duckdb {
 
@@ -51,12 +54,18 @@ void Binder::BindSchemaOrCatalog(ClientContext &context, string &catalog, string
 		if (database) {
 			// we have a database with this name
 			// check if there is a schema
-			auto schema_obj = Catalog::GetSchema(context, INVALID_CATALOG, schema, OnEntryNotFound::RETURN_NULL);
-			if (schema_obj) {
-				auto &attached = schema_obj->catalog.GetAttached();
-				throw BinderException(
-				    "Ambiguous reference to catalog or schema \"%s\" - use a fully qualified path like \"%s.%s\"",
-				    schema, attached.GetName(), schema);
+			auto &search_path = *context.client_data->catalog_search_path;
+			auto catalog_names = search_path.GetCatalogsForSchema(schema);
+			if (catalog_names.empty()) {
+				catalog_names.push_back(DatabaseManager::GetDefaultDatabase(context));
+			}
+			for (auto &catalog_name : catalog_names) {
+				auto &catalog = Catalog::GetCatalog(context, catalog_name);
+				if (catalog.CheckAmbiguousCatalogOrSchema(context, schema)) {
+					throw BinderException(
+					    "Ambiguous reference to catalog or schema \"%s\" - use a fully qualified path like \"%s.%s\"",
+					    schema, catalog_name, schema);
+				}
 			}
 			catalog = schema;
 			schema = string();
@@ -136,12 +145,8 @@ void Binder::BindCreateViewInfo(CreateViewInfo &base) {
 	if (base.aliases.size() > query_node.names.size()) {
 		throw BinderException("More VIEW aliases than columns in query result");
 	}
-	// fill up the aliases with the remaining names of the bound query
-	base.aliases.reserve(query_node.names.size());
-	for (idx_t i = base.aliases.size(); i < query_node.names.size(); i++) {
-		base.aliases.push_back(query_node.names[i]);
-	}
 	base.types = query_node.types;
+	base.names = query_node.names;
 }
 
 SchemaCatalogEntry &Binder::BindCreateFunctionInfo(CreateInfo &info) {
@@ -156,8 +161,8 @@ SchemaCatalogEntry &Binder::BindCreateFunctionInfo(CreateInfo &info) {
 	vector<LogicalType> dummy_types;
 	vector<string> dummy_names;
 	// positional parameters
-	for (idx_t i = 0; i < base.function->parameters.size(); i++) {
-		auto param = base.function->parameters[i]->Cast<ColumnRefExpression>();
+	for (auto &param_expr : base.function->parameters) {
+		auto param = param_expr->Cast<ColumnRefExpression>();
 		if (param.IsQualified()) {
 			throw BinderException("Invalid parameter name '%s': must be unqualified", param.ToString());
 		}
@@ -165,27 +170,27 @@ SchemaCatalogEntry &Binder::BindCreateFunctionInfo(CreateInfo &info) {
 		dummy_names.push_back(param.GetColumnName());
 	}
 	// default parameters
-	for (auto it = base.function->default_parameters.begin(); it != base.function->default_parameters.end(); it++) {
-		auto &val = it->second->Cast<ConstantExpression>();
+	for (auto &entry : base.function->default_parameters) {
+		auto &val = entry.second->Cast<ConstantExpression>();
 		dummy_types.push_back(val.value.type());
-		dummy_names.push_back(it->first);
+		dummy_names.push_back(entry.first);
 	}
 	auto this_macro_binding = make_uniq<DummyBinding>(dummy_types, dummy_names, base.name);
 	macro_binding = this_macro_binding.get();
-	ExpressionBinder::QualifyColumnNames(*this, scalar_function.expression);
 
 	// create a copy of the expression because we do not want to alter the original
 	auto expression = scalar_function.expression->Copy();
+	ExpressionBinder::QualifyColumnNames(*this, expression);
 
 	// bind it to verify the function was defined correctly
-	string error;
+	ErrorData error;
 	auto sel_node = make_uniq<BoundSelectNode>();
 	auto group_info = make_uniq<BoundGroupInformation>();
 	SelectBinder binder(*this, context, *sel_node, *group_info);
 	error = binder.Bind(expression, 0, false);
 
-	if (!error.empty()) {
-		throw BinderException(error);
+	if (error.HasError()) {
+		error.Throw();
 	}
 
 	return BindCreateSchema(info);
@@ -214,6 +219,13 @@ void Binder::BindLogicalType(ClientContext &context, LogicalType &type, optional
 		auto alias = type.GetAlias();
 		type = LogicalType::STRUCT(child_types);
 		type.SetAlias(alias);
+	} else if (type.id() == LogicalTypeId::ARRAY) {
+		auto child_type = ArrayType::GetChildType(type);
+		auto array_size = ArrayType::GetSize(type);
+		BindLogicalType(context, child_type, catalog, schema);
+		auto alias = type.GetAlias();
+		type = LogicalType::ARRAY(child_type, array_size);
+		type.SetAlias(alias);
 	} else if (type.id() == LogicalTypeId::UNION) {
 		auto member_types = UnionType::CopyMemberTypes(type);
 		for (auto &member_type : member_types) {
@@ -237,10 +249,13 @@ void Binder::BindLogicalType(ClientContext &context, LogicalType &type, optional
 			}
 
 			if (type.id() == LogicalTypeId::INVALID) {
-				type = Catalog::GetType(context, INVALID_CATALOG, schema, user_type_name);
+				type = Catalog::GetType(context, INVALID_CATALOG, INVALID_SCHEMA, user_type_name);
 			}
 		} else {
-			type = Catalog::GetType(context, INVALID_CATALOG, schema, user_type_name);
+			string type_catalog = UserType::GetCatalog(type);
+			string type_schema = UserType::GetSchema(type);
+			BindSchemaOrCatalog(context, type_catalog, type_schema);
+			type = Catalog::GetType(context, type_catalog, type_schema, user_type_name);
 		}
 		BindLogicalType(context, type, catalog, schema);
 	}
@@ -257,16 +272,16 @@ static void FindMatchingPrimaryKeyColumns(const ColumnList &columns, const vecto
 			continue;
 		}
 		auto &unique = constr->Cast<UniqueConstraint>();
-		if (find_primary_key && !unique.is_primary_key) {
+		if (find_primary_key && !unique.IsPrimaryKey()) {
 			continue;
 		}
 		found_constraint = true;
 
 		vector<string> pk_names;
-		if (unique.index.index != DConstants::INVALID_INDEX) {
-			pk_names.push_back(columns.GetColumn(LogicalIndex(unique.index)).Name());
+		if (unique.HasIndex()) {
+			pk_names.push_back(columns.GetColumn(LogicalIndex(unique.GetIndex())).Name());
 		} else {
-			pk_names = unique.columns;
+			pk_names = unique.GetColumnNames();
 		}
 		if (find_primary_key) {
 			// found matching primary key
@@ -399,15 +414,14 @@ static bool AnyConstraintReferencesGeneratedColumn(CreateTableInfo &table_info) 
 		}
 		case ConstraintType::UNIQUE: {
 			auto &constraint = constr->Cast<UniqueConstraint>();
-			auto index = constraint.index;
-			if (index.index == DConstants::INVALID_INDEX) {
-				for (auto &col : constraint.columns) {
+			if (!constraint.HasIndex()) {
+				for (auto &col : constraint.GetColumnNames()) {
 					if (generated_columns.count(col)) {
 						return true;
 					}
 				}
 			} else {
-				if (table_info.columns.GetColumn(index).Generated()) {
+				if (table_info.columns.GetColumn(constraint.GetIndex()).Generated()) {
 					return true;
 				}
 			}
@@ -623,19 +637,26 @@ BoundStatement Binder::Bind(CreateStatement &stmt) {
 			result.plan->AddChild(std::move(query));
 		} else if (create_type_info.type.id() == LogicalTypeId::USER) {
 			// two cases:
-			// 1: create a type with a non-existant type as source, catalog.GetType(...) will throw exception.
+			// 1: create a type with a non-existent type as source, Binder::BindLogicalType(...) will throw exception.
 			// 2: create a type alias with a custom type.
 			// eg. CREATE TYPE a AS INT; CREATE TYPE b AS a;
 			// We set b to be an alias for the underlying type of a
-			auto inner_type = Catalog::GetType(context, schema.catalog.GetName(), schema.name,
-			                                   UserType::GetTypeName(create_type_info.type));
-			inner_type.SetAlias(create_type_info.name);
-			create_type_info.type = inner_type;
+			create_type_info.type = Catalog::GetType(context, schema.catalog.GetName(), schema.name,
+			                                         UserType::GetTypeName(create_type_info.type));
+		} else {
+			auto preserved_type = create_type_info.type;
+			BindLogicalType(context, create_type_info.type);
+			create_type_info.type = preserved_type;
 		}
 		break;
 	}
+	case CatalogType::SECRET_ENTRY: {
+		CatalogTransaction transaction = CatalogTransaction(Catalog::GetSystemCatalog(context), context);
+		properties.return_type = StatementReturnType::QUERY_RESULT;
+		return SecretManager::Get(context).BindCreateSecret(transaction, stmt.info->Cast<CreateSecretInfo>());
+	}
 	default:
-		throw Exception("Unrecognized type!");
+		throw InternalException("Unrecognized type!");
 	}
 	properties.return_type = StatementReturnType::NOTHING;
 	properties.allow_stream_result = false;
