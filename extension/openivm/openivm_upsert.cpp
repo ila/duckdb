@@ -78,6 +78,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 		upsert_query = CompileSimpleAggregates(view_name, column_names);
 		break;
 	}
+		// todo joins
 	}
 	// DoIVM is a table function (root of the tree)
 	string ivm_query;

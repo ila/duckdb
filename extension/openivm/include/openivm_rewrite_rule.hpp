@@ -380,9 +380,9 @@ public:
 		std::cout << "\nFINAL PLAN:\n" << optimized_plan->ToString() << std::endl;
 #endif
 		plan = std::move(optimized_plan);
-		auto test = LogicalPlanToString(plan);
+		// auto test = LogicalPlanToString(plan);
 #ifdef DEBUG
-		std::cout << "\nnew optimized plan to string: \n" << test << "\n";
+		//std::cout << "\nnew optimized plan to string: \n" << test << "\n";
 #endif
 		return;
 	}

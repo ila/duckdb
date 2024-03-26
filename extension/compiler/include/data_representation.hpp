@@ -96,7 +96,7 @@ public:
 // Expression Tree
 class DuckASTNode {
 public:
-	shared_ptr<DuckASTBaseExpression> expr;
+	shared_ptr<DuckASTBaseExpression> expr; // Operator
 	string id;
 	vector<shared_ptr<DuckASTNode>> children;
 	shared_ptr<DuckASTNode> parent_node;
