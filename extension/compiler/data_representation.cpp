@@ -155,8 +155,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 	}
 	case DuckASTExpressionType::FILTER: {
 		auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
-		string condition = exp->filter_condition;
-		plan_string = plan_string + condition;
+		plan_string = exp->filter_condition + plan_string;
 		auto children = node->children;
 		for (auto child : node->children) {
 			generateString_t(child, plan_string, additional_cols, true);

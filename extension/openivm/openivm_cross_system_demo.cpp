@@ -50,12 +50,12 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 
 	auto res =  con.Query("ATTACH '" + conn_info + "' AS p (TYPE postgres);");
 	if (res->HasError()) {
-		throw Exception("Could not attach to PostgreSQL: " + res->GetError());
+		throw Exception(ExceptionType::TRANSACTION, "Could not attach to PostgreSQL: " + res->GetError());
 	}
 
 	res = con.Query(query);
 	if (res->HasError()) {
-		throw Exception("Could not create materialized view: " + res->GetError());
+		throw Exception(ExceptionType::TRANSACTION, "Could not create materialized view: " + res->GetError());
 	}
 
 	std::cout << "Input query: " << query << "\n";
@@ -75,7 +75,7 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 	if (input == "OK") {
 		res = con.Query("PRAGMA ivm_upsert('postgres', 'main', '" + table + "');");
 		if (res->HasError()) {
-			throw Exception("Could not complete IVM: " + res->GetError());
+			throw Exception(ExceptionType::UNKNOWN_TYPE, "Could not complete IVM: " + res->GetError());
 		} else {
 			count = con.Query("SELECT COUNT(*) FROM " + table + ";")->GetValue(0, 0).ToString();
 			std::cout << "Rows in the materialized view after the update: " << Format(count) << "\n";

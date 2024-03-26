@@ -129,7 +129,7 @@ public:
 			if (table_catalog_entry == nullptr) {
 				// if delta base table does not exist, return error
 				// this also means there are no deltas to compute
-				throw Exception("Table " + delta_table + " does not exist, no deltas to compute!");
+				throw Exception(ExceptionType::BINDER, "Table " + delta_table + " does not exist, no deltas to compute!");
 			}
 
 			auto &table = table_catalog_entry->Cast<TableCatalogEntry>();
