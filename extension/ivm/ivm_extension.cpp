@@ -171,9 +171,6 @@ static unique_ptr<TableRef> DoIVMDemo(ClientContext &context, TableFunctionBindI
 	return nullptr;
 }
 
-static unique_ptr<TableRef> DoLogicalPlanToString(ClientContext &context, TableFunctionBindInput &input) {
-	return nullptr;
-}
 
 static duckdb::unique_ptr<FunctionData> DoIVMBind(ClientContext &context, TableFunctionBindInput &input,
                                                   vector<LogicalType> &return_types, vector<string> &names) {
