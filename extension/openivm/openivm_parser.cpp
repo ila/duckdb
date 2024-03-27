@@ -51,7 +51,7 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 
 ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInfo *info, ClientContext &context,
                                                               unique_ptr<ParserExtensionParseData> parse_data) {
-
+	// TODO for S.
 	// after the parser, the query string goes here
 
 	auto &ivm_parse_data = dynamic_cast<IVMParseData &>(*parse_data);
@@ -125,6 +125,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		}
 	}
 
+	// TODO for S.
 	// put joins here
 	// implement ivm_type (leave it for now)
 
