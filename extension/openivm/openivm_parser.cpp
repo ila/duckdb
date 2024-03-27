@@ -95,7 +95,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	bool found_projection = false;
 	vector<string> aggregate_columns;
 
-	while (!node_stack.empty()) {
+	while (!node_stack.empty()) { // depth-first search
 		auto current = node_stack.top();
 		node_stack.pop();
 
