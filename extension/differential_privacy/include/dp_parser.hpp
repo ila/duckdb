@@ -40,9 +40,12 @@ namespace duckdb {
 
         string view_query;
         string meta_query;
+	    // the "plan" flag is to avoid the content in the body of the planner to be executed multiple times
 	    bool plan = false;
 
         duckdb::unique_ptr<ParserExtensionParseData> Copy() const override {
+		    // we pass "false" here because if we get here, we already parsed the query
+		    // DuckDB copies the function data but we don't need to execute the planner function
             return make_uniq<DPParseData>(view_query, meta_query, false);
         }
     };
