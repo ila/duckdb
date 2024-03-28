@@ -55,12 +55,13 @@ struct IVMParseData : ParserExtensionParseData {
 	}
 
 	unique_ptr<SQLStatement> statement;
+	bool plan = false;
 
 	unique_ptr<ParserExtensionParseData> Copy() const override {
-		return make_uniq_base<ParserExtensionParseData, IVMParseData>(statement->Copy());
+		return make_uniq_base<ParserExtensionParseData, IVMParseData>(statement->Copy(), false);
 	}
 
-	explicit IVMParseData(unique_ptr<SQLStatement> statement) : statement(std::move(statement)) {
+	explicit IVMParseData(unique_ptr<SQLStatement> statement, bool plan) : statement(std::move(statement)), plan(plan) {
 	}
 };
 

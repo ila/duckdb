@@ -46,7 +46,7 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	Parser p;
 	p.ParseQuery(query_lower);
 
-	return ParserExtensionParseResult(make_uniq_base<ParserExtensionParseData, IVMParseData>(move(p.statements[0])));
+	return ParserExtensionParseResult(make_uniq_base<ParserExtensionParseData, IVMParseData>(move(p.statements[0]), true));
 }
 
 ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInfo *info, ClientContext &context,
@@ -57,198 +57,202 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	auto &ivm_parse_data = dynamic_cast<IVMParseData &>(*parse_data);
 	auto statement = dynamic_cast<SQLStatement *>(ivm_parse_data.statement.get());
 
-	// we extract the table name
-	auto view_name = CompilerExtension::ExtractTableName(statement->query);
-	// then we extract the query
-	auto view_query = CompilerExtension::ExtractViewQuery(statement->query);
+	if (ivm_parse_data.plan) {
 
-	// now we create the delta table based on the view definition
-	// parsing the logical plan
-	string db_path;
-	if (!context.db->config.options.database_path.empty()) {
-		db_path = context.db->GetFileSystem().GetWorkingDirectory();
-	} else {
-		Value db_path_value;
-		context.TryGetCurrentSetting("ivm_files_path", db_path_value);
-		db_path = db_path_value.ToString();
-	}
-	string compiled_file_path = db_path + "/ivm_compiled_queries_" + view_name + ".sql";
-	string system_tables_path = db_path + "/ivm_system_tables.sql";
-	// we need a separate index file because it is faster to create the index after the materialized view
-	auto index_file_path = db_path + "/ivm_index_" + view_name + ".sql";
+		// we extract the table name
+		auto view_name = CompilerExtension::ExtractTableName(statement->query);
+		// then we extract the query
+		auto view_query = CompilerExtension::ExtractViewQuery(statement->query);
 
-	Connection con(*context.db.get());
-
-	con.BeginTransaction();
-	auto table_names = con.GetTableNames(statement->query);
-
-	Planner planner(context);
-
-	planner.CreatePlan(statement->Copy());
-	auto plan = move(planner.plan);
-
-	std::stack<LogicalOperator *> node_stack;
-	node_stack.push(plan.get());
-
-	bool found_filter = false;
-	bool found_aggregation = false;
-	bool found_projection = false;
-	vector<string> aggregate_columns;
-
-	while (!node_stack.empty()) { // depth-first search
-		auto current = node_stack.top();
-		node_stack.pop();
-
-		if (current->type == LogicalOperatorType::LOGICAL_FILTER) {
-			found_filter = true;
+		// now we create the delta table based on the view definition
+		// parsing the logical plan
+		string db_path;
+		if (!context.db->config.options.database_path.empty()) {
+			db_path = context.db->GetFileSystem().GetWorkingDirectory();
+		} else {
+			Value db_path_value;
+			context.TryGetCurrentSetting("ivm_files_path", db_path_value);
+			db_path = db_path_value.ToString();
 		}
+		string compiled_file_path = db_path + "/ivm_compiled_queries_" + view_name + ".sql";
+		string system_tables_path = db_path + "/ivm_system_tables.sql";
+		// we need a separate index file because it is faster to create the index after the materialized view
+		auto index_file_path = db_path + "/ivm_index_" + view_name + ".sql";
 
-		if (current->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
-			found_aggregation = true;
-			// find the aggregation column(s) in order to create an index
-			auto node = dynamic_cast<LogicalAggregate *>(current);
-			for (auto &group : node->groups) {
-				auto column = dynamic_cast<BoundColumnRefExpression *>(group.get());
-				aggregate_columns.emplace_back(column->alias);
+		Connection con(*context.db.get());
+
+		con.BeginTransaction();
+		auto table_names = con.GetTableNames(statement->query);
+
+		Planner planner(context);
+
+		planner.CreatePlan(statement->Copy());
+		auto plan = move(planner.plan);
+
+		std::stack<LogicalOperator *> node_stack;
+		node_stack.push(plan.get());
+
+		bool found_filter = false;
+		bool found_aggregation = false;
+		bool found_projection = false;
+		vector<string> aggregate_columns;
+
+		while (!node_stack.empty()) { // depth-first search
+			auto current = node_stack.top();
+			node_stack.pop();
+
+			if (current->type == LogicalOperatorType::LOGICAL_FILTER) {
+				found_filter = true;
+			}
+
+			if (current->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
+				found_aggregation = true;
+				// find the aggregation column(s) in order to create an index
+				auto node = dynamic_cast<LogicalAggregate *>(current);
+				for (auto &group : node->groups) {
+					auto column = dynamic_cast<BoundColumnRefExpression *>(group.get());
+					aggregate_columns.emplace_back(column->alias);
+				}
+			}
+
+			if (current->type == LogicalOperatorType::LOGICAL_PROJECTION) {
+				found_projection = true;
+			}
+
+			if (!current->children.empty()) {
+				// push children onto the stack in reverse order to process them in a depth-first manner
+				for (auto it = current->children.rbegin(); it != current->children.rend(); ++it) {
+					node_stack.push(it->get());
+				}
 			}
 		}
 
-		if (current->type == LogicalOperatorType::LOGICAL_PROJECTION) {
-			found_projection = true;
+		// TODO for S.
+		// put joins here
+		// implement ivm_type (leave it for now)
+
+		// test this code (start with simple joins)
+
+		IVMType ivm_type;
+
+		if (found_aggregation && !aggregate_columns.empty()) {
+			// select stuff, COUNT(*) FROM table [WHERE condition] GROUP BY stuff;
+			ivm_type = IVMType::AGGREGATE_GROUP;
+		} else if (found_aggregation && aggregate_columns.empty()) {
+			// SELECT COUNT(*) FROM table; (without GROUP BY)
+			ivm_type = IVMType::SIMPLE_AGGREGATE;
+		} else if (found_filter && !found_aggregation) {
+			// SELECT stuff FROM table WHERE condition;
+			ivm_type = IVMType::SIMPLE_FILTER;
+		} else if (found_projection && !found_aggregation) {
+			// SELECT stuff FROM table;
+			ivm_type = IVMType::SIMPLE_PROJECTION;
+		} else {
+			throw NotImplementedException("IVM does not support this query type yet");
 		}
 
-		if (!current->children.empty()) {
-			// push children onto the stack in reverse order to process them in a depth-first manner
-			for (auto it = current->children.rbegin(); it != current->children.rend(); ++it) {
-				node_stack.push(it->get());
+		con.Rollback();
+
+		// we create the lookup tables for views -> materialized_view_name | sql_string | type | plan
+		auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
+		                    "varchar, type tinyint, plan varchar);\n";
+		// recreate the file - we assume the queries will be executed after the parsing is done
+		CompilerExtension::WriteFile(system_tables_path, false, system_table);
+
+		// now we insert the details in the openivm view lookup table
+		// firstly we need to serialize the plan to a string
+		// commenting because the Postgres scanner does not have a serializer yet
+		/*
+		MemoryStream target;
+		BinarySerializer serializer(target);
+		serializer.Begin();
+		plan->Serialize(serializer);
+		serializer.End();
+		auto data = target.GetData();
+		idx_t len = target.GetPosition();
+		string serialized_plan(data, data + len); */
+
+		// do we need insert or replace here? insert or ignore? am I just overthinking?
+		// todo this does not work because of special characters
+		// else we just store the query and re-plan it each time or store the json
+		// auto x = escapeSingleQuotes(serialized_plan);
+		// auto test = "create table if not exists test (plan varchar);\n";
+		// con.Query(test);
+		// auto res = con.Query("insert into test values('" + x + "');\n");
+
+		auto test = "abc";
+		auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
+		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
+		                        ", '" + test + "');\n";
+		CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
+
+		// now we create the table (the view, internally stored as a table)
+		auto table = "create table if not exists " + view_name + " as " + view_query + ";\n";
+		CompilerExtension::WriteFile(compiled_file_path, false, table);
+
+		// we have the table names; let's create the delta tables (to store insertions, deletions, updates)
+		// the API does not support consecutive CREATE + ALTER instructions, so we rewrite it as one query
+		// CREATE TABLE IF NOT EXISTS delta_table AS SELECT *, TRUE AS _duckdb_ivm_multiplicity FROM my_table LIMIT 0;
+		for (const auto &table_name : table_names) {
+			// todo also add the view name here (there can be multiple views?)
+			// todo exception handling
+			Value catalog_value;
+			context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
+			Value schema_value;
+			context.TryGetCurrentSetting("ivm_schema_name", schema_value);
+
+			string catalog_schema;
+			if (!catalog_value.IsNull() && !schema_value.IsNull()) {
+				catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
 			}
-		}
-	}
 
-	// TODO for S.
-	// put joins here
-	// implement ivm_type (leave it for now)
-
-	// test this code (start with simple joins)
-
-	IVMType ivm_type;
-
-	if (found_aggregation && !aggregate_columns.empty()) {
-		// select stuff, COUNT(*) FROM table [WHERE condition] GROUP BY stuff;
-		ivm_type = IVMType::AGGREGATE_GROUP;
-	} else if (found_aggregation && aggregate_columns.empty()) {
-		// SELECT COUNT(*) FROM table; (without GROUP BY)
-		ivm_type = IVMType::SIMPLE_AGGREGATE;
-	} else if (found_filter && !found_aggregation) {
-		// SELECT stuff FROM table WHERE condition;
-		ivm_type = IVMType::SIMPLE_FILTER;
-	} else if (found_projection && !found_aggregation) {
-		// SELECT stuff FROM table;
-		ivm_type = IVMType::SIMPLE_PROJECTION;
-	} else {
-		throw NotImplementedException("IVM does not support this query type yet");
-	}
-
-	con.Rollback();
-
-	// we create the lookup tables for views -> materialized_view_name | sql_string | type | plan
-	auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
-	                    "varchar, type tinyint, plan varchar);\n";
-	// recreate the file - we assume the queries will be executed after the parsing is done
-	CompilerExtension::WriteFile(system_tables_path, false, system_table);
-
-	// now we insert the details in the openivm view lookup table
-	// firstly we need to serialize the plan to a string
-	// commenting because the Postgres scanner does not have a serializer yet
-	/*
-	MemoryStream target;
-	BinarySerializer serializer(target);
-	serializer.Begin();
-	plan->Serialize(serializer);
-	serializer.End();
-	auto data = target.GetData();
-	idx_t len = target.GetPosition();
-	string serialized_plan(data, data + len); */
-
-	// do we need insert or replace here? insert or ignore? am I just overthinking?
-	// todo this does not work because of special characters
-	// else we just store the query and re-plan it each time or store the json
-	// auto x = escapeSingleQuotes(serialized_plan);
-	// auto test = "create table if not exists test (plan varchar);\n";
-	// con.Query(test);
-	// auto res = con.Query("insert into test values('" + x + "');\n");
-
-	auto test = "abc";
-	auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
-	                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
-	                        ", '" + test + "');\n";
-	CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
-
-	// now we create the table (the view, internally stored as a table)
-	auto table = "create table if not exists " + view_name + " as " + view_query + ";\n";
-	CompilerExtension::WriteFile(compiled_file_path, false, table);
-
-	// we have the table names; let's create the delta tables (to store insertions, deletions, updates)
-	// the API does not support consecutive CREATE + ALTER instructions, so we rewrite it as one query
-	// CREATE TABLE IF NOT EXISTS delta_table AS SELECT *, TRUE AS _duckdb_ivm_multiplicity FROM my_table LIMIT 0;
-	for (const auto &table_name : table_names) {
-		// todo also add the view name here (there can be multiple views?)
-		// todo exception handling
-		Value catalog_value;
-		context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
-		Value schema_value;
-		context.TryGetCurrentSetting("ivm_schema_name", schema_value);
-
-		string catalog_schema;
-		if (!catalog_value.IsNull() && !schema_value.IsNull()) {
-			catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
+			auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
+			                   " as select *, true as _duckdb_ivm_multiplicity from " + catalog_schema + table_name +
+			                   " limit 0;\n";
+			CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 		}
 
-		auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
-		                   " as select *, true as _duckdb_ivm_multiplicity from " + catalog_schema + table_name + " limit 0;\n";
-		CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
-	}
+		// todo handle the case of replacing column names
 
-	// todo handle the case of replacing column names
+		// now we also create a view (for internal use, just to store the SQL query)
+		// todo - remove this if I manage to make the lookup table work
+		auto view = "create or replace view _duckdb_internal_" + view_name + "_ivm as " + view_query + ";\n";
+		CompilerExtension::WriteFile(compiled_file_path, true, view);
 
-	// now we also create a view (for internal use, just to store the SQL query)
-	// todo - remove this if I manage to make the lookup table work
-	auto view = "create or replace view _duckdb_internal_" + view_name + "_ivm as " + view_query + ";\n";
-	CompilerExtension::WriteFile(compiled_file_path, true, view);
+		// now we create the delta table for the result (to store the IVM algorithm output)
+		string delta_view = "create table if not exists delta_" + view_name +
+		                    " as select *, true as _duckdb_ivm_multiplicity from " + view_name + " limit 0;\n";
+		CompilerExtension::WriteFile(compiled_file_path, true, delta_view);
 
-	// now we create the delta table for the result (to store the IVM algorithm output)
-	string delta_view = "create table if not exists delta_" + view_name +
-	                    " as select *, true as _duckdb_ivm_multiplicity from " + view_name + " limit 0;\n";
-	CompilerExtension::WriteFile(compiled_file_path, true, delta_view);
-
-	// lastly, we need to create an index on the aggregation keys on the view and delta result table
-	if (ivm_type == IVMType::AGGREGATE_GROUP) {
-		string index_query_view = "create unique index " + view_name + "_ivm_index on " + view_name + "(";
-		for (size_t i = 0; i < aggregate_columns.size(); i++) {
-			index_query_view += aggregate_columns[i];
-			if (i != aggregate_columns.size() - 1) {
-				index_query_view += ", ";
+		// lastly, we need to create an index on the aggregation keys on the view and delta result table
+		if (ivm_type == IVMType::AGGREGATE_GROUP) {
+			string index_query_view = "create unique index " + view_name + "_ivm_index on " + view_name + "(";
+			for (size_t i = 0; i < aggregate_columns.size(); i++) {
+				index_query_view += aggregate_columns[i];
+				if (i != aggregate_columns.size() - 1) {
+					index_query_view += ", ";
+				}
 			}
+			index_query_view += ");\n";
+			// writing to file
+			CompilerExtension::WriteFile(index_file_path, false, index_query_view);
 		}
-		index_query_view += ");\n";
-		// writing to file
-		CompilerExtension::WriteFile(index_file_path, false, index_query_view);
-	}
 
-	string comment = "-- code to propagate operations to the base table goes here\n";
-	comment += "-- assuming the changes to be in the delta tables\n";
-	CompilerExtension::WriteFile(compiled_file_path, true, comment);
+		string comment = "-- code to propagate operations to the base table goes here\n";
+		comment += "-- assuming the changes to be in the delta tables\n";
+		CompilerExtension::WriteFile(compiled_file_path, true, comment);
 
-	// we execute the file to apply the changes
-	// .read (CLI command) doesn't work with the API, so we read the file first
-	// only executing this if the database is not in memory
-	if (!context.db->config.options.database_path.empty()) {
-		auto system_queries = duckdb::CompilerExtension::ReadFile(system_tables_path);
-		auto r1 = con.Query(system_queries);
-		auto queries = duckdb::CompilerExtension::ReadFile(compiled_file_path);
-		auto r2 = con.Query(queries);
-		auto index = duckdb::CompilerExtension::ReadFile(index_file_path);
-		con.Query(index);
+		// we execute the file to apply the changes
+		// .read (CLI command) doesn't work with the API, so we read the file first
+		// only executing this if the database is not in memory
+		if (!context.db->config.options.database_path.empty()) {
+			auto system_queries = duckdb::CompilerExtension::ReadFile(system_tables_path);
+			auto r1 = con.Query(system_queries);
+			auto queries = duckdb::CompilerExtension::ReadFile(compiled_file_path);
+			auto r2 = con.Query(queries);
+			auto index = duckdb::CompilerExtension::ReadFile(index_file_path);
+			con.Query(index);
+		}
 	}
 
 	ParserExtensionPlanResult result;
