@@ -31,19 +31,20 @@
 
 namespace duckdb {
 
-// DuckASTBaseExpression Types
-enum DuckASTExpressionType { NONE, PROJECTION, GET, FILTER, AGGREGATE, ORDER_BY };
+// DuckASTBaseOperator Types
+enum DuckASTOperatorType { NONE, PROJECTION, GET, FILTER, AGGREGATE, ORDER_BY };
 
 // Node Type Classes
-class DuckASTBaseExpression {
+class DuckASTBaseOperator {
+	// Rename: Operator
 public:
 	string name;
-	DuckASTBaseExpression();
-	DuckASTBaseExpression(string name);
-	virtual ~DuckASTBaseExpression();
+	DuckASTBaseOperator();
+	DuckASTBaseOperator(string name);
+	virtual ~DuckASTBaseOperator();
 };
 
-class DuckASTProjection : public DuckASTBaseExpression {
+class DuckASTProjection : public DuckASTBaseOperator {
 public:
 	std::map<string, string> column_aliases;
 	DuckASTProjection();
@@ -52,7 +53,7 @@ public:
 	void add_column(string table_index, string column_index, string alias);
 };
 
-class DuckASTFilter : public DuckASTBaseExpression {
+class DuckASTFilter : public DuckASTBaseOperator {
 public:
 	std::string filter_condition;
 	DuckASTFilter();
@@ -60,7 +61,7 @@ public:
 	void set_filter_condition(string filter_condition);
 };
 
-class DuckASTAggregate : public DuckASTBaseExpression {
+class DuckASTAggregate : public DuckASTBaseOperator {
 public:
 	vector<string> group_column;
 	vector<string> aggregate_function;
@@ -68,7 +69,7 @@ public:
 	DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
 };
 
-class DuckASTOrderBy : public DuckASTBaseExpression {
+class DuckASTOrderBy : public DuckASTBaseOperator {
 public:
 	// order by column and in which order
 	unordered_map<string, string> order;
@@ -76,7 +77,7 @@ public:
 	void add_order_column(string &col, string &ord);
 };
 
-class DuckASTGet : public DuckASTBaseExpression {
+class DuckASTGet : public DuckASTBaseOperator {
 public:
 	std::string table_name;
 	unsigned long int table_index;
@@ -96,14 +97,14 @@ public:
 // Expression Tree
 class DuckASTNode {
 public:
-	shared_ptr<DuckASTBaseExpression> expr; // Operator
+	shared_ptr<DuckASTBaseOperator> expr; // Operator
 	string id;
 	vector<shared_ptr<DuckASTNode>> children;
 	shared_ptr<DuckASTNode> parent_node;
-	DuckASTExpressionType type;
+	DuckASTOperatorType type;
 	DuckASTNode();
-	DuckASTNode(shared_ptr<DuckASTBaseExpression> expr, DuckASTExpressionType type);
-	void setExpression(shared_ptr<DuckASTBaseExpression> expr, DuckASTExpressionType type);
+	DuckASTNode(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type);
+	void setExpression(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type);
 };
 class DuckAST {
 private:
@@ -114,7 +115,7 @@ private:
 
 public:
 	DuckAST();
-	void insert(shared_ptr<DuckASTBaseExpression> &expr, string id, DuckASTExpressionType type, string parent_id);
+	void insert(shared_ptr<DuckASTBaseOperator> &expr, string id, DuckASTOperatorType type, string parent_id);
 	DuckASTNode get_node(string node_id);
 	void generateString(string &plan_string);
 	static void printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix = "", bool isLast = true);

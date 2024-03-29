@@ -7,16 +7,16 @@
  */
 
 namespace duckdb {
-// DuckASTBaseExpression
-DuckASTBaseExpression::DuckASTBaseExpression() {
-	Printer::Print("Base Expression");
+// DuckASTBaseOperator
+DuckASTBaseOperator::DuckASTBaseOperator() {
+	Printer::Print("Base Operator");
 }
 
-DuckASTBaseExpression::DuckASTBaseExpression(string name) {
+DuckASTBaseOperator::DuckASTBaseOperator(string name) {
 	this->name = name;
 }
 
-DuckASTBaseExpression::~DuckASTBaseExpression() {
+DuckASTBaseOperator::~DuckASTBaseOperator() {
 }
 
 // DuckASTProjection
@@ -87,16 +87,16 @@ DuckASTGet::~DuckASTGet() {
 // DuckASTNode
 DuckASTNode::DuckASTNode() {
 	this->expr = nullptr;
-	this->type = DuckASTExpressionType::NONE;
+	this->type = DuckASTOperatorType::NONE;
 }
 
-DuckASTNode::DuckASTNode(shared_ptr<DuckASTBaseExpression> expr, DuckASTExpressionType type) {
+DuckASTNode::DuckASTNode(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type) {
 	this->expr = expr;
 	this->type = type;
 	this->id = expr->name;
 }
 
-void DuckASTNode::setExpression(shared_ptr<DuckASTBaseExpression> expr, DuckASTExpressionType type) {
+void DuckASTNode::setExpression(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type) {
 	this->expr = std::move(expr);
 	this->type = type;
 	this->id = expr->name;
@@ -120,7 +120,7 @@ bool DuckAST::insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, 
 	return false;
 }
 
-void DuckAST::insert(shared_ptr<DuckASTBaseExpression> &expr, string id, DuckASTExpressionType type, string parent_id) {
+void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &expr, string id, DuckASTOperatorType type, string parent_id) {
 	Printer::Print("Inserting: " + id);
 	expr->name = id;
 	if (root == nullptr) {
@@ -147,13 +147,13 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 
 	// Append to plan_string according to node type
 	switch (node->type) {
-	case DuckASTExpressionType::PROJECTION: {
+	case DuckASTOperatorType::PROJECTION: {
 		for (auto child : node->children) {
 			generateString_t(child, plan_string, additional_cols);
 		}
 		break;
 	}
-	case DuckASTExpressionType::FILTER: {
+	case DuckASTOperatorType::FILTER: {
 		auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
 		plan_string = exp->filter_condition + plan_string;
 		auto children = node->children;
@@ -162,7 +162,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		}
 		break;
 	}
-	case DuckASTExpressionType::ORDER_BY: {
+	case DuckASTOperatorType::ORDER_BY: {
 		auto exp = dynamic_cast<DuckASTOrderBy *>(node->expr.get());
 		string order_string = "";
 		int cnt = exp->order.size();
@@ -181,7 +181,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		}
 		break;
 	}
-	case DuckASTExpressionType::AGGREGATE: {
+	case DuckASTOperatorType::AGGREGATE: {
 		auto exp = dynamic_cast<DuckASTAggregate *>(node->expr.get());
 		if (has_filter)
 			plan_string = " having " + plan_string;
@@ -207,7 +207,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		}
 		break;
 	}
-	case DuckASTExpressionType::GET: {
+	case DuckASTOperatorType::GET: {
 		vector<string> columns;
 		auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
 		string table_name = exp->table_name;
@@ -262,7 +262,7 @@ void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool
 	std::cout << prefix;
 	std::cout << (isLast ? "└── " : "├── ");
 	if (node->expr != nullptr) {
-		std::cout << "Node: " << node->id << ", Type: " << node->type << ", Expression: " << node->expr->name << std::endl;
+		std::cout << "Node: " << node->id << ", Type: " << node->type << ", Operator: " << node->expr->name << std::endl;
 	} else {
 		std::cout << "Node ID: " << node->id << ", Type: " << node->type << std::endl;
 	}
