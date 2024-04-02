@@ -81,7 +81,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 
 		Connection con(*context.db.get());
 
-		con.BeginTransaction();
 		auto table_names = con.GetTableNames(statement->query);
 
 		Planner planner(context);
@@ -151,8 +150,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			throw NotImplementedException("IVM does not support this query type yet");
 		}
 
-		con.Rollback();
-
 		// we create the lookup tables for views -> materialized_view_name | sql_string | type | plan
 		auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
 		                    "varchar, type tinyint, plan varchar);\n";
@@ -187,7 +184,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
 
 		// now we create the table (the view, internally stored as a table)
-		auto table = "create table if not exists " + view_name + " as " + view_query + ";\n";
+		auto table = "create table " + view_name + " as " + view_query + ";\n";
 		CompilerExtension::WriteFile(compiled_file_path, false, table);
 
 		// we have the table names; let's create the delta tables (to store insertions, deletions, updates)
@@ -248,10 +245,20 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		if (!context.db->config.options.database_path.empty()) {
 			auto system_queries = duckdb::CompilerExtension::ReadFile(system_tables_path);
 			auto r1 = con.Query(system_queries);
+			if (r1->HasError()) {
+				throw Exception(ExceptionType::PARSER, "Could not create system tables: " + r1->GetError());
+			}
 			auto queries = duckdb::CompilerExtension::ReadFile(compiled_file_path);
+			// bug -- the exception is not thrown if the MV already exists
 			auto r2 = con.Query(queries);
+			if (r2->HasError()) {
+				throw Exception(ExceptionType::PARSER, "Could not create materialized view: " + r2->GetError());
+			}
 			auto index = duckdb::CompilerExtension::ReadFile(index_file_path);
-			con.Query(index);
+			auto r3 = con.Query(index);
+			if (r3->HasError()) {
+				throw Exception(ExceptionType::PARSER, "Could not create index: " + r3->GetError());
+			}
 		}
 	}
 
