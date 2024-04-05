@@ -85,7 +85,7 @@ public:
 #ifdef DEBUG
 		printf("Modified plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
 		for (size_t i = 0; i < plan.get()->GetColumnBindings().size(); i++) {
-			printf("Top node CB %d %s\n", i, plan.get()->GetColumnBindings()[i].ToString().c_str());
+			printf("Top node CB %zu %s\n", i, plan.get()->GetColumnBindings()[i].ToString().c_str());
 		}
 #endif
 	}
@@ -151,6 +151,8 @@ public:
 			                                                  std::move(return_types), std::move(return_names));
 			replacement_get_node->column_ids = std::move(column_ids);
 			replacement_get_node->table_filters = std::move(child_get->table_filters);
+
+			// todo for monday: try to get rid of this extra projection node
 
 			/* The new get node which will read the delta table will read all columns in the delta table
 			 * The original get node will read only the columns that the query uses

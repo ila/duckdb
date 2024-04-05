@@ -48,14 +48,6 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContex
 
 	input.named_parameters["query"] = query;
 
-	// do something here
-	// Printer::Print("Path is: "+ sql_string);
-	// DuckDB db("../../data/testdb.db");
-	// todo:
-	// if (!context.db->config.options.database_path.empty()) {
-	// 	db_path = context.db->GetFileSystem().GetWorkingDirectory();
-	// }
-
 	Parser parser;
 	parser.ParseQuery(query);
 	auto statement = parser.statements[0].get();

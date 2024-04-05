@@ -226,7 +226,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 			}
 		}
 		string cur_string = "select ";
-		for (int i = 0; i < columns.size(); i++) {
+		for (size_t i = 0; i < columns.size(); i++) {
 			cur_string += columns[i];
 			if (i != columns.size() - 1) {
 				cur_string += ", ";
@@ -234,7 +234,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 				cur_string += ", ";
 			}
 		}
-		for (int i = 0; i < additional_cols.size(); i++) {
+		for (size_t i = 0; i < additional_cols.size(); i++) {
 			cur_string += additional_cols[i];
 			if (i != additional_cols.size() - 1) {
 				cur_string += ", ";

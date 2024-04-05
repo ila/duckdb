@@ -69,7 +69,6 @@ namespace duckdb {
 
     }
 
-    //todo this seems to run twice
     ParserExtensionPlanResult DPParserExtension::DPPlanFunction(ParserExtensionInfo *info, ClientContext &context,
                                                                 unique_ptr<ParserExtensionParseData> parse_data) {
         auto &parse_info = (DPParseData &) *parse_data;

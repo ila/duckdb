@@ -21,10 +21,15 @@
 
 namespace duckdb {
 
+// upsert: one lookup instead of two lookups (custom operator)
+
 ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionInfo *info, const string &query) {
 	// very rudimentary parser trying to find IVM statements
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// this only works with CREATE MATERIALIZED VIEW expressions
+
+	// todo: find a workaround for the newly created MV that doesn't show up in the shell?
+
 	auto query_lower = CompilerExtension::SQLToLowercase(StringUtil::Replace(query, ";", ""));
 	StringUtil::Trim(query_lower);
 
@@ -191,8 +196,8 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// the API does not support consecutive CREATE + ALTER instructions, so we rewrite it as one query
 		// CREATE TABLE IF NOT EXISTS delta_table AS SELECT *, TRUE AS _duckdb_ivm_multiplicity FROM my_table LIMIT 0;
 		for (const auto &table_name : table_names) {
-			// todo also add the view name here (there can be multiple views?)
-			// todo exception handling
+			// todo also add the view name here (there can be multiple views)
+			// how to handle delta tables when we have multiple views? (one per view, one per table)
 			Value catalog_value;
 			context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
 			Value schema_value;
@@ -272,7 +277,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 }
 
 BoundStatement IVMBind(ClientContext &context, Binder &binder, OperatorExtensionInfo *info, SQLStatement &statement) {
-	printf("In IVM Bind function\n");
 	return BoundStatement();
 }
 }; // namespace duckdb
