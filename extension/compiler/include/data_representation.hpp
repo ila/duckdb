@@ -61,6 +61,10 @@ public:
 	void set_filter_condition(string filter_condition);
 };
 
+/*
+ * DuckASTAggregate is a 1:1 relationship with the LogicalAggregate
+ * in src/include/duckdb/planner/logical_aggregate.hpp
+ */
 class DuckASTAggregate : public DuckASTBaseOperator {
 public:
 	vector<string> group_column;
@@ -69,42 +73,50 @@ public:
 	DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
 };
 
+
+/*
+ * DuckASTOrderBy is a 1:1 relationship with the LogicalOrder
+ * in src/include/duckdb/planner/logical_order.hpp
+ */
 class DuckASTOrderBy : public DuckASTBaseOperator {
 public:
-	// order by column and in which order
+	// maps column to arrange and the order in which to do it(ascending, descending)
 	unordered_map<string, string> order;
 	DuckASTOrderBy();
+	// appends to the order column
 	void add_order_column(string &col, string &ord);
 };
 
+
+/*
+ * DuckASTGet has a 1:1 relationship with the LogicalGet
+ * in src/include/duckdb/planner/logical_get.h
+ */
 class DuckASTGet : public DuckASTBaseOperator {
 public:
+	// Stores the name of the table on which SEQ_SCAN is being carried out
 	std::string table_name;
-	unsigned long int table_index;
+	// Maps column_name to alias; if no alias leaves empty
 	unordered_map<string, string> alias_map;
+	// If all columns are selected from the table
 	bool all_columns;
-	// todo: Column Index for bindings
 	DuckASTGet();
-	DuckASTGet(string table_name, unsigned long int table_index);
+	DuckASTGet(string table_name);
 	~DuckASTGet() override;
+	// sets the table name variable - just a setter function
 	void set_table_name(string table_name);
-	// void set_column_names(std::vector<string> column_names);
-	// void add_column_name(string column_name);
 };
-// Filter PushDown
-// Separate Type for filter?
 
-// Expression Tree
 class DuckASTNode {
 public:
-	shared_ptr<DuckASTBaseOperator> expr; // Operator
+	shared_ptr<DuckASTBaseOperator> opr; // Operator
 	string id;
 	vector<shared_ptr<DuckASTNode>> children;
 	shared_ptr<DuckASTNode> parent_node;
 	DuckASTOperatorType type;
 	DuckASTNode();
-	DuckASTNode(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type);
-	void setExpression(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type);
+	DuckASTNode(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
+	void setExpression(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
 };
 class DuckAST {
 private:

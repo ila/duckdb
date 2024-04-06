@@ -71,9 +71,8 @@ DuckASTGet::DuckASTGet() {
 	this->all_columns = false;
 }
 
-DuckASTGet::DuckASTGet(string table_name, unsigned long int table_index) {
+DuckASTGet::DuckASTGet(string table_name) {
 	this->table_name = table_name;
-	this->table_index = table_index;
 	this->all_columns = false;
 }
 
@@ -86,20 +85,20 @@ DuckASTGet::~DuckASTGet() {
 
 // DuckASTNode
 DuckASTNode::DuckASTNode() {
-	this->expr = nullptr;
+	this->opr = nullptr;
 	this->type = DuckASTOperatorType::NONE;
 }
 
-DuckASTNode::DuckASTNode(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type) {
-	this->expr = expr;
+DuckASTNode::DuckASTNode(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
+	this->opr = opr;
 	this->type = type;
-	this->id = expr->name;
+	this->id = opr->name;
 }
 
-void DuckASTNode::setExpression(shared_ptr<DuckASTBaseOperator> expr, DuckASTOperatorType type) {
-	this->expr = std::move(expr);
+void DuckASTNode::setExpression(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
+	this->opr = std::move(opr);
 	this->type = type;
-	this->id = expr->name;
+	this->id = opr->name;
 }
 
 // DuckAST
@@ -120,18 +119,18 @@ bool DuckAST::insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, 
 	return false;
 }
 
-void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &expr, string id, DuckASTOperatorType type, string parent_id) {
+void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, string id, DuckASTOperatorType type, string parent_id) {
 	Printer::Print("Inserting: " + id);
-	expr->name = id;
+	opr->name = id;
 	if (root == nullptr) {
-		root = (shared_ptr<DuckASTNode>)(new DuckASTNode(expr, type));
+		root = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
 		root->type = type;
 		root->parent_node = nullptr;
 		Printer::Print("At root right now");
 		return;
 	}
 	// todo: Add insert logic
-	auto node = (shared_ptr<DuckASTNode>)(new DuckASTNode(expr, type));
+	auto node = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
 	bool result = insert_after_root(node, parent_id, root);
 	if (result) {
 		Printer::Print("Inserted Element successfully");
@@ -154,7 +153,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		break;
 	}
 	case DuckASTOperatorType::FILTER: {
-		auto exp = dynamic_cast<DuckASTFilter *>(node->expr.get());
+		auto exp = dynamic_cast<DuckASTFilter *>(node->opr.get());
 		plan_string = exp->filter_condition + plan_string;
 		auto children = node->children;
 		for (auto child : node->children) {
@@ -163,7 +162,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		break;
 	}
 	case DuckASTOperatorType::ORDER_BY: {
-		auto exp = dynamic_cast<DuckASTOrderBy *>(node->expr.get());
+		auto exp = dynamic_cast<DuckASTOrderBy *>(node->opr.get());
 		string order_string = "";
 		int cnt = exp->order.size();
 		for (auto ord : exp->order) {
@@ -182,7 +181,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		break;
 	}
 	case DuckASTOperatorType::AGGREGATE: {
-		auto exp = dynamic_cast<DuckASTAggregate *>(node->expr.get());
+		auto exp = dynamic_cast<DuckASTAggregate *>(node->opr.get());
 		if (has_filter)
 			plan_string = " having " + plan_string;
 		string grp_string = "";
@@ -209,7 +208,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 	}
 	case DuckASTOperatorType::GET: {
 		vector<string> columns;
-		auto exp = dynamic_cast<DuckASTGet *>(node->expr.get());
+		auto exp = dynamic_cast<DuckASTGet *>(node->opr.get());
 		string table_name = exp->table_name;
 		if (has_filter) {
 			plan_string = " where " + plan_string;
@@ -261,8 +260,8 @@ void DuckAST::generateString(string &plan_string) {
 void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool isLast) {
 	std::cout << prefix;
 	std::cout << (isLast ? "└── " : "├── ");
-	if (node->expr != nullptr) {
-		std::cout << "Node: " << node->id << ", Type: " << node->type << ", Operator: " << node->expr->name << std::endl;
+	if (node->opr != nullptr) {
+		std::cout << "Node: " << node->id << ", Type: " << node->type << ", Operator: " << node->opr->name << std::endl;
 	} else {
 		std::cout << "Node ID: " << node->id << ", Type: " << node->type << std::endl;
 	}
