@@ -78,6 +78,8 @@ public:
 		// the table_idx used to create ColumnBinding will be that of the top node's child
 		// the column_idx used to create ColumnBinding for multiplicity column will be stored along with the context
 		// from the child node
+		multiplicity_table_idx = dynamic_cast<BoundColumnRefExpression *>(plan->expressions[0].get())->binding.table_index;
+		//multiplicity_col_idx = plan->GetColumnBindings().size();
 		auto e = make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", LogicalType::BOOLEAN,
 		                                             ColumnBinding(multiplicity_table_idx, multiplicity_col_idx));
 		plan->expressions.emplace_back(std::move(e));
@@ -115,10 +117,12 @@ public:
 			string delta_table_catalog;
 			// checking if the table to be scanned exists in DuckDB
 			if (child_get->GetTable().get() == nullptr) {
+				// we are using PostgreSQL (the underlying table does not exist)
 				delta_table = "delta_" + dynamic_cast<PostgresBindData *>(child_get->bind_data.get())->table_name;
 				delta_table_schema = "public";
 				delta_table_catalog = "p"; // todo
 			} else {
+				// DuckDB (default case)
 				delta_table = "delta_" + child_get->GetTable().get()->name;
 				delta_table_schema = child_get->GetTable().get()->schema.name;
 				delta_table_catalog = child_get->GetTable().get()->catalog.GetName();
@@ -140,14 +144,34 @@ public:
 			vector<column_t> column_ids = {};
 			column_t seed_column_id = 0;
 			for (auto &col : table.GetColumns().Logical()) {
-				return_types.push_back(col.Type());
-				return_names.push_back(col.Name());
-				column_ids.push_back(seed_column_id);
-				seed_column_id += 1;
+				// the delta table has the same columns and column names as the base table, in the same order
+				// therefore, we just need to add the columns that we need
+				for (auto &proj_col : child_get->column_ids) {
+					if (col.Oid() == proj_col) {
+						return_types.push_back(col.Type());
+						return_names.push_back(col.Name());
+						column_ids.push_back(col.Oid());
+					}
+				}
+				//return_types.push_back(col.Type());
+				//return_names.push_back(col.Name());
+				//column_ids.push_back(seed_column_id);
+				//seed_column_id += 1;
 			}
 
+			// we also need to add the multiplicity column
+			// second-last element
+			return_types.push_back(LogicalType::BOOLEAN);
+			return_names.push_back("_duckdb_ivm_multiplicity");
+			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 1);
+
+			multiplicity_table_idx = child_get->table_index;
+			multiplicity_col_idx = column_ids.size() - 1;
+
 			// the new get node that reads the delta table gets a new table index
-			auto replacement_get_node = make_uniq<LogicalGet>(table_index += 1, scan_function, std::move(bind_data),
+			//auto replacement_get_node = make_uniq<LogicalGet>(table_index += 1, scan_function, std::move(bind_data),
+			//                                                  std::move(return_types), std::move(return_names));
+			auto replacement_get_node = make_uniq<LogicalGet>(child_get->table_index, scan_function, std::move(bind_data),
 			                                                  std::move(return_types), std::move(return_names));
 			replacement_get_node->column_ids = std::move(column_ids);
 			replacement_get_node->table_filters = std::move(child_get->table_filters);
@@ -187,34 +211,34 @@ public:
 
 			// the column bindings are created using the table index of the replacement get node. The column_idx are
 			// from the original get node, but can be assumed to have the same idx as the replacement get.
-			vector<unique_ptr<Expression>> select_list;
-			for (auto i = 0; i < child_get->column_ids.size(); i++) {
-				auto col = make_uniq<BoundColumnRefExpression>(
-				    child_get->names[child_get->column_ids[i]], child_get->returned_types[child_get->column_ids[i]],
-				    ColumnBinding(table_index, child_get->column_ids[i]));
-				select_list.emplace_back(std::move(col));
-			}
+			//vector<unique_ptr<Expression>> select_list;
+			//for (auto i = 0; i < child_get->column_ids.size(); i++) {
+			//	auto col = make_uniq<BoundColumnRefExpression>(
+			//	    child_get->names[child_get->column_ids[i]], child_get->returned_types[child_get->column_ids[i]],
+			//	    ColumnBinding(table_index, child_get->column_ids[i]));
+			//	select_list.emplace_back(std::move(col));
+			//}
 
 			// for the creation projection node, multiplicity table idx and column idx will be fetched from the
 			// replacement get node
-			multiplicity_col_idx = std::find(replacement_get_node->names.begin(), replacement_get_node->names.end(),
-			                                 "_duckdb_ivm_multiplicity") -
-			                       replacement_get_node->names.begin();
-			auto multiplicity_col = make_uniq<BoundColumnRefExpression>(
-			    "_duckdb_ivm_multiplicity", LogicalType::BOOLEAN, ColumnBinding(table_index, multiplicity_col_idx));
-			select_list.emplace_back(std::move(multiplicity_col));
+			//multiplicity_col_idx = std::find(replacement_get_node->names.begin(), replacement_get_node->names.end(),
+			//                                 "_duckdb_ivm_multiplicity") - replacement_get_node->names.begin();
+			//auto multiplicity_col = make_uniq<BoundColumnRefExpression>(
+			//    "_duckdb_ivm_multiplicity", LogicalType::BOOLEAN, ColumnBinding(table_index, multiplicity_col_idx));
+			//select_list.emplace_back(std::move(multiplicity_col));
 			// multiplicity column idx of the projection node (after binding) will be select_list.size() - 1
 			// because the multiplicity column was added to the projection node at the very end.
-			multiplicity_table_idx = child->GetTableIndex()[0];
-			multiplicity_col_idx = select_list.size() - 1;
+			//multiplicity_table_idx = child->GetTableIndex()[0];
+			//multiplicity_col_idx = select_list.size() - 1;
 
 			// the projection node's table_idx is the table index of the original get node that is being replaced
 			// because that idx is already being used in the logical plan as reference
-			auto projection_node = make_uniq<LogicalProjection>(child->GetTableIndex()[0], std::move(select_list));
-			projection_node->AddChild(std::move(replacement_get_node));
+			//auto projection_node = make_uniq<LogicalProjection>(child->GetTableIndex()[0], std::move(select_list));
+			//projection_node->AddChild(std::move(replacement_get_node));
 
 			plan->children.clear();
-			plan->children.emplace_back(std::move(projection_node));
+			//plan->children.emplace_back(std::move(projection_node));
+			plan->children.emplace_back(std::move(replacement_get_node));
 			break;
 		}
 		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
@@ -228,6 +252,10 @@ public:
 			printf("Aggregate index: %lu Group index: %lu\n", modified_node_logical_agg->aggregate_index,
 			       modified_node_logical_agg->group_index);
 #endif
+			//multiplicity_table_idx = dynamic_cast<BoundColumnRefExpression *>(modified_node_logical_agg->expressions[0].get())->binding.table_index;
+			//multiplicity_table_idx = modified_node_logical_agg->group_index;
+
+			multiplicity_col_idx = modified_node_logical_agg->groups.size();
 			auto mult_group_by =
 			    make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", LogicalType::BOOLEAN,
 			                                        ColumnBinding(multiplicity_table_idx, multiplicity_col_idx));
@@ -243,7 +271,7 @@ public:
 				modified_node_logical_agg->grouping_sets[0].insert(gr);
 			}
 
-			multiplicity_col_idx = modified_node_logical_agg->groups.size() - 1;
+			//multiplicity_col_idx = modified_node_logical_agg->groups.size() - 1;
 			multiplicity_table_idx = modified_node_logical_agg->group_index;
 #ifdef DEBUG
 			for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
@@ -339,7 +367,7 @@ public:
 		Connection con(*context.db);
 		con.BeginTransaction();
 		// todo maybe we want to disable more optimizers (internal_optimizer_types)
-		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter';");
+		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
 		con.Commit();
 
 		Parser parser;

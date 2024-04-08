@@ -259,10 +259,12 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			if (r2->HasError()) {
 				throw Exception(ExceptionType::PARSER, "Could not create materialized view: " + r2->GetError());
 			}
-			auto index = duckdb::CompilerExtension::ReadFile(index_file_path);
-			auto r3 = con.Query(index);
-			if (r3->HasError()) {
-				throw Exception(ExceptionType::PARSER, "Could not create index: " + r3->GetError());
+			if (ivm_type == IVMType::AGGREGATE_GROUP) {
+				auto index = duckdb::CompilerExtension::ReadFile(index_file_path);
+				auto r3 = con.Query(index);
+				if (r3->HasError()) {
+					throw Exception(ExceptionType::PARSER, "Could not create index: " + r3->GetError());
+				}
 			}
 		}
 	}

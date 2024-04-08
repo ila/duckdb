@@ -173,7 +173,7 @@ string CompileProjectionsFilters(string &view_name, const vector<string> &column
 		}
 	}
 	// set multiplicity to false
-	delete_query += "_duckdb_ivm_multiplicity = false);\n";
+	delete_query += "_duckdb_ivm_multiplicity = false);\n\n";
 	// erase the last comma and space from the column list
 	select_columns.erase(select_columns.size() - 2, 2);
 
