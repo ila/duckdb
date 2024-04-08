@@ -32,7 +32,7 @@ public:
 		optimize_function = IVMRewriteRuleFunction;
 	}
 
-	static void AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan, idx_t &table_index,
+	static void AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan,
 	                          string &view_name, string &view_catalog_name, string &view_schema_name) {
 #ifdef DEBUG
 		printf("\nAdd the insert node to the plan...\n");
@@ -44,7 +44,9 @@ public:
 		                      "delta_" + view_name, OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 		optional_ptr<TableCatalogEntry> table = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
 		// create insert node. It is new node, hence it gets a new table_idx
-		auto insert_node = make_uniq<LogicalInsert>(*table, table_index += 1);
+		// putting an arbitrary index here
+		// todo -- do we even need this insert node on top?
+		auto insert_node = make_uniq<LogicalInsert>(*table, 999);
 
 		// generate bindings for the insert node using the top node of the plan
 		Value value;
@@ -92,13 +94,13 @@ public:
 #endif
 	}
 
-	static void ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan, idx_t &table_index,
+	static void ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan,
 	                       idx_t &multiplicity_col_idx, idx_t &multiplicity_table_idx,
 	                       optional_ptr<CatalogEntry> &table_catalog_entry) {
 		if (!plan->children[0]->children.empty()) {
 			// Assume only one child per node
 			// TODO: Add support for modification of plan with multiple children
-			ModifyPlan(context, plan->children[0], table_index, multiplicity_col_idx, multiplicity_table_idx,
+			ModifyPlan(context, plan->children[0], multiplicity_col_idx, multiplicity_table_idx,
 			           table_catalog_entry);
 		}
 
@@ -136,13 +138,17 @@ public:
 				throw Exception(ExceptionType::BINDER, "Table " + delta_table + " does not exist, no deltas to compute!");
 			}
 
+			// we are replacing the GET node with a new GET node that reads the delta table
+			// this logic is a bit wonky, the plan should not be executed after these changes
+			// however, this is fed to LPTS, which is good enough to generate the query string
+
 			auto &table = table_catalog_entry->Cast<TableCatalogEntry>();
 			unique_ptr<FunctionData> bind_data;
 			auto scan_function = table.GetScanFunction(context, bind_data);
 			vector<LogicalType> return_types = {};
 			vector<string> return_names = {};
 			vector<column_t> column_ids = {};
-			column_t seed_column_id = 0;
+
 			for (auto &col : table.GetColumns().Logical()) {
 				// the delta table has the same columns and column names as the base table, in the same order
 				// therefore, we just need to add the columns that we need
@@ -153,14 +159,9 @@ public:
 						column_ids.push_back(col.Oid());
 					}
 				}
-				//return_types.push_back(col.Type());
-				//return_names.push_back(col.Name());
-				//column_ids.push_back(seed_column_id);
-				//seed_column_id += 1;
 			}
 
 			// we also need to add the multiplicity column
-			// second-last element
 			return_types.push_back(LogicalType::BOOLEAN);
 			return_names.push_back("_duckdb_ivm_multiplicity");
 			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 1);
@@ -169,75 +170,13 @@ public:
 			multiplicity_col_idx = column_ids.size() - 1;
 
 			// the new get node that reads the delta table gets a new table index
-			//auto replacement_get_node = make_uniq<LogicalGet>(table_index += 1, scan_function, std::move(bind_data),
-			//                                                  std::move(return_types), std::move(return_names));
 			auto replacement_get_node = make_uniq<LogicalGet>(child_get->table_index, scan_function, std::move(bind_data),
 			                                                  std::move(return_types), std::move(return_names));
 			replacement_get_node->column_ids = std::move(column_ids);
 			replacement_get_node->table_filters = std::move(child_get->table_filters);
 
-			// todo for monday: try to get rid of this extra projection node
-
-			/* The new get node which will read the delta table will read all columns in the delta table
-			 * The original get node will read only the columns that the query uses
-			 * So, we create a projection node to project away the extra columns.
-			 * Thus, original get node will be replaced by a replacement get + projection node
-			 * the column_ids field in the original get node contains the mapping of the logical ids that the
-			 columns have
-			 * to ids that the get is using. The names field in the orignal get contains the column names. Using a
-			 * combination of these two, we create the column mapping of the projection node.
-			 * original_get->column_ids
-			    (duckdb::vector<unsigned long long, true>) $5 = {
-			      std::__1::vector<unsigned long long, std::__1::allocator<unsigned long long> > = size=2 {
-			        [0] = 0
-			        [1] = 2
-			      }
-			    }
-			 * orignal_get->names
-			 * (duckdb::vector<std::basic_string<char, std::char_traits<char>, std::allocator<char> >, true>) $3 = {
-			    std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>
-			 >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>,
-			 std::__1::allocator<char> > > > = size=3 { [0] = "a" [1] = "b" [2] = "c"
-			    }
-			    }
-			 * original_get->projection_ids
-			    (duckdb::vector<unsigned long long, true>) $4 = {
-			      std::__1::vector<unsigned long long, std::__1::allocator<unsigned long long> > = size=2 {
-			        [0] = 0
-			        [1] = 1
-			      }
-			    }
-			*/
-
-			// the column bindings are created using the table index of the replacement get node. The column_idx are
-			// from the original get node, but can be assumed to have the same idx as the replacement get.
-			//vector<unique_ptr<Expression>> select_list;
-			//for (auto i = 0; i < child_get->column_ids.size(); i++) {
-			//	auto col = make_uniq<BoundColumnRefExpression>(
-			//	    child_get->names[child_get->column_ids[i]], child_get->returned_types[child_get->column_ids[i]],
-			//	    ColumnBinding(table_index, child_get->column_ids[i]));
-			//	select_list.emplace_back(std::move(col));
-			//}
-
-			// for the creation projection node, multiplicity table idx and column idx will be fetched from the
-			// replacement get node
-			//multiplicity_col_idx = std::find(replacement_get_node->names.begin(), replacement_get_node->names.end(),
-			//                                 "_duckdb_ivm_multiplicity") - replacement_get_node->names.begin();
-			//auto multiplicity_col = make_uniq<BoundColumnRefExpression>(
-			//    "_duckdb_ivm_multiplicity", LogicalType::BOOLEAN, ColumnBinding(table_index, multiplicity_col_idx));
-			//select_list.emplace_back(std::move(multiplicity_col));
-			// multiplicity column idx of the projection node (after binding) will be select_list.size() - 1
-			// because the multiplicity column was added to the projection node at the very end.
-			//multiplicity_table_idx = child->GetTableIndex()[0];
-			//multiplicity_col_idx = select_list.size() - 1;
-
-			// the projection node's table_idx is the table index of the original get node that is being replaced
-			// because that idx is already being used in the logical plan as reference
-			//auto projection_node = make_uniq<LogicalProjection>(child->GetTableIndex()[0], std::move(select_list));
-			//projection_node->AddChild(std::move(replacement_get_node));
 
 			plan->children.clear();
-			//plan->children.emplace_back(std::move(projection_node));
 			plan->children.emplace_back(std::move(replacement_get_node));
 			break;
 		}
@@ -252,8 +191,6 @@ public:
 			printf("Aggregate index: %lu Group index: %lu\n", modified_node_logical_agg->aggregate_index,
 			       modified_node_logical_agg->group_index);
 #endif
-			//multiplicity_table_idx = dynamic_cast<BoundColumnRefExpression *>(modified_node_logical_agg->expressions[0].get())->binding.table_index;
-			//multiplicity_table_idx = modified_node_logical_agg->group_index;
 
 			multiplicity_col_idx = modified_node_logical_agg->groups.size();
 			auto mult_group_by =
@@ -271,7 +208,6 @@ public:
 				modified_node_logical_agg->grouping_sets[0].insert(gr);
 			}
 
-			//multiplicity_col_idx = modified_node_logical_agg->groups.size() - 1;
 			multiplicity_table_idx = modified_node_logical_agg->group_index;
 #ifdef DEBUG
 			for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
@@ -293,7 +229,7 @@ public:
 			printf("Plan: %s %s\n", projection_node->ToString().c_str(), projection_node->ParamsToString().c_str());
 
 			// the table_idx used to create ColumnBinding will be that of the top node's child
-			// the column_idx used to create ColumnBinding for multiplicity column will be stored context from the child
+			// the column_idx used to create ColumnBinding for the multiplicity column will be stored context from the child
 			// node
 			auto e = make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", LogicalType::BOOLEAN,
 			                                             ColumnBinding(multiplicity_table_idx, multiplicity_col_idx));
@@ -346,8 +282,6 @@ public:
 		auto view_catalog = child_get->named_parameters["view_catalog_name"].ToString();
 		auto view_schema = child_get->named_parameters["view_schema_name"].ToString();
 
-		idx_t table_index = 2000;
-
 		// obtain view definition from catalog
 		QueryErrorContext error_context = QueryErrorContext();
 		auto internal_view_name = "_duckdb_internal_" + view + "_ivm";
@@ -384,11 +318,6 @@ public:
 		printf("Optimized plan: \n%s\n", optimized_plan->ToString().c_str());
 #endif
 
-		/*
-		string test_1;
-		LogicalPlanToString(optimized_plan, test_1);
-		std::cout << "\nOptimized plan to query string: \n" << test_1 << "\n"; */
-
 		// variable to store the column_idx for multiplicity column at each node
 		// we do this while creation / modification of the node
 		// because this information will not be available while modifying the parent node
@@ -402,18 +331,14 @@ public:
 		}
 
 		// recursively modify the optimized logical plan
-		ModifyPlan(context, optimized_plan, table_index, multiplicity_col_idx, multiplicity_table_idx,
+		ModifyPlan(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
 		           table_catalog_entry);
 		ModifyTopNode(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
-		AddInsertNode(context, optimized_plan, table_index, view, view_catalog, view_schema);
+		AddInsertNode(context, optimized_plan, view, view_catalog, view_schema);
 #ifdef DEBUG
 		std::cout << "\nFINAL PLAN:\n" << optimized_plan->ToString() << std::endl;
 #endif
 		plan = std::move(optimized_plan);
-		// auto test = LogicalPlanToString(plan);
-#ifdef DEBUG
-		//std::cout << "\nnew optimized plan to string: \n" << test << "\n";
-#endif
 		return;
 	}
 };
