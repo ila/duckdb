@@ -3,6 +3,8 @@
 //
 // #pragma once
 
+// TODO: Change insertion logic from id to parent node pointer
+
 #ifndef DUCKDB_DATA_REPRESENTATION_HPP
 #define DUCKDB_DATA_REPRESENTATION_HPP
 
@@ -110,7 +112,7 @@ public:
 class DuckASTNode {
 public:
 	shared_ptr<DuckASTBaseOperator> opr; // Operator
-	string id;
+	string name;
 	vector<shared_ptr<DuckASTNode>> children;
 	shared_ptr<DuckASTNode> parent_node;
 	DuckASTOperatorType type;
@@ -120,18 +122,19 @@ public:
 };
 class DuckAST {
 private:
-	bool insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, shared_ptr<DuckASTNode> curNode);
-	void displayTree_t(shared_ptr<DuckASTNode> node);
-	void generateString_t(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
+	void displayTree(shared_ptr<DuckASTNode> node);
+	void generateString(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
 	                      bool has_filter = false);
+	shared_ptr<DuckASTNode> last_ptr = nullptr;
 
 public:
 	DuckAST();
-	void insert(shared_ptr<DuckASTBaseOperator> &expr, string id, DuckASTOperatorType type, string parent_id);
+	void insert(shared_ptr<DuckASTBaseOperator> &expr, shared_ptr<DuckASTNode> &parent_node, string name, DuckASTOperatorType type);
 	DuckASTNode get_node(string node_id);
 	void generateString(string &plan_string);
 	static void printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix = "", bool isLast = true);
 	void printAST(shared_ptr<duckdb::DuckAST> ast);
+	shared_ptr<DuckASTNode> getLastNode();
 	shared_ptr<DuckASTNode> root;
 };
 } // namespace duckdb

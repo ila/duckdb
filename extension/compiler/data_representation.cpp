@@ -92,13 +92,13 @@ DuckASTNode::DuckASTNode() {
 DuckASTNode::DuckASTNode(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
 	this->opr = opr;
 	this->type = type;
-	this->id = opr->name;
+	this->name = opr->name;
 }
 
 void DuckASTNode::setExpression(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
 	this->opr = std::move(opr);
 	this->type = type;
-	this->id = opr->name;
+	this->name = opr->name;
 }
 
 // DuckAST
@@ -106,40 +106,29 @@ DuckAST::DuckAST() {
 	root = nullptr;
 }
 
-bool DuckAST::insert_after_root(shared_ptr<DuckASTNode> node, string parent_id, shared_ptr<DuckASTNode> curNode) {
-	if (curNode->id == parent_id) {
-		curNode->children.push_back(node);
-		return true;
-	}
-	for (auto child : curNode->children) {
-		bool result = insert_after_root(node, parent_id, child);
-		if (result)
-			return true;
-	}
-	return false;
-}
-
-void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, string id, DuckASTOperatorType type, string parent_id) {
+void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id, DuckASTOperatorType type) {
 	Printer::Print("Inserting: " + id);
 	opr->name = id;
-	if (root == nullptr) {
+	if (root == nullptr && parent_node == nullptr) {
 		root = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
 		root->type = type;
 		root->parent_node = nullptr;
 		Printer::Print("At root right now");
+		this->last_ptr = root;
 		return;
 	}
-	// todo: Add insert logic
+
 	auto node = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
-	bool result = insert_after_root(node, parent_id, root);
-	if (result) {
-		Printer::Print("Inserted Element successfully");
-	} else {
-		Printer::Print("Unable to find element");
-	}
+	parent_node->children.push_back(node);
+	this->last_ptr = node;
 }
 
-void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
+shared_ptr<DuckASTNode> DuckAST::getLastNode() {
+	return last_ptr;
+}
+
+
+void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
                                bool has_filter) {
 	if (node == nullptr)
 		return;
@@ -148,7 +137,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 	switch (node->type) {
 	case DuckASTOperatorType::PROJECTION: {
 		for (auto child : node->children) {
-			generateString_t(child, plan_string, additional_cols);
+			generateString(child, plan_string, additional_cols);
 		}
 		break;
 	}
@@ -157,7 +146,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		plan_string = exp->filter_condition + plan_string;
 		auto children = node->children;
 		for (auto child : node->children) {
-			generateString_t(child, plan_string, additional_cols, true);
+			generateString(child, plan_string, additional_cols, true);
 		}
 		break;
 	}
@@ -176,7 +165,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 		}
 		plan_string = " ORDER BY " + order_string + plan_string;
 		for (auto child : node->children) {
-			generateString_t(child, plan_string, additional_cols, true);
+			generateString(child, plan_string, additional_cols, true);
 		}
 		break;
 	}
@@ -202,7 +191,7 @@ void DuckAST::generateString_t(shared_ptr<DuckASTNode> node, string &plan_string
 			additional_cols.push_back(ext_col);
 		}
 		for (auto child : node->children) {
-			generateString_t(child, plan_string, additional_cols);
+			generateString(child, plan_string, additional_cols);
 		}
 		break;
 	}
@@ -252,7 +241,7 @@ void DuckAST::generateString(string &plan_string) {
 	if (root == nullptr)
 		return;
 	vector<string> addcols;
-	this->generateString_t(root, plan_string, addcols);
+	this->generateString(root, plan_string, addcols);
 	plan_string += ";";
 }
 
@@ -261,9 +250,9 @@ void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool
 	std::cout << prefix;
 	std::cout << (isLast ? "└── " : "├── ");
 	if (node->opr != nullptr) {
-		std::cout << "Node: " << node->id << ", Type: " << node->type << ", Operator: " << node->opr->name << std::endl;
+		std::cout << "Node: " << node->name << ", Type: " << node->type << ", Operator: " << node->opr->name << std::endl;
 	} else {
-		std::cout << "Node ID: " << node->id << ", Type: " << node->type << std::endl;
+		std::cout << "Node ID: " << node->name << ", Type: " << node->type << std::endl;
 	}
 
 	// Recursively print children

@@ -29,7 +29,7 @@
 
 namespace duckdb {
 string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
-void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string, string cur_parent,
+void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          unique_ptr<DuckAST> &ql_tree, map<string, string> &alias_map);
 } // namespace duckdb
 
