@@ -98,50 +98,6 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	con.Rollback();
 
-	// projection: expression binding 2, 1; 3, 0; 3, 1; 2, 0; table index 1
-	// aggregate: indices 2, 3, 4; groups duckdb_ivm_mul (0.1), product_name (0.0)
-	// filter nothing relevant
-	// scan: table index 0, column ids 1, 4, 2
-
-	// new proj: 2.1 and 2.0 swapped
-	// aggregate: also swapped
-
-	/*
-	 *
-	 * ┌───────────────────────────┐
-│        INSERT #2001       │
-└─────────────┬─────────────┘
-┌─────────────┴─────────────┐
-│       PROJECTION #1       │
-│   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   │
-│           #[2.0]          │
-│           #[3.0]          │
-│           #[3.1]          │
-│           #[2.1]          │
-└─────────────┬─────────────┘
-┌─────────────┴─────────────┐
-│    AGGREGATE #2, #3, #4   │
-│   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   │
-│           #[0.0]          │
-│           #[0.2]          │
-│        sum(#[0.1])        │
-│        count_star()       │
-└─────────────┬─────────────┘
-┌─────────────┴─────────────┐
-│           FILTER          │
-│   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   │
-│   ((#[0.0] = CAST('a' AS  │
-│ VARCHAR)) OR (#[0.0] ...  │
-│        AS VARCHAR)))      │
-└─────────────┬─────────────┘
-┌─────────────┴─────────────┐
-│        SEQ_SCAN #0        │
-│   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   │
-│        delta_sales        │
-└───────────────────────────┘
-	 */
-
-
 	ivm_query += LogicalPlanToString(plan);
 
 	// string select_query = "SELECT * FROM delta_" + view_name + ";";

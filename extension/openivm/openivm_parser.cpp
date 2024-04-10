@@ -28,6 +28,9 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// this only works with CREATE MATERIALIZED VIEW expressions
 
+	// todo - test with .open rather than db in the CLI
+	// test with new lines? (could also be already fixed in newer versions)
+
 	// todo: find a workaround for the newly created MV that doesn't show up in the shell?
 
 	auto query_lower = CompilerExtension::SQLToLowercase(StringUtil::Replace(query, ";", ""));

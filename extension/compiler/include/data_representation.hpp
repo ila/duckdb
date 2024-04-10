@@ -3,8 +3,6 @@
 //
 // #pragma once
 
-// TODO: Change insertion logic from id to parent node pointer
-
 #ifndef DUCKDB_DATA_REPRESENTATION_HPP
 #define DUCKDB_DATA_REPRESENTATION_HPP
 
@@ -99,7 +97,7 @@ public:
 	// Stores the name of the table on which SEQ_SCAN is being carried out
 	std::string table_name;
 	// Maps column_name to alias; if no alias leaves empty
-	unordered_map<string, string> alias_map;
+	std::vector<std::pair<string, string>> column_aliases;
 	// If all columns are selected from the table
 	bool all_columns;
 	DuckASTGet();
@@ -130,9 +128,8 @@ private:
 public:
 	DuckAST();
 	void insert(shared_ptr<DuckASTBaseOperator> &expr, shared_ptr<DuckASTNode> &parent_node, string name, DuckASTOperatorType type);
-	DuckASTNode get_node(string node_id);
-	void generateString(string &plan_string);
 	static void printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix = "", bool isLast = true);
+	void generateString(string &plan_string);
 	void printAST(shared_ptr<duckdb::DuckAST> ast);
 	shared_ptr<DuckASTNode> getLastNode();
 	shared_ptr<DuckASTNode> root;

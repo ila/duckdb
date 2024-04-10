@@ -129,7 +129,7 @@ shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 
 
 void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
-                               bool has_filter) {
+                             bool has_filter) {
 	if (node == nullptr)
 		return;
 
@@ -206,28 +206,40 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 			plan_string = "select * from " + table_name + " " + plan_string;
 			return;
 		}
+
+		/*
 		for (auto col : exp->alias_map) {
 			if (col.second == "") {
 				columns.push_back(col.first);
 			} else {
 				columns.push_back(col.first + " as " + col.second);
 			}
+		}*/
+
+		for (auto &pair : exp->column_aliases) {
+			if (pair.first == pair.second || pair.second == "duckdb_placeholder_internal") {
+				//select_string = select_string + pair.first + ", ";
+				columns.push_back(pair.first);
+			} else {
+				//select_string = select_string + pair.second + " as " + pair.first + ", ";
+				columns.push_back(pair.second + " as " + pair.first);
+			}
 		}
+
 		string cur_string = "select ";
 		for (size_t i = 0; i < columns.size(); i++) {
 			cur_string += columns[i];
 			if (i != columns.size() - 1) {
 				cur_string += ", ";
-			} else if (additional_cols.size() != 0) {
-				cur_string += ", ";
 			}
 		}
+		/*
 		for (size_t i = 0; i < additional_cols.size(); i++) {
 			cur_string += additional_cols[i];
 			if (i != additional_cols.size() - 1) {
 				cur_string += ", ";
 			}
-		}
+		} */
 		cur_string += " from " + table_name;
 		plan_string = cur_string + plan_string;
 
@@ -270,8 +282,5 @@ void DuckAST::printAST(shared_ptr<duckdb::DuckAST> ast) {
 		std::cout << "Empty AST" << std::endl;
 	}
 }
-
-// DuckASTNode DuckAST::get_node(string node_id, shared_ptr<DuckASTNode> node=nullptr) {
-//    }
 
 } // namespace duckdb
