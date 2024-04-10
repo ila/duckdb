@@ -141,6 +141,9 @@ public:
 			// we are replacing the GET node with a new GET node that reads the delta table
 			// this logic is a bit wonky, the plan should not be executed after these changes
 			// however, this is fed to LPTS, which is good enough to generate the query string
+			// the previous implementation added a projection on top of the new scan, and scanned all the columns
+			// however, I find the code a bit complicated and harder to turn into a string
+			// so, now we go with this solution and pray it won't break
 
 			auto &table = table_catalog_entry->Cast<TableCatalogEntry>();
 			unique_ptr<FunctionData> bind_data;

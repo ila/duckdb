@@ -133,7 +133,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			    column_names[column_ids[i]];
 		}
 		unordered_map<string, string> alias_map;
-		/* for (auto curmp : cur_col_map) {
+		for (auto curmp : cur_col_map) {
 			auto alias = column_map[curmp.first];
 			if (alias == curmp.second) {
 				alias_map[curmp.second] = "";
@@ -141,10 +141,11 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 				alias_map[curmp.second] = alias;
 				ql_get_exp->all_columns = false;
 			}
-		} */
+		}
+		/*
 		for (auto &col : column_map) {
 			alias_map.insert({col.second, ""});
-		}
+		}*/
 		ql_get_exp->alias_map = alias_map;
 		if (ql_get_exp->all_columns && alias_map.size() != column_names.size()) {
 			ql_get_exp->all_columns = false;
