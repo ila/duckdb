@@ -73,6 +73,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			}
 		}
 
+		// cn inverted here
+
 		return LogicalPlanToString(plan->children[0], plan_string, ql_tree, column_names, column_aliases);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
@@ -154,7 +156,6 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		}
 
 		// now we iterate bindings to see if any alias has been replaced
-		// todo -- debug this (ivm)
 		for (auto &pair : aggregate_aliases) {
 			auto it = column_names.find(pair.first);
 			if (it != column_names.end()) {
@@ -194,8 +195,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			default: {
 				throw NotImplementedException("We only support ASC and DESC!");
 			}
-				ql_order_by->add_order_column(name, order_type); // fixme
 			}
+			ql_order_by->add_order_column(name, order_type);
 			auto opr = (shared_ptr<DuckASTBaseOperator>)(ql_order_by);
 			auto node_id = node->GetName() + "_AST";
 			opr->name = node_id;
@@ -217,6 +218,10 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto scan_column_names = node->GetTable()->GetColumns().GetColumnNames();
 		auto current_table_index = node->GetTableIndex();
 		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
+
+		// column ids:
+		// 0 1 2 3 4 (wrong)
+		// 1 0 2 3 4 (correct)
 
 		for (int i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];

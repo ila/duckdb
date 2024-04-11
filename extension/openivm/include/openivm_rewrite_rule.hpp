@@ -80,7 +80,15 @@ public:
 		// the table_idx used to create ColumnBinding will be that of the top node's child
 		// the column_idx used to create ColumnBinding for multiplicity column will be stored along with the context
 		// from the child node
-		multiplicity_table_idx = dynamic_cast<BoundColumnRefExpression *>(plan->expressions[0].get())->binding.table_index;
+		if (plan->children[0]->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
+			// if we have an aggregate, we can't extract the column index from the expression
+			// the expression might be an aggregate and the multiplicity column will be a grouping column
+			// example: with queries like "SELECT COUNT(*) FROM table", the binding will be 3, but we want 2
+			multiplicity_table_idx = dynamic_cast<LogicalAggregate *>(plan->children[0].get())->group_index;
+		} else {
+			// this might break with joins
+			multiplicity_table_idx = dynamic_cast<BoundColumnRefExpression *>(plan->expressions[0].get())->binding.table_index;
+		}
 		//multiplicity_col_idx = plan->GetColumnBindings().size();
 		auto e = make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", LogicalType::BOOLEAN,
 		                                             ColumnBinding(multiplicity_table_idx, multiplicity_col_idx));
@@ -152,14 +160,17 @@ public:
 			vector<string> return_names = {};
 			vector<column_t> column_ids = {};
 
-			for (auto &col : table.GetColumns().Logical()) {
-				// the delta table has the same columns and column names as the base table, in the same order
-				// therefore, we just need to add the columns that we need
-				for (auto &proj_col : child_get->column_ids) {
-					if (col.Oid() == proj_col) {
+			// the delta table has the same columns and column names as the base table, in the same order
+			// therefore, we just need to add the columns that we need
+			// this is ugly, but needs to stay like this
+			// sometimes DuckDB likes to randomly invert columns, so we need to check all of them
+			// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
+			for (auto &id : child_get->column_ids) {
+				column_ids.push_back(id);
+				for (auto &col : table.GetColumns().Logical()) {
+					if (col.Oid() == id) {
 						return_types.push_back(col.Type());
 						return_names.push_back(col.Name());
-						column_ids.push_back(col.Oid());
 					}
 				}
 			}

@@ -233,13 +233,7 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 				cur_string += ", ";
 			}
 		}
-		/*
-		for (size_t i = 0; i < additional_cols.size(); i++) {
-			cur_string += additional_cols[i];
-			if (i != additional_cols.size() - 1) {
-				cur_string += ", ";
-			}
-		} */
+
 		cur_string += " from " + table_name;
 		plan_string = cur_string + plan_string;
 
