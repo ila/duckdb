@@ -37,6 +37,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 						 unique_ptr<DuckAST> &ql_tree, std::unordered_map<string, string> column_names,
                          std::vector<std::pair<string, string>> column_aliases) {
 
+	// todo refactor the AST (unnecessary fields) + fix aggregations
+
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
@@ -72,8 +74,6 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 				}
 			}
 		}
-
-		// cn inverted here
 
 		return LogicalPlanToString(plan->children[0], plan_string, ql_tree, column_names, column_aliases);
 	}
@@ -120,6 +120,9 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			                                   std::to_string(column->binding.column_index),
 			                               column->alias);
 		}
+		// "sum(my_col)"
+		// my_col
+
 		for (size_t i = 0; i < node->expressions.size(); i++) {
 			// todo - rewrite this such that 1) all aggregates are supported, 2) the aggregate function is
 			// saved in the AST
@@ -166,7 +169,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 					}
 				}
 			} else {
-				// todo error
+				throw InternalException("Could not find the column in the column names map!");
 			}
 		}
 		auto node_id = node->GetName() + "_AST";
@@ -219,10 +222,6 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto current_table_index = node->GetTableIndex();
 		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
 
-		// column ids:
-		// 0 1 2 3 4 (wrong)
-		// 1 0 2 3 4 (correct)
-
 		for (int i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];
 			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
@@ -264,9 +263,17 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
 		// we need to handle this case to support IVM properly
-		// the plan to be turned into string start with an INSERT
-		// which can be ignored when transforming it back to string
-		// when LPTS can handle insertions, we can create a new function to remove/ignore the top insert node
+		// the plan to be turned into string starts with an INSERT
+
+		auto node = dynamic_cast<LogicalInsert *>(plan.get());
+		auto ql_ins_exp = new DuckASTInsert();
+		ql_ins_exp->table_name = node->table.name;
+		ql_ins_exp->name = "INSERT_AST"; // the name of the node is private
+		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
+
+		auto opr = (shared_ptr<DuckASTBaseOperator>)(ql_ins_exp);
+		auto node_id = "INSERT_AST"; // todo remove the id
+		ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::INSERT);
 		return LogicalPlanToString(plan->children[0], plan_string, ql_tree, column_names, column_aliases);
 	}
 	default: {

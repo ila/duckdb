@@ -345,6 +345,12 @@ public:
 		}
 
 		// recursively modify the optimized logical plan
+
+		// IVM does the following steps:
+		// 1) Replace the GET (scan) node with a new GET node that reads the delta table
+		// 2) Add the multiplicity column all other nodes (aggregates etc.)
+		// 3) Add the multiplicity column to the top projection node
+		// 4) Add the insert node to the plan (to insert the query result in the delta table)
 		ModifyPlan(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
 		           table_catalog_entry);
 		ModifyTopNode(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);

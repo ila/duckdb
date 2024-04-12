@@ -32,7 +32,7 @@
 namespace duckdb {
 
 // DuckASTBaseOperator Types
-enum DuckASTOperatorType { NONE, PROJECTION, GET, FILTER, AGGREGATE, ORDER_BY };
+enum DuckASTOperatorType { NONE, PROJECTION, GET, FILTER, AGGREGATE, ORDER_BY, INSERT };
 
 // Node Type Classes
 class DuckASTBaseOperator {
@@ -107,6 +107,16 @@ public:
 	void set_table_name(string table_name);
 };
 
+class DuckASTInsert : public DuckASTBaseOperator {
+public:
+	// Insert nodes only have the table name
+	std::string table_name;
+	DuckASTInsert();
+	DuckASTInsert(string t);
+	~DuckASTInsert() override;
+	void set_table_name(string t);
+};
+
 class DuckASTNode {
 public:
 	shared_ptr<DuckASTBaseOperator> opr; // Operator
@@ -121,7 +131,7 @@ public:
 class DuckAST {
 private:
 	void displayTree(shared_ptr<DuckASTNode> node);
-	void generateString(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
+	void generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
 	                      bool has_filter = false);
 	shared_ptr<DuckASTNode> last_ptr = nullptr;
 

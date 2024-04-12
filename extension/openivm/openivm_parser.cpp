@@ -28,6 +28,8 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// this only works with CREATE MATERIALIZED VIEW expressions
 
+	// todo - make sure that the delta tables are in the same schema and catalog
+
 	// todo - test with .open rather than db in the CLI
 	// test with new lines? (could also be already fixed in newer versions)
 
@@ -35,6 +37,9 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 
 	auto query_lower = CompilerExtension::SQLToLowercase(StringUtil::Replace(query, ";", ""));
 	StringUtil::Trim(query_lower);
+
+	// remove new lines (\n)
+	query_lower.erase(remove(query_lower.begin(), query_lower.end(), '\n'), query_lower.end());
 
 	// each instruction set gets saved to a file, for portability
 	// the SQL-compliant query to be fed to the parser
@@ -48,6 +53,7 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 
 	// we do not support aggregate functions without aliases
 	// for portability reasons, so we create internal aliases
+	// todo this should work with the duckAST, double check
 	CompilerExtension::ReplaceCount(query_lower);
 	CompilerExtension::ReplaceSum(query_lower);
 
@@ -59,8 +65,7 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 
 ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInfo *info, ClientContext &context,
                                                               unique_ptr<ParserExtensionParseData> parse_data) {
-	// TODO for S.
-	// after the parser, the query string goes here
+	// after the parser, the query string reaches this point
 
 	auto &ivm_parse_data = dynamic_cast<IVMParseData &>(*parse_data);
 	auto statement = dynamic_cast<SQLStatement *>(ivm_parse_data.statement.get());
@@ -185,6 +190,8 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// con.Query(test);
 		// auto res = con.Query("insert into test values('" + x + "');\n");
 
+		// todo - just remove this. change the table definition not to store the plan
+
 		auto test = "abc";
 		auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
 		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
@@ -250,23 +257,32 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// we execute the file to apply the changes
 		// .read (CLI command) doesn't work with the API, so we read the file first
 		// only executing this if the database is not in memory
+
 		if (!context.db->config.options.database_path.empty()) {
 			auto system_queries = duckdb::CompilerExtension::ReadFile(system_tables_path);
-			auto r1 = con.Query(system_queries);
-			if (r1->HasError()) {
-				throw Exception(ExceptionType::PARSER, "Could not create system tables: " + r1->GetError());
+			for (auto &query : StringUtil::Split(system_queries, '\n')) {
+				auto r = con.Query(query);
+				if (r->HasError()) {
+					throw Exception(ExceptionType::PARSER, "Could not create system tables: " + r->GetError());
+				}
 			}
+
 			auto queries = duckdb::CompilerExtension::ReadFile(compiled_file_path);
-			// bug -- the exception is not thrown if the MV already exists
-			auto r2 = con.Query(queries);
-			if (r2->HasError()) {
-				throw Exception(ExceptionType::PARSER, "Could not create materialized view: " + r2->GetError());
+
+			// we split the queries one by one separated by newline
+			// we need to do this because DuckDB won't throw errors with multiple queries in one string
+			for (auto &query : StringUtil::Split(queries, '\n')) {
+				auto r = con.Query(query);
+				if (r->HasError()) {
+					throw Exception(ExceptionType::PARSER, "Could not create materialized view: " + r->GetError());
+				}
 			}
+
 			if (ivm_type == IVMType::AGGREGATE_GROUP) {
 				auto index = duckdb::CompilerExtension::ReadFile(index_file_path);
-				auto r3 = con.Query(index);
-				if (r3->HasError()) {
-					throw Exception(ExceptionType::PARSER, "Could not create index: " + r3->GetError());
+				auto r = con.Query(index);
+				if (r->HasError()) {
+					throw Exception(ExceptionType::PARSER, "Could not create index: " + r->GetError());
 				}
 			}
 		}

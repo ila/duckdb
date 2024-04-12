@@ -56,6 +56,7 @@ public:
 		auto root = plan.get();
 		if (root->GetName().substr(0, 6) != "INSERT" && root->GetName().substr(0, 6) != "DELETE" &&
 		    root->GetName().substr(0, 6) != "UPDATE") {
+			// todo maybe this can be more elegant
 			return;
 		}
 
@@ -66,60 +67,78 @@ public:
 		switch (root->type) {
 		case LogicalOperatorType::LOGICAL_INSERT: {
 
-			// commented because the appender does not work
-			// to do with multi-plan transactions
-
-			// if we copy the plan, we cannot execute it within the same transaction
-			// therefore, we call the appender on the rows of the projection
-			// however, we need to check whether the insertions are coming to the right table
-			// otherwise the rule will be triggered twice
-
-			/*
 			auto insert_node = dynamic_cast<LogicalInsert *>(root);
 			// we need to check whether the table isn't the delta table already
 			auto insert_table_name = insert_node->table.name;
-			if (insert_table_name.substr(0, 6) == "delta_") {
-			    // todo - does this ever happen? throw an exception?
-			    return;
+
+			// we also need to check whether the table is not a delta view
+			// todo
+
+			if (insert_table_name.substr(0, 6) == "delta_" || insert_table_name.empty()) {
+				// this happens when we insert into the delta table (we don't want to insert twice)
+				return;
 			} else {
-			    auto insert_table = "delta_" + insert_node->table.name;
-			    QueryErrorContext error_context = QueryErrorContext();
-			    auto delta_table_catalog_entry = Catalog::GetEntry(
-			        context, CatalogType::TABLE_ENTRY, insert_node->table.catalog.GetName(),
-			        insert_node->table.schema.name, insert_table, OnEntryNotFound::RETURN_NULL, error_context);
+				auto insert_table = "delta_" + insert_node->table.name;
+				QueryErrorContext error_context = QueryErrorContext();
+				auto delta_table_catalog_entry = Catalog::GetEntry(
+				    context, CatalogType::TABLE_ENTRY, insert_node->table.catalog.GetName(),
+				    insert_node->table.schema.name, insert_table, OnEntryNotFound::RETURN_NULL, error_context);
 
-			    if (delta_table_catalog_entry) { // if it exists, we can append
-			        // check if already done
-			        if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed) {
-			            auto delta_table_entry = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
+				if (delta_table_catalog_entry) { // if it exists, we can append
+					                             // check if already done
+					std::cout << plan->ToString();
+					// todo -- check why we need a flag (I forgot)
+					// todo monday -- this is called also when we are reinserting stuff in the delta view
+					if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed) {
 
-			            Connection con(*context.db);
-			            InternalAppender appender(context, *delta_table_entry);
+						// we need to reach the bottom of the tree to get the values to insert
+						// insertion trees consist of: INSERT, PROJECTION, EXPRESSION_GET and a DUMMY_SCAN
+						// we do not consider more complicated queries for the time being
 
-			            // we need to get the projection node, since that contains the rows we want to append
-			            auto projection_node = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
-			            // this will break if there are no columns (unlikely but still?) // todo fixme?
-			            auto get_node = dynamic_cast<LogicalExpressionGet *>(projection_node->children[0].get());
-			            // expressions in the logical expression get are the rows of the insert
-			            // we need to add the multiplicity column to the expression get
-			            for (auto &row : get_node->expressions) {
-			                appender.BeginRow();
-			                // we can't directly append the row - need to iterate the fields
-			                for (auto &col : row) {
-			                    appender.Append(dynamic_cast<BoundConstantExpression *>(col.get())->value);
-			                }
-			                appender.Append(true); // insertion (multiplicity column)
-			                appender.EndRow();
-			            }
+						auto insert_query = "insert into delta_" + insert_node->table.name + " values ";
 
-			            appender.Close();
-			            dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = true;
-			        } else {
-			            // we skip the second insertion and reset the flag
-			            dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = false;
-			        }
-			        return;
-			    }
+						// todo -- handle the case of COPY, bulk insertion etc
+						auto projection = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
+						auto expression_get = dynamic_cast<LogicalExpressionGet *>(projection->children[0].get());
+						for (auto &expression : expression_get->expressions) {
+							// each expression corresponds to a row
+							// we build the query appending the values between parentheses
+							// we need to check the type of the expression too (for VARCHAR fields)
+							string values = "(";
+							for (auto &value : expression) {
+								if (value->type == ExpressionType::VALUE_CONSTANT) {
+									auto constant = dynamic_cast<BoundConstantExpression *>(value.get());
+									if (constant->value.type() == LogicalType::VARCHAR || constant->value.type() == LogicalType::DATE ||
+									    constant->value.type() == LogicalType::TIMESTAMP || constant->value.type() == LogicalType::TIME) {
+										values += "'" + constant->value.ToString() + "',";
+									} else {
+										values += constant->value.ToString() + ",";
+									}
+								} else {
+									throw NotImplementedException("Only constant values are supported for now");
+								}
+							}
+							// add "true" as multiplicity (we are performing an insertion)
+							values += "true),";
+							insert_query += values;
+						}
+
+						// remove the last comma
+						insert_query.pop_back();
+
+						Connection con(*context.db);
+						con.SetAutoCommit(false);
+						// todo exception handling
+						auto r = con.Query(insert_query);
+						con.Commit();
+
+						dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = true;
+					} else {
+						// we skip the second insertion and reset the flag
+						dynamic_cast<IVMInsertOptimizerInfo *>(info)->insertion_performed = false;
+					}
+					return;
+				}
 			}
 		}
 		case LogicalOperatorType::LOGICAL_DELETE: {

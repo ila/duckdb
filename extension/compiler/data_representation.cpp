@@ -83,6 +83,19 @@ void DuckASTGet::set_table_name(string table_name) {
 DuckASTGet::~DuckASTGet() {
 }
 
+DuckASTInsert::DuckASTInsert() {
+}
+
+DuckASTInsert::~DuckASTInsert() {
+}
+
+void DuckASTInsert::set_table_name(string t) {
+	this->table_name = t;
+}
+DuckASTInsert::DuckASTInsert(string t) {
+	this->table_name = t;
+}
+
 // DuckASTNode
 DuckASTNode::DuckASTNode() {
 	this->opr = nullptr;
@@ -128,16 +141,25 @@ shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 }
 
 
-void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, vector<string> &additional_cols,
+void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
                              bool has_filter) {
 	if (node == nullptr)
 		return;
+
+	// insert into my_table values(1), (2), (3);
+	// select my_column from my_table where ...
+	// insert into other_table select my_column from my_table where ...
+
+	// create table as ...
+	// with my_table as (select my_column from my_table where ...)
+	// delete from my_table where ...
+
 
 	// Append to plan_string according to node type
 	switch (node->type) {
 	case DuckASTOperatorType::PROJECTION: {
 		for (auto child : node->children) {
-			generateString(child, plan_string, additional_cols);
+			generateString(child, prefix_string, plan_string);
 		}
 		break;
 	}
@@ -146,7 +168,7 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 		plan_string = exp->filter_condition + plan_string;
 		auto children = node->children;
 		for (auto child : node->children) {
-			generateString(child, plan_string, additional_cols, true);
+			generateString(child, prefix_string, plan_string, true);
 		}
 		break;
 	}
@@ -163,9 +185,9 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 				order_string += ", ";
 			}
 		}
-		plan_string = " ORDER BY " + order_string + plan_string;
+		plan_string = " order by " + order_string + plan_string;
 		for (auto child : node->children) {
-			generateString(child, plan_string, additional_cols, true);
+			generateString(child, prefix_string, plan_string, true);
 		}
 		break;
 	}
@@ -187,11 +209,8 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 			}
 			plan_string = " group by " + grp_string + plan_string;
 		}
-		for (auto ext_col : exp->aggregate_function) {
-			additional_cols.push_back(ext_col);
-		}
 		for (auto child : node->children) {
-			generateString(child, plan_string, additional_cols);
+			generateString(child, prefix_string, plan_string);
 		}
 		break;
 	}
@@ -207,21 +226,12 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 			return;
 		}
 
-		/*
-		for (auto col : exp->alias_map) {
-			if (col.second == "") {
-				columns.push_back(col.first);
-			} else {
-				columns.push_back(col.first + " as " + col.second);
-			}
-		}*/
-
 		for (auto &pair : exp->column_aliases) {
 			if (pair.first == pair.second || pair.second == "duckdb_placeholder_internal") {
-				//select_string = select_string + pair.first + ", ";
+				// select_string = select_string + pair.first + ", ";
 				columns.push_back(pair.first);
 			} else {
-				//select_string = select_string + pair.second + " as " + pair.first + ", ";
+				// select_string = select_string + pair.second + " as " + pair.first + ", ";
 				columns.push_back(pair.second + " as " + pair.first);
 			}
 		}
@@ -235,10 +245,18 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 		}
 
 		cur_string += " from " + table_name;
-		plan_string = cur_string + plan_string;
+		plan_string = prefix_string + cur_string + plan_string;
 
 		// Assuming that this is the bottom of the tree
 		return;
+	}
+	case DuckASTOperatorType::INSERT: {
+		auto exp = dynamic_cast<DuckASTInsert *>(node->opr.get());
+		prefix_string = "insert into " + exp->table_name + " ";
+		for (auto child : node->children) {
+			generateString(child, prefix_string, plan_string);
+		}
+		break;
 	}
 	}
 }
@@ -246,8 +264,8 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &plan_string, 
 void DuckAST::generateString(string &plan_string) {
 	if (root == nullptr)
 		return;
-	vector<string> addcols;
-	this->generateString(root, plan_string, addcols);
+	string prefix_string;
+	this->generateString(root, prefix_string, plan_string);
 	plan_string += ";";
 }
 
