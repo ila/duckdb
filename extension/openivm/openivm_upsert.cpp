@@ -63,22 +63,38 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	string upsert_query;
 
 	switch (view_query_type) {
-	case IVMType::AGGREGATE_GROUP: {
-		upsert_query = CompileAggregateGroups(view_name, index_delta_view_catalog_entry, column_names);
-		break;
-	}
+		case IVMType::AGGREGATE_GROUP: {
+			upsert_query = CompileAggregateGroups(view_name, index_delta_view_catalog_entry, column_names);
+			break;
+		}
 
-	case IVMType::SIMPLE_FILTER:
-	case IVMType::SIMPLE_PROJECTION: {
-		upsert_query = CompileProjectionsFilters(view_name, column_names);
-		break;
-	}
+		case IVMType::SIMPLE_FILTER:
+		case IVMType::SIMPLE_PROJECTION: {
+			upsert_query = CompileProjectionsFilters(view_name, column_names);
+			break;
+		}
 
-	case IVMType::SIMPLE_AGGREGATE: {
-		upsert_query = CompileSimpleAggregates(view_name, column_names);
-		break;
-	}
-		// todo joins
+		case IVMType::SIMPLE_AGGREGATE: {
+			upsert_query = CompileSimpleAggregates(view_name, column_names);
+			break;
+		}
+		case IVMType::SIMPLE_JOIN: {
+			/* TODO: Implement
+			 *  Needed:
+			 *  - two tables (which are both part of the IVM)
+			 *  - their join condition (i.e. the columns which are joined)
+			 */
+		    break;
+		}
+	    case IVMType::AGGREGATE_JOIN: {
+			/* TODO: Implement
+			 *  Needed:
+			 *  - two tables (which are both part of the IVM)
+			 *  - their join condition (i.e. the columns which are joined)
+			 *  - the aggregate (and whether it uses data from either or both tables).
+			 */
+		    break;
+	    }
 	}
 	// DoIVM is a table function (root of the tree)
 	string ivm_query;

@@ -107,6 +107,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		bool found_filter = false;
 		bool found_aggregation = false;
 		bool found_projection = false;
+		bool found_join = false;  // For now, check if LOGICAL_COMPARISON_JOIN exists.
 		vector<string> aggregate_columns;
 
 		while (!node_stack.empty()) { // depth-first search
@@ -131,6 +132,11 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 				found_projection = true;
 			}
 
+			// Try to find join in tree.
+			if (current->type == LogicalOperatorType::LOGICAL_COMPARISON_JOIN) {
+				found_join = true;
+			}
+
 			if (!current->children.empty()) {
 				// push children onto the stack in reverse order to process them in a depth-first manner
 				for (auto it = current->children.rbegin(); it != current->children.rend(); ++it) {
@@ -139,15 +145,23 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			}
 		}
 
-		// TODO for S.
-		// put joins here
-		// implement ivm_type (leave it for now)
-
-		// test this code (start with simple joins)
-
 		IVMType ivm_type;
 
-		if (found_aggregation && !aggregate_columns.empty()) {
+		// A bit of a weird control flow, but this is the easiest way to distinguish joins from non-joins.
+		// FIXME: Test code!
+		if (found_join) {
+			if (found_aggregation) {
+				// select stuff, COUNT(*) FROM t1, t2 WHERE t1.x = t2.x GROUP BY stuff;
+				// aggregate, so needs UPSERT.
+				ivm_type = IVMType::AGGREGATE_JOIN;
+			}
+			else {
+				// select stuff FROM t1, t2 WHERE t1.x = t2.x GROUP BY stuff;
+				// No aggregate, so needs INSERT + DELETE.
+				ivm_type = IVMType::SIMPLE_JOIN;
+			}
+		}
+		else if (found_aggregation && !aggregate_columns.empty()) {
 			// select stuff, COUNT(*) FROM table [WHERE condition] GROUP BY stuff;
 			ivm_type = IVMType::AGGREGATE_GROUP;
 		} else if (found_aggregation && aggregate_columns.empty()) {
