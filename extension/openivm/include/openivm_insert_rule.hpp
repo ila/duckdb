@@ -33,7 +33,7 @@ class IVMInsertRule : public OptimizerExtension {
 public:
 	IVMInsertRule() {
 		optimize_function = IVMInsertRuleFunction;
-		optimizer_info = make_shared<IVMInsertOptimizerInfo>(false);
+		optimizer_info = make_shared_ptr<IVMInsertOptimizerInfo>(false);
 	}
 
 	struct IVMInsertOptimizerInfo : OptimizerExtensionInfo {
@@ -149,6 +149,7 @@ public:
 				}
 			}
 		}
+			break;
 		case LogicalOperatorType::LOGICAL_DELETE: {
 			// delete plans consists in delete + filter + scan
 			auto delete_node = dynamic_cast<LogicalDelete *>(root);
@@ -196,6 +197,7 @@ public:
 				return;
 			}
 		}
+			break;
 
 		case LogicalOperatorType::LOGICAL_UPDATE: {
 			// updates consist in update + projection (+ filter) + scan
