@@ -34,7 +34,8 @@ SELECT * FROM product_sales; -- to check the view content
 Now we assume that changes are to be stored in a delta table, in our case `delta_sales`.
 Insertion example (with an additional boolean for insertions/deletions, assuming only insertions):
 ```SQL
-INSERT INTO delta_sales VALUES (6, 'a', 90, '2023-01-21', true), (7, 'b', 10, '2023-01-25', true), (8, 'a', 20, '2023-01-26', true), (9, 'c', 45, '2023-01-28', true);
+INSERT INTO sales VALUES (7, 'a', 90, '2023-01-21'), (8, 'b', 10, '2023-01-25'), (9, 'a', 20, '2023-01-26'), (10, 'c', 45, '2023-01-28');
+
 ```
 Test with deletions:
 ```SQL
