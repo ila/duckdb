@@ -1,6 +1,6 @@
 #include "include/logical_plan_to_string.hpp"
 
-
+#include <duckdb/planner/operator/logical_any_join.hpp>
 
 namespace duckdb {
 
@@ -40,6 +40,13 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	// todo refactor the AST (unnecessary fields) + fix aggregations
 
 	switch (plan->type) {
+	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT: {
+		auto node = dynamic_cast<LogicalUnconditionalJoin *>(plan.get());
+
+		LogicalPlanToString(plan->children[0], plan_string, ql_tree, column_names, column_aliases);
+		return LogicalPlanToString(plan->children[1], plan_string, ql_tree, column_names, column_aliases);
+		break;
+	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
 		auto ql_proj_exp = new DuckASTProjection();
@@ -79,18 +86,21 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
+		// Extracting the condition in the filter
 		auto condition = node->ParamsToString();
 		auto ql_filter_exp = new DuckASTFilter(condition);
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
 		auto opr = shared_ptr<DuckASTBaseOperator>(ql_filter_exp);
 		auto node_id = node->GetName() + "_AST";
 		ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::FILTER);
+		// We just append the filter operator to the ql tree
 		return LogicalPlanToString(plan->children[0], plan_string, ql_tree, column_names, column_aliases);
 	}
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		auto node = dynamic_cast<LogicalAggregate *>(plan.get());
-		auto par = node->ParamsToString();
-		auto names = node->GetName();
+		// Gets column bindings to extract the columns in the group by statement
+		// i.e. select sum(x), sum(y) from table group by x, y; we'll get x and y in the node->groups
+		// and sum(x) and sum(y) in the node->expressions
 		auto binds = node->GetColumnBindings();
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
 
@@ -185,7 +195,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto ql_order_by = new DuckASTOrderBy();
 		for (auto &order : node->orders) {
 			auto name = order.expression->GetName();
-			string order_type = "";
+			// Extracts the columns to ORDER BY and the ordering i.e. desc, asc etc
+			string order_type;
 			switch (order.type) {
 			case OrderType::DESCENDING: {
 				order_type = "DESC";
