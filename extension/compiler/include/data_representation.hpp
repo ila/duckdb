@@ -73,6 +73,12 @@ public:
 	DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
 };
 
+class DuckASTCrossJoin: public DuckASTBaseOperator {
+public:
+	map<int, string> tables;
+	DuckASTCrossJoin();
+};
+
 
 /*
  * DuckASTOrderBy is a 1:1 relationship with the LogicalOrder
@@ -87,6 +93,18 @@ public:
 	void add_order_column(string &col, string &ord);
 };
 
+/*
+ * Will support all the joins like Cross Join, unconditional joins etc..
+ */
+class DuckASTJoin: public DuckASTBaseOperator {
+public:
+	// Maps table index to table name to generate the 'from' part of the query
+	map<int, string> table_map;
+
+	// To be used with conditional joins
+	// No requirement in cross joins with/without filter
+	string condition;
+};
 
 /*
  * DuckASTGet has a 1:1 relationship with the LogicalGet

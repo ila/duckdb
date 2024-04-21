@@ -9,7 +9,6 @@
 namespace duckdb {
 // DuckASTBaseOperator
 DuckASTBaseOperator::DuckASTBaseOperator() {
-	Printer::Print("Base Operator");
 }
 
 DuckASTBaseOperator::DuckASTBaseOperator(string name) {
@@ -120,6 +119,7 @@ DuckAST::DuckAST() {
 	root = nullptr;
 }
 
+// Uses the parent node pointer provided and appends to its list of children
 void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id, DuckASTOperatorType type) {
 	Printer::Print("Inserting: " + id);
 	opr->name = id;
@@ -137,11 +137,14 @@ void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNod
 	this->last_ptr = node;
 }
 
+// Returns the last node in the entire AST.
+// Helps in appending new nodes
 shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 	return last_ptr;
 }
 
 
+// Primary function which recursively generates a valid sql string from the AST
 void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
                              bool has_filter) {
 	if (node == nullptr) {
