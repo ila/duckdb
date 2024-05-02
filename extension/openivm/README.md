@@ -19,9 +19,6 @@ Insert sample data:
 INSERT INTO sales VALUES (1, 'a', 100, '2023-01-10'), (2, 'b', 50, '2023-01-12'), (3, 'a', 75, '2023-01-15'), (4, 'c', 60, '2023-01-18'), (5, 'b', 30, '2023-01-20'), (6, 'b', 35, '2023-01-21');
 ```
 Now create a materialized view with ONE of the following queries:
-
-select product_name, sum(amount), count(*), _duckdb_ivm_multiplicity from delta_sales where product_name = 'a' or product_name = 'b' group by _duckdb_ivm_multiplicity, product_name;
-
 ```SQL
 CREATE MATERIALIZED VIEW product_sales AS SELECT product_name, SUM(amount) AS total_amount, COUNT(*) AS total_orders FROM sales WHERE product_name = 'a' OR product_name = 'b' GROUP BY product_name;
 CREATE MATERIALIZED VIEW product_sales AS SELECT * FROM sales WHERE product_name = 'a';
@@ -39,7 +36,7 @@ INSERT INTO sales VALUES (7, 'a', 90, '2023-01-21'), (8, 'b', 10, '2023-01-25'),
 ```
 Test with deletions:
 ```SQL
-INSERT INTO delta_sales VALUES (1, 'a', 100, '2023-01-10', false), (2, 'b', 50, '2023-01-12', false), (7, 'a', 20, '2023-01-26', true), (8, 'c', 45, '2023-01-28', true);
+INSERT INTO sales VALUES (1, 'a', 100, '2023-01-10'), (2, 'b', 50, '2023-01-12'), (7, 'a', 20, '2023-01-26'), (8, 'c', 45, '2023-01-28');
 ```
 
 ### Incrementally maintaining view *result*

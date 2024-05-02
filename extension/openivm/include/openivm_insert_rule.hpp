@@ -128,7 +128,7 @@ public:
 									}
 								}
 								// add "true" as multiplicity (we are performing an insertion)
-								values += "true),";
+								values += "true, now()),";
 								insert_query += values;
 							}
 
@@ -176,7 +176,7 @@ public:
 							// todo 1 -- can there be other types of delete query?
 							// todo 2 -- implement this in LPTS
 							// todo 3 -- throw exception if the plan is too complicated
-							auto string = "insert into " + delta_delete_table + " select *, false from " + delete_table_name;
+							auto string = "insert into " + delta_delete_table + " select *, false, now() from " + delete_table_name;
 							if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
 								string += " where " + filter->ParamsToString();
@@ -200,6 +200,7 @@ public:
 			break;
 
 		case LogicalOperatorType::LOGICAL_UPDATE: {
+			// todo test this with the latest bug fix (once it is merged)
 			// updates consist in update + projection (+ filter) + scan
 			auto update_node = dynamic_cast<LogicalUpdate *>(root);
 			auto update_table_name = update_node->table.name;
@@ -222,7 +223,7 @@ public:
 						if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed) {
 							// here we also assume simple queries with at most a filter
 							// this is for the rows to delete
-							string insert_old = "insert into " + delta_update_table + " select *, false from " + update_table_name;
+							string insert_old = "insert into " + delta_update_table + " select *, false, now() from " + update_table_name;
 							// this is for the new rows to be added
 							string insert_new = "insert into " + delta_update_table + " ";
 							// we assume a projection with either a filter or a scan
@@ -255,8 +256,6 @@ public:
 							}
 							 else if (projection->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								auto get = dynamic_cast<LogicalGet *>(projection->children[0].get());
-								// there is a bug in ParamsToString where it doesn't add strings between apostrophes
-								// fixme
 								where_string += " where " + get->ParamsToString();
 								where_string = where_string.substr(0, where_string.find('\n'));
 							} else {
@@ -276,7 +275,7 @@ public:
 								}
 							}
 							// we add the multiplicity flag
-							insert_new += "true from " + update_table_name + where_string;
+							insert_new += "true, now() from " + update_table_name + where_string;
 							insert_old += where_string;
 
 							auto r = con.Query(insert_old);
