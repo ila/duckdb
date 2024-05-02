@@ -211,6 +211,22 @@ string CompilerExtension::SQLToLowercase(const string &sql) {
 	return lowercase_stream.str();
 }
 
+string CompilerExtension::GenerateDeltaTable(string &query) {
+	// we need to do three things here:
+	// 1) replace the table_name (everything after the last dot and before the first "(") with "delta_table_name"
+	// 2) add a new bool column multiplicity
+	// 3) add a new timestamp column with default now()
+	string delta_query = query;
+	// replace the table name with "delta_table_name"
+	delta_query = std::regex_replace(delta_query, std::regex(R"(\b([a-zA-Z0-9_]+)\s*\()"), "delta_$1(");
+	// add a new column "multiplicity"
+	delta_query = std::regex_replace(delta_query, std::regex(R"(\b\))"), ", _duckdb_ivm_multiplicity BOOLEAN)");
+	// add a new column "timestamp" with default now()
+	delta_query = std::regex_replace(delta_query, std::regex(R"(\b\))"), ", timestamp TIMESTAMP DEFAULT NOW())");
+	return delta_query;
+
+}
+
 void CompilerExtension::ReplaceCount(string &query) {
 	std::regex pattern("(count\\((\\*|\\w+)\\))(?![^()]*\\bas\\b)", std::regex_constants::icase);
 	query = std::regex_replace(query, pattern, "count($2) as count_$2");

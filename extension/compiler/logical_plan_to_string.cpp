@@ -216,6 +216,10 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		ql_get_exp->table_name = node->GetTable()->name;
 		ql_get_exp->all_columns = true;
 
+		if (!node->table_filters.filters.empty()) {
+			ql_get_exp->filter_condition = node->ParamsToString().substr(0, node->ParamsToString().find('\n'));
+		}
+
 		auto bindings = node->GetColumnBindings();
 		auto column_ids = node->column_ids;
 		auto scan_column_names = node->GetTable()->GetColumns().GetColumnNames();

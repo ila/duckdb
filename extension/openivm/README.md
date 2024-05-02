@@ -29,14 +29,9 @@ Look at the content:
 SELECT * FROM product_sales; -- to check the view content
 ```
 Now we assume that changes are to be stored in a delta table, in our case `delta_sales`.
-Insertion example (with an additional boolean for insertions/deletions, assuming only insertions):
+Insertion example:
 ```SQL
 INSERT INTO sales VALUES (7, 'a', 90, '2023-01-21'), (8, 'b', 10, '2023-01-25'), (9, 'a', 20, '2023-01-26'), (10, 'c', 45, '2023-01-28');
-
-```
-Test with deletions:
-```SQL
-INSERT INTO sales VALUES (1, 'a', 100, '2023-01-10'), (2, 'b', 50, '2023-01-12'), (7, 'a', 20, '2023-01-26'), (8, 'c', 45, '2023-01-28');
 ```
 
 ### Incrementally maintaining view *result*
@@ -54,15 +49,9 @@ The output of the above will be the table `delta_product_sales`, which will cont
 ### Known issues
 IVM on queries in which the base table returns no data because of a `WHERE` clause, **will fail**. So, while using `WHERE`, always ensure that the base table returns a non-empty result. More details in [this issue](https://github.com/cwida/ivm-extension/issues/10).
 
-## Building the Extension
-* Download the files in the repo into folder `duckdb_project_root/extension/ivm`
-* Search for `JSON_EXTENSION` and make similar changes for `IVM_EXTENSION`
-* Build the `duckdb` binary using `make`. The IVM extension will be included in the binary
-* Enable debug mode in extension using `make debug`
-
 ## Running Tests
 * The tests are present in `project_root/tests`. 
 * Create a folder `duckdb_project_root/test/ivm`.
 * Copy the test files into the above folder.
-* Use the `unittest` executable and provide name of the test as program argument
+* Use the `unittest` executable and provide name of the test as program argument.
 

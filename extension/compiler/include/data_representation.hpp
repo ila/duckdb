@@ -100,6 +100,8 @@ public:
 	std::vector<std::pair<string, string>> column_aliases;
 	// If all columns are selected from the table
 	bool all_columns;
+	// Filter (for filter pushdown)
+	std::string filter_condition;
 	DuckASTGet();
 	DuckASTGet(string table_name);
 	~DuckASTGet() override;

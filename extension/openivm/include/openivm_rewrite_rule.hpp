@@ -19,6 +19,9 @@
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
+#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
+#include "duckdb/planner/table_filter.hpp"
 #include "openivm_parser.hpp"
 
 #include <iostream>
@@ -73,7 +76,7 @@ public:
 		printf("\nAdd the multiplicity column to the top projection node...\n");
 		printf("Plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
 		for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
-			printf("Top node CB before %d %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
+			printf("Top node CB before %zu %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
 		}
 #endif
 
@@ -104,18 +107,19 @@ public:
 
 	static void ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan,
 	                       idx_t &multiplicity_col_idx, idx_t &multiplicity_table_idx,
-	                       optional_ptr<CatalogEntry> &table_catalog_entry) {
+	                       optional_ptr<CatalogEntry> &table_catalog_entry, string &view) {
 		if (!plan->children[0]->children.empty()) {
 			// Assume only one child per node
 			// TODO: Add support for modification of plan with multiple children
 			ModifyPlan(context, plan->children[0], multiplicity_col_idx, multiplicity_table_idx,
-			           table_catalog_entry);
+			           table_catalog_entry, view);
 		}
 
 		QueryErrorContext error_context = QueryErrorContext();
 
 		switch (plan->children[0].get()->type) {
 		case LogicalOperatorType::LOGICAL_GET: {
+			// we are at the bottom of the tree
 			auto child = std::move(plan->children[0]);
 			auto child_get = dynamic_cast<LogicalGet *>(child.get());
 
@@ -178,28 +182,57 @@ public:
 			// we also need to add the multiplicity column
 			return_types.push_back(LogicalType::BOOLEAN);
 			return_names.push_back("_duckdb_ivm_multiplicity");
-			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 1);
+			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 2);
 
 			multiplicity_table_idx = child_get->table_index;
 			multiplicity_col_idx = column_ids.size() - 1;
+
+			// we also add the timestamp column
+			return_types.push_back(LogicalType::TIMESTAMP);
+			return_names.push_back("timestamp");
+			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 1);
 
 			// the new get node that reads the delta table gets a new table index
 			auto replacement_get_node = make_uniq<LogicalGet>(child_get->table_index, scan_function, std::move(bind_data),
 			                                                  std::move(return_types), std::move(return_names));
 			replacement_get_node->column_ids = std::move(column_ids);
-			replacement_get_node->table_filters = std::move(child_get->table_filters);
+			replacement_get_node->table_filters = std::move(child_get->table_filters); // this should be empty
 
+			// we add the filter for the timestamp if there is no filter in the plan
+			Connection con(*context.db);
+			con.SetAutoCommit(false);
+			auto filter_query = "select filter from _duckdb_ivm_views where view_name = '" + view + "'";
+			auto r = con.Query(filter_query);
+			if (r->HasError()) {
+				throw InternalException("Error while querying last_update");
+			}
+
+			if (!r->GetValue(0, 0).GetValue<bool>()) {
+				// we add a table filter
+				auto timestamp_query = "select last_update from _duckdb_ivm_views where view_name = '" + view + "'";
+				r = con.Query(timestamp_query);
+				if (r->HasError()) {
+					throw InternalException("Error while querying last_update");
+				}
+				auto timestamp_column = make_uniq<BoundColumnRefExpression>(
+				    "timestamp", LogicalType::TIMESTAMP,
+				    ColumnBinding(multiplicity_table_idx, multiplicity_col_idx + 1));
+
+				auto table_filter = make_uniq<ConstantFilter>(ExpressionType::COMPARE_GREATERTHANOREQUALTO, r->GetValue(0, 0));
+				replacement_get_node->table_filters.filters[multiplicity_col_idx + 1] = std::move(table_filter);
+			}
 
 			plan->children.clear();
 			plan->children.emplace_back(std::move(replacement_get_node));
 			break;
+
 		}
 		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 
 			auto modified_node_logical_agg = dynamic_cast<LogicalAggregate *>(plan->children[0].get());
 #ifdef DEBUG
-			for (int i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
-				printf("aggregate node CB before %d %s\n", i,
+			for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
+				printf("aggregate node CB before %zu %s\n", i,
 				       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
 			}
 			printf("Aggregate index: %lu Group index: %lu\n", modified_node_logical_agg->aggregate_index,
@@ -243,7 +276,7 @@ public:
 			printf("Plan: %s %s\n", projection_node->ToString().c_str(), projection_node->ParamsToString().c_str());
 
 			// the table_idx used to create ColumnBinding will be that of the top node's child
-			// the column_idx used to create ColumnBinding for the multiplicity column will be stored context from the child
+			// the column_idx used to create ColumnBinding for the multiplicity column will be stored using the context from the child
 			// node
 			auto e = make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", LogicalType::BOOLEAN,
 			                                             ColumnBinding(multiplicity_table_idx, multiplicity_col_idx));
@@ -260,6 +293,27 @@ public:
 		case LogicalOperatorType::LOGICAL_FILTER: {
 			auto filter_node = dynamic_cast<LogicalFilter *>(plan->children[0].get());
 			filter_node->projection_map.clear();
+			// we build another expression for the timestamp
+			// the expression is at the topmost level: timestamp >= last_update AND everything else
+			// first, we create the timestamp expression
+			auto timestamp_query = "select last_update from _duckdb_ivm_views where view_name = '" + view + "'";
+			// converting to timestamp
+			Connection con(*context.db);
+			con.SetAutoCommit(false);
+			auto r = con.Query(timestamp_query);
+			if (r->HasError()) {
+				throw InternalException("Error while querying last_update");
+			}
+			auto timestamp_column = make_uniq<BoundColumnRefExpression>("timestamp", LogicalType::TIMESTAMP,
+			                                                            ColumnBinding(multiplicity_table_idx, multiplicity_col_idx + 1));
+			auto timestamp_expr = make_uniq<BoundComparisonExpression>(
+			    ExpressionType::COMPARE_GREATERTHANOREQUALTO,
+			    move(timestamp_column),
+			    make_uniq<BoundConstantExpression>(r->GetValue(0, 0)));
+
+			auto e = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND, std::move(timestamp_expr), std::move(filter_node->expressions[0]));
+			filter_node->expressions.clear();
+			filter_node->expressions.emplace_back(std::move(e));
 			break;
 		}
 		default:
@@ -314,7 +368,7 @@ public:
 		// generate the optimized logical plan
 		Connection con(*context.db);
 		con.BeginTransaction();
-		// todo maybe we want to disable more optimizers (internal_optimizer_types)
+		// todo: maybe we want to disable more optimizers (internal_optimizer_types)
 		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
 		con.Commit();
 
@@ -352,8 +406,10 @@ public:
 		// 3) Add the multiplicity column all other nodes (aggregates etc.)
 		// 4) Add the multiplicity column to the top projection node
 		// 5) Add the insert node to the plan (to insert the query result in the delta table)
+
+		// if there is no filter, we manually need to add one for the timestamp
 		ModifyPlan(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
-		           table_catalog_entry);
+		           table_catalog_entry, view);
 		ModifyTopNode(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
 		AddInsertNode(context, optimized_plan, view, view_catalog, view_schema);
 #ifdef DEBUG

@@ -74,6 +74,7 @@ DuckASTGet::DuckASTGet() {
 DuckASTGet::DuckASTGet(string table_name) {
 	this->table_name = table_name;
 	this->all_columns = false;
+	this->filter_condition = "";
 }
 
 void DuckASTGet::set_table_name(string table_name) {
@@ -143,8 +144,9 @@ shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 
 void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
                              bool has_filter) {
-	if (node == nullptr)
+	if (node == nullptr) {
 		return;
+	}
 
 	// insert into my_table values(1), (2), (3);
 	// select my_column from my_table where ...
@@ -193,8 +195,9 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string
 	}
 	case DuckASTOperatorType::AGGREGATE: {
 		auto exp = dynamic_cast<DuckASTAggregate *>(node->opr.get());
-		if (has_filter)
+		if (has_filter) {
 			plan_string = " having " + plan_string;
+		}
 		string grp_string = "";
 		if (exp->is_group_by) {
 			int count = exp->group_column.size();
@@ -220,6 +223,8 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string
 		string table_name = exp->table_name;
 		if (has_filter) {
 			plan_string = " where " + plan_string;
+		} else if (exp->filter_condition != "") {
+			plan_string = " where " + exp->filter_condition + plan_string;
 		}
 		if (exp->all_columns) {
 			plan_string = "select * from " + table_name + " " + plan_string;

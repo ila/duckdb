@@ -28,8 +28,6 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// this only works with CREATE MATERIALIZED VIEW expressions
 
-	// todo - make sure that the delta tables are in the same schema and catalog
-
 	// todo - test with .open rather than db in the CLI
 	// test with new lines? (could also be already fixed in newer versions)
 
@@ -60,7 +58,8 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	Parser p;
 	p.ParseQuery(query_lower);
 
-	return ParserExtensionParseResult(make_uniq_base<ParserExtensionParseData, IVMParseData>(move(p.statements[0]), true));
+	return ParserExtensionParseResult(
+	    make_uniq_base<ParserExtensionParseData, IVMParseData>(move(p.statements[0]), true));
 }
 
 ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInfo *info, ClientContext &context,
@@ -68,13 +67,11 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	// after the parser, the query string reaches this point
 
 	// todo for demo:
-	// finish (test) trigger of insert/delete/update
 	// finish (test) benchmarking suite
-	// fix the constraint stuff
 	// implement timestamps
-	  // optimizer rule add filter TIMESTAMP > last_update
-	  // delete from delta table where timestamp = min_timestamp
-	  // update duckdb_ivm_views set last_update = now (before queries are ran, probably)
+	// delete from delta table where timestamp = min_timestamp
+	// update duckdb_ivm_views set last_update = now (before queries are ran, probably)
+	// change ivm_upsert to work with (the schema and) table name
 	// refactor DuckAST
 	// poster
 
@@ -168,9 +165,10 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			throw NotImplementedException("IVM does not support this query type yet");
 		}
 
-		// we create the lookup tables for views -> materialized_view_name | sql_string | type | last_update
+		// we create the lookup tables for views -> materialized_view_name | sql_string | type | filter | last_update
+		// we need to know if the query has a filter in order to check the timestamp of updates
 		auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
-		                    "varchar, type tinyint, last_update timestamp);\n";
+		                    "varchar, type tinyint, filter bool, last_update timestamp);\n";
 		// recreate the file - we assume the queries will be executed after the parsing is done
 		CompilerExtension::WriteFile(system_tables_path, false, system_table);
 
@@ -178,9 +176,12 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// but at some point, we need to delete data from the delta tables (every view has been refreshed)
 		// however, we need some kind of versioning to do so, using the last_update column
 
+		// todo - schema and catalog of the views and metadata tables?
+
 		// now we insert the details in the openivm view lookup table
 		auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
-		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) + ", now());\n";
+		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
+		                        ", " + to_string(found_filter) + ", now());\n";
 		CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
 
 		// now we create the table (the view, internally stored as a table)
@@ -197,28 +198,23 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		for (const auto &table_name : table_names) {
 
 			Value catalog_value;
-			context.TryGetCurrentSetting("ivm_catalog_name", catalog_value);
 			Value schema_value;
-			context.TryGetCurrentSetting("ivm_schema_name", schema_value);
-
-			string catalog_schema;
-			if (!catalog_value.IsNull() && !schema_value.IsNull()) {
-				catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
-			}
 
 			// we also need to replicate the constraints of the base tables to the delta tables
 			// this is because if an INSERT/UPDATE/DELETE fails on the table, it should also fail on the delta table
 			// usually these operations fail because of violated constraints
 
-			// to do so, we simply manipulate the original CREATE string adding the multiplicity column
-			// todo
-			// todo - also add timestamp column
+			// to do so, we simply manipulate the original CREATE string adding the multiplicity and timestamp columns
 
+			// all this stuff is needed to extract the base table from the catalog
 			if (catalog_value.IsNull() && !context.db->config.options.database_path.empty()) {
-				auto catalog_name = con.Query("select table_catalog from information_schema.tables where table_name = '" + table_name + "';")->Fetch()->GetValue(0, 0);
+				auto catalog_name =
+				    con.Query("select table_catalog from information_schema.tables where table_name = '" + table_name +
+				              "';")
+				        ->Fetch()
+				        ->GetValue(0, 0);
 				catalog_value = catalog_name;
-			}
-			else if (catalog_value.IsNull()) { // an in-memory database
+			} else if (catalog_value.IsNull()) { // an in-memory database
 				catalog_value = Value("memory");
 			}
 
@@ -227,15 +223,13 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			}
 
 			auto catalog_entry =
-			    catalog.GetEntry(context, CatalogType::TABLE_ENTRY, catalog_value.ToString(), schema_value.ToString(), table_name,
-			                     OnEntryNotFound::THROW_EXCEPTION, error_context);
+			    catalog.GetEntry(context, CatalogType::TABLE_ENTRY, catalog_value.ToString(), schema_value.ToString(),
+			                     table_name, OnEntryNotFound::THROW_EXCEPTION, error_context);
 			auto table_entry = dynamic_cast<TableCatalogEntry *>(catalog_entry.get());
+			auto table_string = table_entry->ToSQL();
 
-			auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
-			                   " as select *, true as _duckdb_ivm_multiplicity, now() as timestamp from " + catalog_schema + table_name +
-			                   " limit 0;\n";
+			auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
 			CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
-
 		}
 
 		// todo handle the case of replacing column names
