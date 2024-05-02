@@ -60,12 +60,18 @@ struct IVMParseData : ParserExtensionParseData {
 
 	unique_ptr<ParserExtensionParseData> Copy() const override {
 		// we pass "false" here because if we get here, we already parsed the query
-		// DuckDB copies the function data but we don't need to execute the planner function
+		// DuckDB copies the function data, but we don't need to execute the planner function
 		return make_uniq_base<ParserExtensionParseData, IVMParseData>(statement->Copy(), false);
+	}
+
+	string ToString() const override {
+		return statement->ToString();
 	}
 
 	explicit IVMParseData(unique_ptr<SQLStatement> statement, bool plan) : statement(std::move(statement)), plan(plan) {
 	}
+
+
 };
 
 class IVMState : public ClientContextState {

@@ -48,6 +48,11 @@ namespace duckdb {
 		    // DuckDB copies the function data but we don't need to execute the planner function
             return make_uniq<DPParseData>(view_query, meta_query, false);
         }
+
+	    string ToString() const override {
+		    // placeholder to have all virtual functions implemented
+		    return view_query;
+	    }
     };
 
 

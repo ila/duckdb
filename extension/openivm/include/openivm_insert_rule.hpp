@@ -7,8 +7,8 @@
 #include "duckdb/main/connection.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parser/parser.hpp"
-#include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/statement/logical_plan_statement.hpp"
+#include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/planner/expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/operator/logical_aggregate.hpp"
@@ -144,12 +144,11 @@ public:
 							// we skip the second insertion and reset the flag
 							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
 						}
-						return;
 					}
 				}
 			}
-		}
-			break;
+		} break;
+
 		case LogicalOperatorType::LOGICAL_DELETE: {
 			// delete plans consists in delete + filter + scan
 			auto delete_node = dynamic_cast<LogicalDelete *>(root);
@@ -176,10 +175,21 @@ public:
 							// todo 1 -- can there be other types of delete query?
 							// todo 2 -- implement this in LPTS
 							// todo 3 -- throw exception if the plan is too complicated
-							auto string = "insert into " + delta_delete_table + " select *, false, now() from " + delete_table_name;
+							auto string = "insert into " + delta_delete_table + " select *, false, now() from " +
+							              delete_table_name;
+							// handling the potential filters
 							if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
 								string += " where " + filter->ParamsToString();
+							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
+								auto get = dynamic_cast<LogicalGet *>(plan->children[0].get());
+								// we only add WHERE if there are table filters
+								if (!get->table_filters.filters.empty()) {
+									string += " where " + get->ParamsToString();
+									string = string.substr(0, string.find('\n'));
+								}
+							} else {
+								throw NotImplementedException("Only simple UPDATE statements are supported in IVM!");
 							}
 							auto r = con.Query(string);
 							if (r->HasError()) {
@@ -187,20 +197,16 @@ public:
 							}
 							con.Commit();
 							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+						} else {
+							// we skip the second insertion and reset the flag
+							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
 						}
 					}
-
-				} else {
-					// we skip the second insertion and reset the flag
-					dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
 				}
-				return;
 			}
-		}
-			break;
+		} break;
 
 		case LogicalOperatorType::LOGICAL_UPDATE: {
-			// todo test this with the latest bug fix (once it is merged)
 			// updates consist in update + projection (+ filter) + scan
 			auto update_node = dynamic_cast<LogicalUpdate *>(root);
 			auto update_table_name = update_node->table.name;
@@ -223,7 +229,8 @@ public:
 						if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed) {
 							// here we also assume simple queries with at most a filter
 							// this is for the rows to delete
-							string insert_old = "insert into " + delta_update_table + " select *, false, now() from " + update_table_name;
+							string insert_old = "insert into " + delta_update_table + " select *, false, now() from " +
+							                    update_table_name;
 							// this is for the new rows to be added
 							string insert_new = "insert into " + delta_update_table + " ";
 							// we assume a projection with either a filter or a scan
@@ -235,29 +242,36 @@ public:
 							// for convenience, we store this in a map of strings (to find the columns later)
 							std::map<string, string> update_values;
 							string where_string;
-							for (size_t i = 0; i < projection->expressions.size(); i += 2) {
-								// todo exception with subquery?
+							// updates work this way: first, there is a UPDATE node whose columns
+							// correspond to the physical table columns, in the order the query is issued
+							// then, there is a PROJECTION node whose expressions are the constant values to be set
+							// there may be more columns in the PROJECTION node, but we don't need those
+							// so, we assume that UPDATE->columns[i] is to be set PROJECTION->expressions[i]
+							for (size_t i = 0; i < update_node->columns.size(); i++) {
+								auto column = update_node->columns[i].index;
 								auto value = dynamic_cast<BoundConstantExpression *>(projection->expressions[i].get());
-								auto column = dynamic_cast<BoundColumnRefExpression *>(projection->expressions[i + 1].get());
-								// we don't care about the table index here (there is only one table)
 								// we need to add apostrophes for VARCHAR fields
-								if (value->value.type() == LogicalType::VARCHAR || value->value.type() == LogicalType::DATE ||
+								if (value->value.type() == LogicalType::VARCHAR ||
+								    value->value.type() == LogicalType::DATE ||
 								    value->value.type() == LogicalType::TIMESTAMP ||
 								    value->value.type() == LogicalType::TIME) {
-									update_values[to_string(column->binding.column_index)] = "'" + value->value.ToString() + "'";
+									update_values[to_string(column)] = "'" + value->value.ToString() + "'";
 								} else {
-									update_values[to_string(column->binding.column_index)] = value->value.ToString();
+									update_values[to_string(column)] = value->value.ToString();
 								}
 							}
 
 							if (projection->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(projection->children[0].get());
+								// we always add WHERE (it's a filter, duh)
 								where_string += " where " + filter->ParamsToString();
-							}
-							 else if (projection->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
+							} else if (projection->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								auto get = dynamic_cast<LogicalGet *>(projection->children[0].get());
-								where_string += " where " + get->ParamsToString();
-								where_string = where_string.substr(0, where_string.find('\n'));
+								// we only add WHERE if there are table filters
+								if (!get->table_filters.filters.empty()) {
+									where_string += " where " + get->ParamsToString();
+									where_string = where_string.substr(0, where_string.find('\n'));
+								}
 							} else {
 								throw NotImplementedException("Only simple UPDATE statements are supported in IVM!");
 							}
@@ -290,16 +304,14 @@ public:
 
 							con.Commit();
 							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+						} else {
+							// we skip the second insertion and reset the flag
+							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
 						}
 					}
-
-				} else {
-					// we skip the second insertion and reset the flag
-					dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
 				}
-				return;
 			}
-		}
+		} break;
 		default:
 			return;
 		}
