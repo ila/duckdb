@@ -28,13 +28,24 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	auto &catalog = Catalog::GetSystemCatalog(context);
 	QueryErrorContext error_context = QueryErrorContext();
 
-	string view_catalog_name = StringValue::Get(parameters.values[0]);
-	string view_schema_name = StringValue::Get(parameters.values[1]);
-	string view_name = StringValue::Get(parameters.values[2]);
+	string view_catalog_name;
+	string view_schema_name;
+	string view_name;
 
-	// debug - this is not found (todo)
 	// extracting the query from the view definition
 	Connection con(*context.db.get());
+
+	if (parameters.values.size() == 3) {
+		// ivm_options was called, so different schema and catalog
+		view_catalog_name = StringValue::Get(parameters.values[0]);
+		view_schema_name = StringValue::Get(parameters.values[1]);
+		view_name = StringValue::Get(parameters.values[2]);
+	} else {
+		// simple ivm, we assume current schema and catalog
+		view_catalog_name = con.Query("select current_catalog();")->GetValue(0, 0).ToString();
+		view_schema_name = con.Query("select current_schema();")->GetValue(0, 0).ToString();
+		view_name = StringValue::Get(parameters.values[0]);
+	}
 
 	auto delta_view_catalog_entry =
 	    catalog.GetEntry(context, CatalogType::TABLE_ENTRY, view_catalog_name, view_schema_name, "delta_" + view_name,

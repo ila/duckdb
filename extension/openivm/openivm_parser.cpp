@@ -31,11 +31,6 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	// note: if we increase cross-system compatibility, we should check if some systems do not support "now()"
 	// eventually switch function based on the SQL dialect
 
-	// todo - test with .open rather than db in the CLI
-	// test with new lines? (could also be already fixed in newer versions)
-
-	// todo: find a workaround for the newly created MV that doesn't show up in the shell?
-
 	auto query_lower = CompilerExtension::SQLToLowercase(StringUtil::Replace(query, ";", ""));
 	StringUtil::Trim(query_lower);
 
@@ -71,7 +66,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 
 	// todo for demo:
 	// finish (test) benchmarking suite
-	// change ivm_upsert to work with (the schema and) table name
 	// refactor DuckAST
 	// poster
 
@@ -88,7 +82,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// now we create the delta table based on the view definition
 		// parsing the logical plan
 		string db_path;
-		if (!context.db->config.options.database_path.empty()) {
+		if (!context.db->config.options.database_path.empty()) { // this also works with .open
 			db_path = context.db->GetFileSystem().GetWorkingDirectory();
 		} else {
 			Value db_path_value;

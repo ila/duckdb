@@ -278,9 +278,12 @@ static void LoadInternal(DatabaseInstance &instance) {
 	con.Commit();
 
 	// this is called at the database startup and every time a query fails
-	auto upsert_delta_func = PragmaFunction::PragmaCall(
-	    "ivm_upsert", UpsertDeltaQueries, {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, upsert_delta_func);
+	auto ivm_options = PragmaFunction::PragmaCall(
+	    "ivm_options", UpsertDeltaQueries, {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
+	ExtensionUtil::RegisterFunction(instance, ivm_options);
+	auto ivm = PragmaFunction::PragmaCall(
+	    "ivm", UpsertDeltaQueries, {LogicalType::VARCHAR});
+	ExtensionUtil::RegisterFunction(instance, ivm);
 }
 
 void OpenivmExtension::Load(DuckDB &db) {

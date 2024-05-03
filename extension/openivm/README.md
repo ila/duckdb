@@ -1,6 +1,6 @@
 # ivm-extension
 
-Incrementally maintain view `result` using query `PRAGMA ivm_upsert('catalog', 'schema', 'result')`;
+Incrementally maintain view `result` using query `PRAGMA ivm('materialized_view_name')` or `PRAGMA ivm_options('catalog_name', 'schema_name', 'materialized_view_name')`.
 
 Read more [here](https://github.com/cwida/ivm-extension/blob/ivm-optimizer-rule/VLDB%20Summer%20School%202023%20Poster.pdf)
 
@@ -28,16 +28,24 @@ Look at the content:
 ```SQL
 SELECT * FROM product_sales; -- to check the view content
 ```
-Now we assume that changes are to be stored in a delta table, in our case `delta_sales`.
-Insertion example:
+Now we can modify the base table. Insertion example:
 ```SQL
 INSERT INTO sales VALUES (7, 'a', 90, '2023-01-21'), (8, 'b', 10, '2023-01-25'), (9, 'a', 20, '2023-01-26'), (10, 'c', 45, '2023-01-28');
 ```
+Deletion example:
+```SQL
+DELETE FROM sales WHERE order_id = 1;
+```
+Update example:
+```SQL
+UPDATE sales SET amount = 200 WHERE order_id = 3;
+```
 
 ### Incrementally maintaining view *result*
-Run the extension as
+There are two ways to trigger the refresh of a materialized view:
 ```SQL
-PRAGMA ivm_upsert('test_sales', 'main', 'product_sales');
+PRAGMA ivm('product_sales'); -- will use current catalog and schema
+PRAGMA ivm_options('test_sales', 'main', 'product_sales'); -- specifying catalog and schema
 ```
 The output of the above will be the table `delta_product_sales`, which will contain incremental processing of the changes to the base table of view `product_sales`. 
 

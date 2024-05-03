@@ -225,6 +225,7 @@ string CompilerExtension::GenerateDeltaTable(string &query) {
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\b\))"), ", timestamp timestamp default now())");
 	// add "if not exists"
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\bcreate\s+table\s+)"), "create table if not exists ");
+	delta_query += "\n";
 	return delta_query;
 
 }
