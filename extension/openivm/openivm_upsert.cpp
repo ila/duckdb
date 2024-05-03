@@ -88,8 +88,16 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	string do_ivm = "select * from DoIVM('" + view_catalog_name + "','" + view_schema_name + "','" + view_name + "');";
 
 	con.BeginTransaction();
+	// we need the table names since we need to update the metadata tables
+	auto tables = con.Query("select table_name from _duckdb_ivm_delta_tables where view_name = '" + view_name + "';");
+	if (tables->HasError()) {
+		throw InternalException("Error while querying _duckdb_ivm_delta_tables");
+	}
+
+	// now we can plan the query
 	Parser p;
 	p.ParseQuery(do_ivm);
+
 	Planner planner(*con.context);
 	planner.CreatePlan(move(p.statements[0]));
 	auto plan = move(planner.plan);
@@ -100,18 +108,23 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	ivm_query += LogicalPlanToString(plan);
 
-	// string select_query = "SELECT * FROM delta_" + view_name + ";";
-
 	// now we delete everything from the delta view
 	string delete_from_view_query = "delete from delta_" + view_name + ";";
 	// string ivm_result = "select * from " + view_name + ";";
 	string ivm_result;
 
-	// todo - delete also from delta table and insert into original table
-	// todo - do this only when all the delta views are updated
+	// now we can also delete from the delta table, but only if all the dependent views have been refreshed
+	// to check this, we extract the minimum timestamp from _duckdb_ivm_delta_tables
+	string delete_from_delta_table_query;
+	string update_timestamp_query = "update _duckdb_ivm_delta_tables set last_update = now() where view_name = '" + view_name + "';\n";
+
+	for (size_t i = 0; i < tables->RowCount(); i++) {
+		auto table_name = tables->GetValue(0, i).ToString();
+		delete_from_delta_table_query += "delete from " + table_name + " where timestamp < (select min(last_update) from _duckdb_ivm_delta_tables where table_name = '" + table_name + "');\n";
+	}
 
 	// string query = ivm_query + select_query;
-	string query = ivm_query + "\n\n" + upsert_query + "\n" + delete_from_view_query + "\n" + ivm_result;
+	string query = ivm_query + "\n\n" + update_timestamp_query + "\n" + upsert_query + "\n" + delete_from_view_query + "\n" + ivm_result + "\n" + delete_from_delta_table_query;
 
 	// now also compiling the queries for future usage
 	string db_path;

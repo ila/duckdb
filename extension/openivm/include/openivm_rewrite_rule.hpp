@@ -107,12 +107,12 @@ public:
 
 	static void ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan,
 	                       idx_t &multiplicity_col_idx, idx_t &multiplicity_table_idx,
-	                       optional_ptr<CatalogEntry> &table_catalog_entry, string &view) {
+	                       optional_ptr<CatalogEntry> &table_catalog_entry, string &view, string &table) {
 		if (!plan->children[0]->children.empty()) {
 			// Assume only one child per node
 			// TODO: Add support for modification of plan with multiple children
 			ModifyPlan(context, plan->children[0], multiplicity_col_idx, multiplicity_table_idx,
-			           table_catalog_entry, view);
+			           table_catalog_entry, view, table);
 		}
 
 		QueryErrorContext error_context = QueryErrorContext();
@@ -157,9 +157,9 @@ public:
 			// however, I find the code a bit complicated and harder to turn into a string
 			// so, now we go with this solution and pray it won't break
 
-			auto &table = table_catalog_entry->Cast<TableCatalogEntry>();
+			auto &table_entry = table_catalog_entry->Cast<TableCatalogEntry>();
 			unique_ptr<FunctionData> bind_data;
-			auto scan_function = table.GetScanFunction(context, bind_data);
+			auto scan_function = table_entry.GetScanFunction(context, bind_data);
 			vector<LogicalType> return_types = {};
 			vector<string> return_names = {};
 			vector<column_t> column_ids = {};
@@ -171,7 +171,7 @@ public:
 			// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
 			for (auto &id : child_get->column_ids) {
 				column_ids.push_back(id);
-				for (auto &col : table.GetColumns().Logical()) {
+				for (auto &col : table_entry.GetColumns().Logical()) {
 					if (col.Oid() == id) {
 						return_types.push_back(col.Type());
 						return_names.push_back(col.Name());
@@ -182,7 +182,7 @@ public:
 			// we also need to add the multiplicity column
 			return_types.push_back(LogicalType::BOOLEAN);
 			return_names.push_back("_duckdb_ivm_multiplicity");
-			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 2);
+			column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 2);
 
 			multiplicity_table_idx = child_get->table_index;
 			multiplicity_col_idx = column_ids.size() - 1;
@@ -190,7 +190,7 @@ public:
 			// we also add the timestamp column
 			return_types.push_back(LogicalType::TIMESTAMP);
 			return_names.push_back("timestamp");
-			column_ids.push_back(table.GetColumns().GetColumnTypes().size() - 1);
+			column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 1);
 
 			// the new get node that reads the delta table gets a new table index
 			auto replacement_get_node = make_uniq<LogicalGet>(child_get->table_index, scan_function, std::move(bind_data),
@@ -209,7 +209,7 @@ public:
 
 			if (!r->GetValue(0, 0).GetValue<bool>()) {
 				// we add a table filter
-				auto timestamp_query = "select last_update from _duckdb_ivm_views where view_name = '" + view + "'";
+				auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + view + "' and table_name = '" + table_entry.name + "';";
 				r = con.Query(timestamp_query);
 				if (r->HasError()) {
 					throw InternalException("Error while querying last_update");
@@ -221,6 +221,8 @@ public:
 				auto table_filter = make_uniq<ConstantFilter>(ExpressionType::COMPARE_GREATERTHANOREQUALTO, r->GetValue(0, 0));
 				replacement_get_node->table_filters.filters[multiplicity_col_idx + 1] = std::move(table_filter);
 			}
+
+			table = table_entry.name; // to use later
 
 			plan->children.clear();
 			plan->children.emplace_back(std::move(replacement_get_node));
@@ -296,7 +298,7 @@ public:
 			// we build another expression for the timestamp
 			// the expression is at the topmost level: timestamp >= last_update AND everything else
 			// first, we create the timestamp expression
-			auto timestamp_query = "select last_update from _duckdb_ivm_views where view_name = '" + view + "'";
+			auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + view + "' and table_name = '" + table + "';";
 			// converting to timestamp
 			Connection con(*context.db);
 			con.SetAutoCommit(false);
@@ -352,30 +354,24 @@ public:
 
 		// obtain view definition from catalog
 		QueryErrorContext error_context = QueryErrorContext();
-		auto internal_view_name = "_duckdb_internal_" + view + "_ivm";
-		auto view_catalog_entry =
-		    Catalog::GetEntry(context, CatalogType::VIEW_ENTRY, view_catalog, view_schema, internal_view_name,
-		                      OnEntryNotFound::THROW_EXCEPTION, error_context);
-		auto view_entry = dynamic_cast<ViewCatalogEntry *>(view_catalog_entry.get());
-#ifdef DEBUG
-		printf("View base query: %s \n", view_entry->query->ToString().c_str());
-#endif
-
-		if (view_entry->query->type != StatementType::SELECT_STATEMENT) {
-			throw NotImplementedException("Only select queries in view definition supported");
-		}
-
 		// generate the optimized logical plan
 		Connection con(*context.db);
+
 		con.BeginTransaction();
 		// todo: maybe we want to disable more optimizers (internal_optimizer_types)
 		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
 		con.Commit();
 
+		auto v = con.Query("select sql_string from _duckdb_ivm_views where view_name = '" + view + "';");
+		if (v->HasError()) {
+			throw InternalException("Error while querying view definition");
+		}
+		string view_query = v->GetValue(0, 0).ToString();
+
 		Parser parser;
 		Planner planner(context);
 
-		parser.ParseQuery(view_entry->query->ToString());
+		parser.ParseQuery(view_query);
 		auto statement = parser.statements[0].get();
 
 		planner.CreatePlan(statement->Copy());
@@ -408,8 +404,9 @@ public:
 		// 5) Add the insert node to the plan (to insert the query result in the delta table)
 
 		// if there is no filter, we manually need to add one for the timestamp
+		string table;
 		ModifyPlan(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
-		           table_catalog_entry, view);
+		           table_catalog_entry, view, table);
 		ModifyTopNode(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
 		AddInsertNode(context, optimized_plan, view, view_catalog, view_schema);
 #ifdef DEBUG

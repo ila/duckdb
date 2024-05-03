@@ -28,6 +28,9 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// this only works with CREATE MATERIALIZED VIEW expressions
 
+	// note: if we increase cross-system compatibility, we should check if some systems do not support "now()"
+	// eventually switch function based on the SQL dialect
+
 	// todo - test with .open rather than db in the CLI
 	// test with new lines? (could also be already fixed in newer versions)
 
@@ -68,9 +71,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 
 	// todo for demo:
 	// finish (test) benchmarking suite
-	// implement timestamps
-	// delete from delta table where timestamp = min_timestamp
-	// update duckdb_ivm_views set last_update = now (before queries are ran, probably)
 	// change ivm_upsert to work with (the schema and) table name
 	// refactor DuckAST
 	// poster
@@ -168,9 +168,13 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// we create the lookup tables for views -> materialized_view_name | sql_string | type | filter | last_update
 		// we need to know if the query has a filter in order to check the timestamp of updates
 		auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
-		                    "varchar, type tinyint, filter bool, last_update timestamp);\n";
+		                    "varchar, type tinyint, filter bool);\n";
 		// recreate the file - we assume the queries will be executed after the parsing is done
 		CompilerExtension::WriteFile(system_tables_path, false, system_table);
+
+		auto delta_tables_table = "create table if not exists _duckdb_ivm_delta_tables (view_name varchar, table_name varchar, last_update timestamp, primary key(view_name, table_name));\n";
+		// recreate the file - we assume the queries will be executed after the parsing is done
+		CompilerExtension::WriteFile(system_tables_path, true, delta_tables_table);
 
 		// fundamentally, each table can have multiple materialized views on it
 		// but at some point, we need to delete data from the delta tables (every view has been refreshed)
@@ -181,7 +185,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// now we insert the details in the openivm view lookup table
 		auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
 		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
-		                        ", " + to_string(found_filter) + ", now());\n";
+		                        ", " + to_string(found_filter) + ");\n";
 		CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
 
 		// now we create the table (the view, internally stored as a table)
@@ -230,13 +234,12 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 
 			auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
 			CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
+
+			auto delta_table_insert = "insert into _duckdb_ivm_delta_tables values ('" + view_name + "', 'delta_" + table_name + "', now());\n";
+			CompilerExtension::WriteFile(system_tables_path, true, delta_table_insert);
 		}
 
 		// todo handle the case of replacing column names
-
-		// now we also create a view (for internal use, just to store the SQL query)
-		auto view = "create or replace view _duckdb_internal_" + view_name + "_ivm as " + view_query + ";\n";
-		CompilerExtension::WriteFile(compiled_file_path, true, view);
 
 		// now we create the delta table for the result (to store the IVM algorithm output)
 		string delta_view = "create table if not exists delta_" + view_name +
@@ -256,10 +259,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			// writing to file
 			CompilerExtension::WriteFile(index_file_path, false, index_query_view);
 		}
-
-		string comment = "-- code to propagate operations to the base table goes here\n";
-		comment += "-- assuming the changes to be in the delta tables\n";
-		CompilerExtension::WriteFile(compiled_file_path, true, comment);
 
 		// we execute the file to apply the changes
 		// .read (CLI command) doesn't work with the API, so we read the file first

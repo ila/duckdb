@@ -7,7 +7,7 @@ Read more [here](https://github.com/cwida/ivm-extension/blob/ivm-optimizer-rule/
 ## Usage
 Given a base table `my_table` and a view `my_view` on top of `my_table`, this extension incrementally computes the changes to the view `my_result` when the underlying table `my_table` changes. 
 
-This extension assumes that changes to base table `my_table` are present in delta table `delta_my_table`. This table additionally has a multiplicity column `_duckdb_ivm_multiplicity` of type `BOOL`. `duckdb_ivm_multiplicity=true` means insertions and `_duckdb_ivm_multiplicity` means deletion. 
+This extension replicates changes to base table `my_table` in the delta table `delta_my_table`. This table additionally has a multiplicity column `_duckdb_ivm_multiplicity` of type `BOOL`, and a timestamp column to track refresh operations on the views. `duckdb_ivm_multiplicity=true` means insertions and `_duckdb_ivm_multiplicity` means deletion. 
 Updates to a row in base table `my_table` are modelled as deletion + insertion.
 
 Here is an example. First create the base table and the view:
@@ -21,7 +21,7 @@ INSERT INTO sales VALUES (1, 'a', 100, '2023-01-10'), (2, 'b', 50, '2023-01-12')
 Now create a materialized view with ONE of the following queries:
 ```SQL
 CREATE MATERIALIZED VIEW product_sales AS SELECT product_name, SUM(amount) AS total_amount, COUNT(*) AS total_orders FROM sales WHERE product_name = 'a' OR product_name = 'b' GROUP BY product_name;
-CREATE MATERIALIZED VIEW product_sales AS SELECT * FROM sales WHERE product_name = 'a';
+CREATE MATERIALIZED VIEW product_sales_1 AS SELECT * FROM sales WHERE product_name = 'a';
 CREATE MATERIALIZED VIEW product_sales AS SELECT SUM(amount) AS total_amount FROM sales;
 ```
 Look at the content:
