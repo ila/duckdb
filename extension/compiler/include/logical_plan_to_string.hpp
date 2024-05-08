@@ -31,7 +31,7 @@ namespace duckdb {
 string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
                          unique_ptr<DuckAST> &ql_tree, std::unordered_map<string, string> column_names,
-                         std::vector<std::pair<string, string>> column_aliases);
+                         std::vector<std::pair<string, string>> column_aliases, bool is_second_child=false);
 } // namespace duckdb
 
 #endif // DUCKDB_LOGICAL_PLAN_TO_STRING_HPP

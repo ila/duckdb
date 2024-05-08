@@ -35,22 +35,28 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 
 void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 						 unique_ptr<DuckAST> &ql_tree, std::unordered_map<string, string> column_names,
-                         std::vector<std::pair<string, string>> column_aliases) {
+                         std::vector<std::pair<string, string>> column_aliases, bool is_second_child) {
 
 	// todo refactor the AST (unnecessary fields) + fix aggregations
 
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT: {
 		auto node = dynamic_cast<LogicalUnconditionalJoin *>(plan.get());
-
+		auto parent_node = ql_tree->getLastNode();
+		auto ql_cross_prod = new DuckASTJoin();
+		auto node_id = node->GetName() + "_AST";
+		auto child1 = dynamic_cast<LogicalGet *>(plan->children[0].get());
+		auto child2 = dynamic_cast<LogicalGet *>(plan->children[1].get());
+		ql_cross_prod->add_table(child1->GetTable()->name);
+		ql_cross_prod->add_table(child2->GetTable()->name);
+		auto ql_node = (shared_ptr<DuckASTBaseOperator>)ql_cross_prod;
+		ql_tree->insert(ql_node, parent_node, node_id, DuckASTOperatorType::CROSS_JOIN);
 		LogicalPlanToString(plan->children[0], plan_string, ql_tree, column_names, column_aliases);
-		return LogicalPlanToString(plan->children[1], plan_string, ql_tree, column_names, column_aliases);
-		break;
+		return LogicalPlanToString(plan->children[1], plan_string, ql_tree, column_names, column_aliases, true);
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
 		auto ql_proj_exp = new DuckASTProjection();
-		ql_proj_exp->name = node->GetName();
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
 		auto bindings = node->GetColumnBindings();
 		for (auto &expression : node->expressions) {
@@ -221,7 +227,11 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 	case LogicalOperatorType::LOGICAL_GET: {
 		// we reached a root node (scan)
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
+
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
+		if(is_second_child) {
+			curNode = curNode->parent_node;
+		}
 		auto ql_get_exp = new DuckASTGet();
 		ql_get_exp->name = node->GetName();
 		ql_get_exp->table_name = node->GetTable()->name;
@@ -234,7 +244,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto bindings = node->GetColumnBindings();
 		auto column_ids = node->column_ids;
 		auto scan_column_names = node->GetTable()->GetColumns().GetColumnNames();
-		auto current_table_index = node->GetTableIndex();
+		auto current_table_index = node->GetTableIndex()[0];
 		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
 
 		for (int i = 0; i < bindings.size(); i++) {
@@ -242,19 +252,32 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
 			    scan_column_names[column_ids[i]];
 		}
+		vector<pair<string, string>> cur_col_aliases;
+
+		// Checking for aliases with context to the current table only
 
 		// now we check the aliases
 		for (int i = 0; i < bindings.size(); i++) {
+			if(bindings[i].table_index != current_table_index) {
+				continue;
+			}
 			auto key = std::to_string(bindings[i].table_index) + "." + std::to_string(bindings[i].column_index);
 			auto it1 = column_names.find(key);
 			auto it2 = cur_col_map.find(key);
-			if (it1 != cur_col_map.end() && it2 != cur_col_map.end() && it1->second != it2->second) {
-				for (auto &pair : column_aliases) {
-					if (pair.first == it1->second) {
-						pair.second = it2->second;
-					}
+			if(it2 != cur_col_map.end() && it1 != column_names.end()) {
+				if(it1->second == it2->second) {
+					cur_col_aliases.push_back({it2->second, "duckdb_placeholder_internal"});
+				}else {
+					cur_col_aliases.push_back({it2->second, it1->second});
 				}
 			}
+			// if (it1 != cur_col_map.end() && it2 != cur_col_map.end() && it1->second != it2->second) {
+			// 	for (auto &pair : column_aliases) {
+			// 		if (pair.first == it1->second) {
+			// 			pair.second = it2->second;
+			// 		}
+			// 	}
+			// }
 		}
 
 		if (column_aliases.size() == scan_column_names.size()) {
@@ -270,7 +293,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			ql_get_exp->all_columns = false;
 		}
 
-		ql_get_exp->column_aliases = column_aliases;
+		ql_get_exp->column_aliases = cur_col_aliases;
 
 		auto opr = (shared_ptr<DuckASTBaseOperator>)ql_get_exp;
 		ql_tree->insert(opr, curNode, ql_get_exp->name + "_AST", DuckASTOperatorType::GET);
