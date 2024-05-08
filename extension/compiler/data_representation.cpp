@@ -66,6 +66,17 @@ void DuckASTFilter::set_filter_condition(string filter_condition) {
 	this->filter_condition = filter_condition;
 }
 
+// DuckASTJoin functions
+void DuckASTJoin::add_table(string table_name) {
+	// Reference from table index to table name
+	this->tables.push_back(table_name);
+}
+
+void DuckASTJoin::set_condition(string& condition) {
+	this->condition = condition;
+}
+
+
 // DuckASTGet
 DuckASTGet::DuckASTGet() {
 	this->all_columns = false;
@@ -120,6 +131,8 @@ DuckAST::DuckAST() {
 	root = nullptr;
 }
 
+
+// Uses the parent node pointer provided and appends to its list of children
 void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id, DuckASTOperatorType type) {
 	Printer::Print("Inserting: " + id);
 	opr->name = id;
@@ -133,17 +146,21 @@ void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNod
 	}
 
 	auto node = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
+	node->parent_node = parent_node;
 	parent_node->children.push_back(node);
 	this->last_ptr = node;
 }
 
+// Returns the last node in the entire AST.
+// Helps in appending new nodes
 shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 	return last_ptr;
 }
 
 
+// Primary function which recursively generates a valid sql string from the AST
 void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
-                             bool has_filter) {
+                             bool has_filter, int join_child_index) {
 	if (node == nullptr) {
 		return;
 	}
@@ -159,6 +176,25 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string
 
 	// Append to plan_string according to node type
 	switch (node->type) {
+	case DuckASTOperatorType::CROSS_JOIN: {
+		auto exp = dynamic_cast<DuckASTJoin *>(node->opr.get());
+		string tables = "";
+		int cnt = 0;
+		for(auto& table: exp->tables) {
+			tables += " " + table + ", ";
+			cnt++;
+		}
+		if (has_filter) {
+			plan_string = "where " + plan_string;
+		}
+		plan_string = " from " + tables.substr(0, tables.size() - 2) + " " + plan_string;
+
+		for(int i = node->children.size() - 1; i >= 0; i--) {
+			auto &child = node->children[i];
+			generateString(child, prefix_string, plan_string, false, i);
+		}
+		break;
+	}
 	case DuckASTOperatorType::PROJECTION: {
 		for (auto child : node->children) {
 			generateString(child, prefix_string, plan_string);
@@ -236,21 +272,30 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string
 				// select_string = select_string + pair.first + ", ";
 				columns.push_back(pair.first);
 			} else {
-				// select_string = select_string + pair.second + " as " + pair.first + ", ";
-				columns.push_back(pair.second + " as " + pair.first);
+				// select_string = select_string + pair.first + " as " + pair.second + ", ";
+				columns.push_back(pair.first + " as " + pair.second);
 			}
 		}
 
-		string cur_string = "select ";
+		string cur_string = " ";
+		if(join_child_index != 1) {
+			cur_string = "select ";
+		}
 		for (size_t i = 0; i < columns.size(); i++) {
 			cur_string += columns[i];
-			if (i != columns.size() - 1) {
+			if (i < columns.size() - 1) {
 				cur_string += ", ";
 			}
 		}
 
-		cur_string += " from " + table_name;
-		plan_string = prefix_string + cur_string + plan_string;
+		if(join_child_index == -1) {
+			cur_string += " from " + table_name;
+			plan_string = prefix_string + cur_string + plan_string;
+		}else if(join_child_index == 1){
+			plan_string = prefix_string + cur_string + plan_string;
+		}else {
+			plan_string = prefix_string + cur_string + ", " + plan_string;
+		}
 
 		// Assuming that this is the bottom of the tree
 		return;

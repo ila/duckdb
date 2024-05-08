@@ -32,7 +32,7 @@
 namespace duckdb {
 
 // DuckASTBaseOperator Types
-enum DuckASTOperatorType { NONE, PROJECTION, GET, FILTER, AGGREGATE, ORDER_BY, INSERT };
+enum DuckASTOperatorType { NONE, PROJECTION, GET, FILTER, AGGREGATE, ORDER_BY, INSERT, CROSS_JOIN };
 
 // Node Type Classes
 class DuckASTBaseOperator {
@@ -87,6 +87,23 @@ public:
 	void add_order_column(string &col, string &ord);
 };
 
+/*
+ * Will support all the joins like Cross Join, unconditional joins etc..
+ * Contains a table index mapped with table name
+ */
+class DuckASTJoin: public DuckASTBaseOperator {
+public:
+	// Contains all table names
+	vector<string> tables;
+
+	// To be used with conditional joins
+	// No requirement in cross joins with/without filter
+	string condition;
+
+	void add_table(string table_name);
+
+	void set_condition(string& condition);
+};
 
 /*
  * DuckASTGet has a 1:1 relationship with the LogicalGet
@@ -134,7 +151,7 @@ class DuckAST {
 private:
 	void displayTree(shared_ptr<DuckASTNode> node);
 	void generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
-	                      bool has_filter = false);
+	                      bool has_filter = false, int join_child_index = -1);
 	shared_ptr<DuckASTNode> last_ptr = nullptr;
 
 public:
