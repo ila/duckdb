@@ -150,7 +150,7 @@ public:
 class DuckAST {
 private:
 	void displayTree(shared_ptr<DuckASTNode> node);
-	void generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
+	void generateString(const shared_ptr<DuckASTNode>& node, string &prefix_string, string &plan_string,
 	                      bool has_filter = false, int join_child_index = -1);
 	shared_ptr<DuckASTNode> last_ptr = nullptr;
 

@@ -158,9 +158,9 @@ shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 }
 
 // Primary function which recursively generates a valid sql string from the AST
-void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
+void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix_string, string &plan_string,
                              bool has_filter, int join_child_index) {
-	if (node == nullptr)
+	if (node == nullptr) {
 		return;
 	}
 

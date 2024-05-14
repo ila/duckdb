@@ -164,21 +164,18 @@ static duckdb::unique_ptr<FunctionData> DoIVMBind(ClientContext &context, TableF
 	input.named_parameters["view_schema_name"] = view_schema_name;
 
 	// obtain the bindings for view_name
-
-	// obtain view definition from catalog
-	// we need this to understand the column structure of the view
-	auto &catalog = Catalog::GetSystemCatalog(context);
-	QueryErrorContext error_context = QueryErrorContext();
-	auto internal_view_name = "_duckdb_internal_" + view_name + "_ivm";
-	auto view_catalog_entry = catalog.GetEntry(context, CatalogType::VIEW_ENTRY, view_catalog_name, view_schema_name,
-	                                           internal_view_name, OnEntryNotFound::THROW_EXCEPTION, error_context);
-	auto view_entry = dynamic_cast<ViewCatalogEntry *>(view_catalog_entry.get());
+	Connection con(*context.db);
+	auto v = con.Query("select sql_string from _duckdb_ivm_views where view_name = '" + view_name + "';");
+	if (v->HasError()) {
+		throw InternalException("Error while querying view definition");
+	}
+	string view_query = v->GetValue(0, 0).ToString();
 
 	// generate column bindings for the view definition
 	// we could try and avoid this, but we need to know the column names
 	// this is the plan of the view which will be fed to the optimizer rules
 	Parser parser;
-	parser.ParseQuery(view_entry->query->ToString());
+	parser.ParseQuery(view_query);
 	auto statement = parser.statements[0].get();
 	Planner planner(context);
 	planner.CreatePlan(statement->Copy());
