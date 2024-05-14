@@ -131,6 +131,7 @@ DuckAST::DuckAST() {
 	root = nullptr;
 }
 
+
 // Uses the parent node pointer provided and appends to its list of children
 void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id, DuckASTOperatorType type) {
 	Printer::Print("Inserting: " + id);
@@ -145,6 +146,7 @@ void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNod
 	}
 
 	auto node = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
+	node->parent_node = parent_node;
 	parent_node->children.push_back(node);
 	this->last_ptr = node;
 }
@@ -157,7 +159,7 @@ shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 
 // Primary function which recursively generates a valid sql string from the AST
 void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string, string &plan_string,
-                             bool has_filter) {
+                             bool has_filter, int join_child_index) {
 	if (node == nullptr)
 		return;
 
@@ -274,7 +276,11 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string
 		}
 
 		string cur_string = " ";
+<<<<<<< HEAD
 		if (join_child_index != 1) {
+=======
+		if(join_child_index != 1) {
+>>>>>>> d6d3cce09a (Added CrossJoin with filter implementation)
 			cur_string = "select ";
 		}
 		for (size_t i = 0; i < columns.size(); i++) {
@@ -284,12 +290,21 @@ void DuckAST::generateString(shared_ptr<DuckASTNode> node, string &prefix_string
 			}
 		}
 
+<<<<<<< HEAD
 		if (join_child_index == -1) {
 			cur_string += " from " + table_name;
 			plan_string = prefix_string + cur_string + plan_string;
 		} else if(join_child_index == 1){
 			plan_string = prefix_string + cur_string + plan_string;
 		} else {
+=======
+		if(join_child_index == -1) {
+			cur_string += " from " + table_name;
+			plan_string = prefix_string + cur_string + plan_string;
+		}else if(join_child_index == 1){
+			plan_string = prefix_string + cur_string + plan_string;
+		}else {
+>>>>>>> d6d3cce09a (Added CrossJoin with filter implementation)
 			plan_string = prefix_string + cur_string + ", " + plan_string;
 		}
 

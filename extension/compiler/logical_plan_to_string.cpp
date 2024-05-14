@@ -229,7 +229,11 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
+<<<<<<< HEAD
 		if (is_second_child) {
+=======
+		if(is_second_child) {
+>>>>>>> d6d3cce09a (Added CrossJoin with filter implementation)
 			curNode = curNode->parent_node;
 		}
 		auto ql_get_exp = new DuckASTGet();
@@ -271,6 +275,13 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 					cur_col_aliases.push_back({it2->second, it1->second});
 				}
 			}
+			// if (it1 != cur_col_map.end() && it2 != cur_col_map.end() && it1->second != it2->second) {
+			// 	for (auto &pair : column_aliases) {
+			// 		if (pair.first == it1->second) {
+			// 			pair.second = it2->second;
+			// 		}
+			// 	}
+			// }
 		}
 
 		// if (it1 != cur_col_map.end() && it2 != cur_col_map.end() && it1->second != it2->second) {
