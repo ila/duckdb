@@ -4,6 +4,7 @@
 #include "../../compiler/include/logical_plan_to_string.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/function/table/read_csv.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parser/parser.hpp"
@@ -57,12 +58,15 @@ public:
 		auto root = plan.get();
 		if (root->GetName().substr(0, 6) != "INSERT" && root->GetName().substr(0, 6) != "DELETE" &&
 		    root->GetName().substr(0, 6) != "UPDATE") {
-			// todo maybe this can be more elegant
 			return;
 		}
 
 		switch (root->type) {
 		case LogicalOperatorType::LOGICAL_INSERT: {
+
+			// TODO - insert with query
+			// todo - test with DEFAULT
+			// todo - INSERT OR REPLACE INTO
 
 			auto insert_node = dynamic_cast<LogicalInsert *>(root);
 			// we need to check whether the table isn't the delta table already
@@ -86,10 +90,6 @@ public:
 					// both delta_V and delta_T exist, we don't want insertions in V to be propagated to delta_V
 					// we have metadata tables: _duckdb_ivm_views (view_name varchar primary key)
 
-					// if the insertion in T fails, also the insertion in delta_T needs to fail
-					// example: violating some PK constraint
-					// todo -- how do we do this?
-
 					Connection con(*context.db);
 					con.SetAutoCommit(false);
 					auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + insert_table_name + "'");
@@ -101,45 +101,70 @@ public:
 							// insertion trees consist of: INSERT, PROJECTION, EXPRESSION_GET and a DUMMY_SCAN
 							// we do not consider more complicated queries for the time being
 
-							auto insert_query = "insert into delta_" + insert_node->table.name + " values ";
+							// we can have several types of INSERT queries
+							// the simpler one is INSERT INTO table VALUES (v1, v2, ...)
+							// consists in an INSERT node followed by PROJECTION
+							// for COPY, we have INSERT followed by READ_CSV
+							string insert_query;
+							if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_PROJECTION) {
 
-							// todo -- handle the case of COPY, bulk insertion etc
-							// COPY can just be another COPY in the delta table
-							auto projection = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
-							auto expression_get = dynamic_cast<LogicalExpressionGet *>(projection->children[0].get());
-							for (auto &expression : expression_get->expressions) {
-								// each expression corresponds to a row
-								// we build the query appending the values between parentheses
-								// we need to check the type of the expression too (for VARCHAR fields)
-								string values = "(";
-								for (auto &value : expression) {
-									if (value->type == ExpressionType::VALUE_CONSTANT) {
-										auto constant = dynamic_cast<BoundConstantExpression *>(value.get());
-										if (constant->value.type() == LogicalType::VARCHAR ||
-										    constant->value.type() == LogicalType::DATE ||
-										    constant->value.type() == LogicalType::TIMESTAMP ||
-										    constant->value.type() == LogicalType::TIME) {
-											values += "'" + constant->value.ToString() + "',";
+								insert_query = "insert into delta_" + insert_node->table.name + " values ";
+
+								// COPY can just be another COPY in the delta table
+								auto projection = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
+								auto expression_get =
+								    dynamic_cast<LogicalExpressionGet *>(projection->children[0].get());
+								for (auto &expression : expression_get->expressions) {
+									// each expression corresponds to a row
+									// we build the query appending the values between parentheses
+									// we need to check the type of the expression too (for VARCHAR fields)
+									string values = "(";
+									for (auto &value : expression) {
+										if (value->type == ExpressionType::VALUE_CONSTANT) {
+											auto constant = dynamic_cast<BoundConstantExpression *>(value.get());
+											if (constant->value.type() == LogicalType::VARCHAR ||
+											    constant->value.type() == LogicalType::DATE ||
+											    constant->value.type() == LogicalType::TIMESTAMP ||
+											    constant->value.type() == LogicalType::TIME) {
+												values += "'" + constant->value.ToString() + "',";
+											} else {
+												values += constant->value.ToString() + ",";
+											}
 										} else {
-											values += constant->value.ToString() + ",";
+											throw NotImplementedException("Only constant values are supported for now");
 										}
-									} else {
-										throw NotImplementedException("Only constant values are supported for now");
+									}
+									// add "true" as multiplicity (we are performing an insertion)
+									values += "true, now()),";
+									insert_query += values;
+								}
+
+								// remove the last comma
+								insert_query.pop_back();
+								auto r = con.Query(insert_query);
+								if (r->HasError()) {
+									throw InternalException("Cannot insert in delta table! " + r->GetError());
+								}
+								con.Commit();
+								dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+
+							} else if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
+								// this is a COPY
+								auto get = dynamic_cast<LogicalGet *>(insert_node->children[0].get());
+								auto files = dynamic_cast<ReadCSVData *>(get->bind_data.get())->files; // vector
+								for (auto &file : files) {
+									// we cannot just copy; we need to hardcode the multiplicity and timestamp
+									// insert into delta_table select *, true, now() from read_csv(path);
+									// the performance is the same, since COPY is an insertion
+									auto query = "insert into delta_" + insert_node->table.name + " select *, true, now() from read_csv('" + file + "');";
+									auto r = con.Query(query);
+									if (r->HasError()) {
+										throw InternalException("Cannot insert in delta table! " + r->GetError());
 									}
 								}
-								// add "true" as multiplicity (we are performing an insertion)
-								values += "true, now()),";
-								insert_query += values;
+								con.Commit();
+								dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
 							}
-
-							// remove the last comma
-							insert_query.pop_back();
-
-							// todo exception handling
-							auto r = con.Query(insert_query);
-							con.Commit();
-
-							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
 						} else {
 							// we skip the second insertion and reset the flag
 							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
