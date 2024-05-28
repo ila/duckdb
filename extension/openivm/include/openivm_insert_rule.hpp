@@ -213,9 +213,15 @@ public:
 									string += " where " + get->ParamsToString();
 									string = string.substr(0, string.find('\n'));
 								}
-							} else {
-								throw NotImplementedException("Only simple UPDATE statements are supported in IVM!");
+							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
+								// do nothing?
+								// this might cause bugs but will be fixed as soon as we implement coalescing
+								return;
 							}
+							else {
+								throw NotImplementedException("Only simple DELETE statements are supported in IVM!");
+							}
+
 							auto r = con.Query(string);
 							if (r->HasError()) {
 								throw InternalException("Cannot insert in delta table! " + r->GetError());
@@ -297,6 +303,10 @@ public:
 									where_string += " where " + get->ParamsToString();
 									where_string = where_string.substr(0, where_string.find('\n'));
 								}
+							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
+								// do nothing?
+								// this might cause bugs but will be fixed as soon as we implement coalescing
+								return;
 							} else {
 								throw NotImplementedException("Only simple UPDATE statements are supported in IVM!");
 							}

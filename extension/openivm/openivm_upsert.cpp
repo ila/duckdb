@@ -149,7 +149,14 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	string ivm_file_path = db_path + "/ivm_upsert_queries_" + view_name + ".sql";
 	duckdb::CompilerExtension::WriteFile(ivm_file_path, false, query);
 
-	return query;
+	Value execute;
+	context.TryGetCurrentSetting("execute", execute);
+	// the "execute" flag is only for benchmarking purposes
+	if (!context.db->config.options.database_path.empty() && execute.GetValue<bool>()) { // in memory
+		return query;
+	} else {
+		return "select 1"; // dummy query
+	}
 }
 
 } // namespace duckdb

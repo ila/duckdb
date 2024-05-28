@@ -76,7 +76,11 @@ static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &contex
 	if (benchmark == "lineitem") {
 		RunIVMLineitemBenchmark(scale_factor, insertions, updates, deletions);
 	} else if (benchmark == "groups") {
-		RunIVMGroupsBenchmark(scale_factor, insertions, updates, deletions);
+		if (insertions < 100 && updates < 100 && deletions < 100) {
+			throw NotImplementedException("Error: invalid benchmark parameters.");
+		}
+		int tuples = scale_factor;
+		RunIVMGroupsBenchmark(tuples, insertions, updates, deletions);
 	} else if (benchmark == "postgres") {
 		RunIVMCrossSystemBenchmark(scale_factor, insertions, updates, deletions, BenchmarkType::POSTGRES);
 	} else if (benchmark == "cross-system") {
@@ -220,6 +224,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 	db_config.AddExtensionOption("ivm_system", "database for cross-system openivm", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("ivm_catalog_name", "catalog name", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("ivm_schema_name", "schema name", LogicalType::VARCHAR);
+	db_config.AddExtensionOption("execute", "whether to execute queries", LogicalType::BOOLEAN);
+	// the "execute" flag is only for benchmarking purposes
 
 	Connection con(instance);
 	auto ivm_parser = duckdb::IVMParserExtension();
@@ -250,6 +256,10 @@ static void LoadInternal(DatabaseInstance &instance) {
 	ivm_func.named_parameters["view_name"];
 	CreateTableFunctionInfo ivm_func_info(ivm_func);
 	catalog.CreateTableFunction(*con.context, &ivm_func_info);
+	con.Commit();
+
+	con.BeginTransaction();
+	con.Query("set execute=true");
 	con.Commit();
 
 	con.BeginTransaction();

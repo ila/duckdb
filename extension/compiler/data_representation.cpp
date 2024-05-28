@@ -9,7 +9,6 @@
 namespace duckdb {
 // DuckASTBaseOperator
 DuckASTBaseOperator::DuckASTBaseOperator() {
-	Printer::Print("Base Operator");
 }
 
 DuckASTBaseOperator::DuckASTBaseOperator(string name) {
@@ -72,10 +71,9 @@ void DuckASTJoin::add_table(string table_name) {
 	this->tables.push_back(table_name);
 }
 
-void DuckASTJoin::set_condition(string& condition) {
+void DuckASTJoin::set_condition(string &condition) {
 	this->condition = condition;
 }
-
 
 // DuckASTGet
 DuckASTGet::DuckASTGet() {
@@ -131,16 +129,15 @@ DuckAST::DuckAST() {
 	root = nullptr;
 }
 
-
 // Uses the parent node pointer provided and appends to its list of children
-void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id, DuckASTOperatorType type) {
-	Printer::Print("Inserting: " + id);
+void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id,
+                     DuckASTOperatorType type) {
+	// Printer::Print("Inserting: " + id);
 	opr->name = id;
 	if (root == nullptr && parent_node == nullptr) {
 		root = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
 		root->type = type;
 		root->parent_node = nullptr;
-		Printer::Print("At root right now");
 		this->last_ptr = root;
 		return;
 	}
@@ -158,7 +155,7 @@ shared_ptr<DuckASTNode> DuckAST::getLastNode() {
 }
 
 // Primary function which recursively generates a valid sql string from the AST
-void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix_string, string &plan_string,
+void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
                              bool has_filter, int join_child_index) {
 	if (node == nullptr) {
 		return;
@@ -172,30 +169,29 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 	// with my_table as (select my_column from my_table where ...)
 	// delete from my_table where ...
 
-
 	// Append to plan_string according to node type
 	switch (node->type) {
 	case DuckASTOperatorType::CROSS_JOIN: {
 		auto exp = dynamic_cast<DuckASTJoin *>(node->opr.get());
 		string tables = "";
 		int cnt = 0;
-		for(auto& table: exp->tables) {
+		for (auto &table : exp->tables) {
 			tables += " " + table + ", ";
 			cnt++;
 		}
-		if(has_filter) {
+		if (has_filter) {
 			plan_string = "where " + plan_string;
 		}
 		plan_string = " from " + tables.substr(0, tables.size() - 2) + " " + plan_string;
 
-		for(int i = node->children.size() - 1; i >= 0; i--) {
+		for (int i = node->children.size() - 1; i >= 0; i--) {
 			auto &child = node->children[i];
 			generateString(child, prefix_string, plan_string, false, i);
 		}
 		break;
 	}
 	case DuckASTOperatorType::PROJECTION: {
-		for (auto child : node->children) {
+		for (const auto &child : node->children) {
 			generateString(child, prefix_string, plan_string);
 		}
 		break;
@@ -204,7 +200,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 		auto exp = dynamic_cast<DuckASTFilter *>(node->opr.get());
 		plan_string = exp->filter_condition + plan_string;
 		auto children = node->children;
-		for (auto child : node->children) {
+		for (const auto &child : node->children) {
 			generateString(child, prefix_string, plan_string, true);
 		}
 		break;
@@ -213,7 +209,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 		auto exp = dynamic_cast<DuckASTOrderBy *>(node->opr.get());
 		string order_string = "";
 		int cnt = exp->order.size();
-		for (auto ord : exp->order) {
+		for (const auto &ord : exp->order) {
 			order_string += ord.first + " " + ord.second;
 			cnt--;
 			if (cnt <= 0) {
@@ -223,7 +219,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 			}
 		}
 		plan_string = " order by " + order_string + plan_string;
-		for (auto child : node->children) {
+		for (const auto &child : node->children) {
 			generateString(child, prefix_string, plan_string, true);
 		}
 		break;
@@ -236,7 +232,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 		string grp_string = "";
 		if (exp->is_group_by) {
 			int count = exp->group_column.size();
-			for (auto grp : exp->group_column) {
+			for (const auto &grp : exp->group_column) {
 				grp_string += grp;
 				count--;
 				if (count <= 0) {
@@ -247,7 +243,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 			}
 			plan_string = " group by " + grp_string + plan_string;
 		}
-		for (auto child : node->children) {
+		for (const auto &child : node->children) {
 			generateString(child, prefix_string, plan_string);
 		}
 		break;
@@ -258,7 +254,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 		string table_name = exp->table_name;
 		if (has_filter) {
 			plan_string = " where " + plan_string;
-		} else if (exp->filter_condition != "") {
+		} else if (!exp->filter_condition.empty()) {
 			plan_string = " where " + exp->filter_condition + plan_string;
 		}
 		if (exp->all_columns) {
@@ -272,12 +268,13 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 				columns.push_back(pair.first);
 			} else {
 				// select_string = select_string + pair.first + " as " + pair.second + ", ";
-				columns.push_back(pair.first + " as " + pair.second);
+				// columns.push_back(pair.first + " as " + pair.second);
+				columns.push_back(pair.second + " as " + pair.first);
 			}
 		}
 
 		string cur_string = " ";
-		if(join_child_index != 1) {
+		if (join_child_index != 1) {
 			cur_string = "select ";
 		}
 		for (size_t i = 0; i < columns.size(); i++) {
@@ -287,12 +284,12 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 			}
 		}
 
-		if(join_child_index == -1) {
+		if (join_child_index == -1) {
 			cur_string += " from " + table_name;
 			plan_string = prefix_string + cur_string + plan_string;
-		}else if(join_child_index == 1){
+		} else if (join_child_index == 1) {
 			plan_string = prefix_string + cur_string + plan_string;
-		}else {
+		} else {
 			plan_string = prefix_string + cur_string + ", " + plan_string;
 		}
 
@@ -302,7 +299,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode>& node, string &prefix
 	case DuckASTOperatorType::INSERT: {
 		auto exp = dynamic_cast<DuckASTInsert *>(node->opr.get());
 		prefix_string = "insert into " + exp->table_name + " ";
-		for (auto child : node->children) {
+		for (const auto& child : node->children) {
 			generateString(child, prefix_string, plan_string);
 		}
 		break;
@@ -318,12 +315,12 @@ void DuckAST::generateString(string &plan_string) {
 	plan_string += ";";
 }
 
-
 void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool isLast) {
 	std::cout << prefix;
 	std::cout << (isLast ? "└── " : "├── ");
 	if (node->opr != nullptr) {
-		std::cout << "Node: " << node->name << ", Type: " << node->type << ", Operator: " << node->opr->name << std::endl;
+		std::cout << "Node: " << node->name << ", Type: " << node->type << ", Operator: " << node->opr->name
+		          << std::endl;
 	} else {
 		std::cout << "Node ID: " << node->name << ", Type: " << node->type << std::endl;
 	}

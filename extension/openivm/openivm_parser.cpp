@@ -64,11 +64,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
                                                               unique_ptr<ParserExtensionParseData> parse_data) {
 	// after the parser, the query string reaches this point
 
-	// todo for demo:
-	// finish (test) benchmarking suite
-	// refactor DuckAST
-	// poster
-
 	auto &ivm_parse_data = dynamic_cast<IVMParseData &>(*parse_data);
 	auto statement = dynamic_cast<SQLStatement *>(ivm_parse_data.statement.get());
 
@@ -84,9 +79,12 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		string db_path;
 		if (!context.db->config.options.database_path.empty()) { // this also works with .open
 			db_path = context.db->GetFileSystem().GetWorkingDirectory();
-		} else {
-			Value db_path_value;
-			context.TryGetCurrentSetting("ivm_files_path", db_path_value);
+		}
+		Value db_path_value;
+		context.TryGetCurrentSetting("ivm_files_path", db_path_value);
+		if (!db_path_value.IsNull()) {
+			// by default, the ivm files path is the database path
+			// however this can be overridden by a setting
 			db_path = db_path_value.ToString();
 		}
 		string compiled_file_path = db_path + "/ivm_compiled_queries_" + view_name + ".sql";
@@ -258,7 +256,11 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// .read (CLI command) doesn't work with the API, so we read the file first
 		// only executing this if the database is not in memory
 
-		if (!context.db->config.options.database_path.empty()) {
+		// the "execute" flag is only for benchmarking purposes
+		Value execute;
+		context.TryGetCurrentSetting("execute", execute);
+
+		if (!context.db->config.options.database_path.empty() && execute.GetValue<bool>()) {
 			auto system_queries = duckdb::CompilerExtension::ReadFile(system_tables_path);
 			for (auto &query : StringUtil::Split(system_queries, '\n')) {
 				auto r = con.Query(query);

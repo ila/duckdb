@@ -217,6 +217,8 @@ string CompilerExtension::GenerateDeltaTable(string &query) {
 	// 2) add a new bool column multiplicity
 	// 3) add a new timestamp column with default now()
 	string delta_query = SQLToLowercase(query);
+	// remove any \" from the query
+	delta_query = std::regex_replace(delta_query, std::regex(R"(\")"), "");
 	// replace the table name with "delta_table_name"
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\b([a-zA-Z0-9_]+)\s*\()"), "delta_$1(");
 	// add a new column "multiplicity"

@@ -68,7 +68,7 @@ string ExtractSelect(const string &input_query) {
 	return cte;
 }
 
-// Function to read a file and split its content into three strings
+// Function to read a file and split its content into six strings
 vector<string> ReadQueries(const string &filename) {
 	std::ifstream file(filename);
 
@@ -92,11 +92,18 @@ vector<string> ReadQueries(const string &filename) {
 	// find the positions of '\n\n' to split the content
 	size_t pos1 = content.find("\n\n");
 	size_t pos2 = content.find("\n\n", pos1 + 1);
+	size_t pos3 = content.find("\n\n", pos2 + 1);
+	size_t pos4 = content.find("\n\n", pos3 + 1);
+	size_t pos5 = content.find("\n\n", pos4 + 1);
+	size_t pos6 = content.find("\n\n", pos5 + 1);
 
-	// Split the content into three strings
+	// Split the content into six strings
 	result.push_back(content.substr(0, pos1));
 	result.push_back(content.substr(pos1 + 2, pos2 - pos1 - 2));
-	result.push_back(content.substr(pos2 + 2));
+	result.push_back(content.substr(pos2 + 2, pos3 - pos2 - 2));
+	result.push_back(content.substr(pos3 + 2, pos4 - pos3 - 2));
+	result.push_back(content.substr(pos4 + 2, pos5 - pos4 - 2));
+	result.push_back(content.substr(pos5 + 2, pos6 - pos5 - 2));
 
 	return result;
 }
@@ -106,20 +113,13 @@ int GetRandomValue() {
 	return distribution(generator);
 }
 
-void CreateTable(double scale_factor, int insertions) {
+void CreateTable(int tuples, int insertions) {
 
 	string data_dir = "/tmp/data/";
-	string scale_dir = data_dir + "sf" + DoubleToString(scale_factor) + "/";
+	string scale_dir = data_dir + "t" + DoubleToString(tuples) + "/";
 
 	auto groups_path = scale_dir + "groups.tbl";
 	auto groups_path_new = scale_dir + "groups_new_" + to_string(insertions) + ".tbl";
-
-	// convert scale factor from GB to bytes
-	const std::size_t scale_factor_bytes = static_cast<std::size_t>(scale_factor * std::pow(1024, 3));
-	// calculate the number of rows needed
-	// 10 bytes for the group name, 4 bytes for the group value
-	const std::size_t num_rows = scale_factor_bytes / 14;
-	const std::size_t num_insertions = num_rows * insertions / 100;
 
 	LocalFileSystem fs;
 
@@ -134,19 +134,19 @@ void CreateTable(double scale_factor, int insertions) {
 	if (!fs.FileExists(groups_path)) {
 		std::ofstream outfile(groups_path);
 
-		for (int i = 1; i <= num_rows; ++i) {
-			outfile << "Group_" << (i % (num_rows / 3)) + 1 << "," << GetRandomValue() << '\n';
+		for (int i = 1; i <= tuples; ++i) {
+			outfile << i << ",Group_" << (i % (tuples / 3)) + 1 << "," << GetRandomValue() << '\n';
 		}
 	}
 
 	if (!fs.FileExists(groups_path_new)) {
 		std::ofstream outfile(groups_path_new);
 
-		for (int i = 1; i <= num_insertions; ++i) {
-			// adding 1000 as arbitrary value
-			// the last 1 represents insertions
-			outfile << "Group_" << (i % 3) + 1000 << "," << GetRandomValue() << ","
-			        << "1\n";
+		for (int i = 0; i < insertions - 100; ++i) {
+			outfile << tuples + i << ",Group_" << (i % 100) << "," << GetRandomValue() << "\n";
+		}
+		for (int i = 0; i < 100; ++i) {
+			outfile << "0,Group_xxxxx," << GetRandomValue() << "\n";
 		}
 	}
 }

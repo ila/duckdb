@@ -25,16 +25,16 @@ string LogicalPlanToString(unique_ptr<LogicalOperator> &plan) {
 	auto prj = unique_ptr<DuckAST>(new DuckAST());
 	// now we can call the recursive function
 	LogicalPlanToString(plan, plan_string, prj, column_names, column_aliases);
-	DuckAST::printAST(prj->root);
+	// DuckAST::printAST(prj->root);
 
-	Printer::Print("Display!-------------");
+	// Printer::Print("Display!-------------");
 	prj->generateString(plan_string);
-	Printer::Print(plan_string);
+	// Printer::Print(plan_string);
 	return plan_string;
 }
 
-void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
-						 unique_ptr<DuckAST> &ql_tree, std::unordered_map<string, string> column_names,
+void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string, unique_ptr<DuckAST> &ql_tree,
+                         std::unordered_map<string, string> column_names,
                          std::vector<std::pair<string, string>> column_aliases, bool is_second_child) {
 
 	// todo refactor the AST (unnecessary fields) + fix aggregations
@@ -117,8 +117,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			group_names.push_back(grp->GetName());
 			// assuming that these bindings are generated in a +2 table_index
 			// Need to fix and find actual reason
-			//auto id = to_string(binds[counter].table_index - 2) + "." + to_string(binds[counter].column_index);
-			//column_map[id] = grp->GetName();
+			// auto id = to_string(binds[counter].table_index - 2) + "." + to_string(binds[counter].column_index);
+			// column_map[id] = grp->GetName();
 			counter++;
 		}
 		vector<string> aggregate_function;
@@ -229,7 +229,7 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
-		if(is_second_child) {
+		if (is_second_child) {
 			curNode = curNode->parent_node;
 		}
 		auto ql_get_exp = new DuckASTGet();
@@ -252,39 +252,48 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
 			    scan_column_names[column_ids[i]];
 		}
-		vector<pair<string, string>> cur_col_aliases;
 
 		// Checking for aliases with context to the current table only
 
 		// now we check the aliases
+		/*
+		vector<pair<string, string>> cur_col_aliases;
+
 		for (int i = 0; i < bindings.size(); i++) {
-			if(bindings[i].table_index != current_table_index) {
+			if (bindings[i].table_index != current_table_index) {
 				continue;
 			}
 			auto key = std::to_string(bindings[i].table_index) + "." + std::to_string(bindings[i].column_index);
 			auto it1 = column_names.find(key);
 			auto it2 = cur_col_map.find(key);
-			if(it2 != cur_col_map.end() && it1 != column_names.end()) {
-				if(it1->second == it2->second) {
+			if (it2 != cur_col_map.end() && it1 != column_names.end()) {
+				if (it1->second == it2->second) {
 					cur_col_aliases.push_back({it2->second, "duckdb_placeholder_internal"});
-				}else {
+				} else {
 					cur_col_aliases.push_back({it2->second, it1->second});
 				}
 			}
-			// if (it1 != cur_col_map.end() && it2 != cur_col_map.end() && it1->second != it2->second) {
-			// 	for (auto &pair : column_aliases) {
-			// 		if (pair.first == it1->second) {
-			// 			pair.second = it2->second;
-			// 		}
-			// 	}
-			// }
+		} */
+
+		for (int i = 0; i < bindings.size(); i++) {
+			auto key = std::to_string(bindings[i].table_index) + "." + std::to_string(bindings[i].column_index);
+			auto it1 = column_names.find(key);
+			auto it2 = cur_col_map.find(key);
+			if (it1 != cur_col_map.end() && it2 != cur_col_map.end() && it1->second != it2->second) {
+				for (auto &pair : column_aliases) {
+					if (pair.first == it1->second) {
+						pair.second = it2->second;
+					}
+				}
+			}
 		}
 
 		if (column_aliases.size() == scan_column_names.size()) {
 			// we might be in a SELECT * case
 			// we need to check 1) the order and 2) the aliases
 			for (int i = 0; i < column_aliases.size(); i++) {
-				if (column_aliases[i].first != scan_column_names[i] || column_aliases[i].second != "duckdb_placeholder_internal") {
+				if (column_aliases[i].first != scan_column_names[i] ||
+				    column_aliases[i].second != "duckdb_placeholder_internal") {
 					ql_get_exp->all_columns = false;
 					break;
 				}
@@ -293,7 +302,8 @@ void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
 			ql_get_exp->all_columns = false;
 		}
 
-		ql_get_exp->column_aliases = cur_col_aliases;
+		//ql_get_exp->column_aliases = cur_col_aliases;
+		ql_get_exp->column_aliases = column_aliases;
 
 		auto opr = (shared_ptr<DuckASTBaseOperator>)ql_get_exp;
 		ql_tree->insert(opr, curNode, ql_get_exp->name + "_AST", DuckASTOperatorType::GET);
