@@ -20,9 +20,9 @@ void ReplaceTableName(string &catalog, string &schema, string& query) {
 	query = std::regex_replace(query, pattern, "$1" + catalog + "." + schema + ".$2");
 }
 
-void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
+void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, string& path) {
 
-	// usage: call ivm_demo_postgres('p', 'public', 'file_path');
+	// usage: call ivm_demo('p', 'public', 'database', 'file_path');
 
 	// note: I manually changed the engine_version here to make the extension work
 
@@ -36,10 +36,9 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 	auto table = CompilerExtension::ExtractViewName(query); // the table is on PostgreSQL
 
 	const char *user = std::getenv("USER");
-	// todo add dbname flag
-	string conn_info = "dbname=" + string(user) + " user=" + string(user) + " dbname=dvdrental";
+	string conn_info = "dbname=" + string(user) + " user=" + string(user) + " dbname=" + database + "";
 
-	DuckDB db("/home/ila/Code/duckdb/postgres.db");
+	DuckDB db("postgres.db");
 	Connection con(db);
 
 	// setting system settings
@@ -66,14 +65,14 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& path) {
 	rows->Print();
 
 	// now triggering the IVM
-	// PRAGMA ivm_upsert('catalog', 'schema', 'result')
+	// PRAGMA ivm_options('catalog', 'schema', 'result')
 	string input;
 	std::cout << "Enter 'OK' when changes are ready to be applied: ";
 	std::cin >> input;
 
 	// check if the input is equal to "OK"
 	if (input == "OK") {
-		res = con.Query("PRAGMA ivm_upsert('postgres', 'main', '" + table + "');");
+		res = con.Query("PRAGMA ivm_options('postgres', 'main', '" + table + "');");
 		if (res->HasError()) {
 			throw Exception(ExceptionType::UNKNOWN_TYPE, "Could not complete IVM: " + res->GetError());
 		} else {

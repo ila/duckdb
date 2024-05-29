@@ -96,6 +96,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Materialized view created..." << "\n";
 
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Query: " << materialized_view << "\n";
+
 		start_time = std::chrono::high_resolution_clock::now();
 		con.Query(index_queries);
 		end_time = std::chrono::high_resolution_clock::now();

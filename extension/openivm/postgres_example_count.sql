@@ -1,0 +1,1 @@
+CREATE MATERIALIZED VIEW example_count AS SELECT mode, COUNT(*) FROM example_table GROUP BY mode;

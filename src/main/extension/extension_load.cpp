@@ -156,7 +156,8 @@ bool ExtensionHelper::TryInitialLoad(DBConfig &config, FileSystem &fs, const str
 	string metadata_segment;
 	metadata_segment.resize(512);
 
-	const std::string engine_version = std::string(GetVersionDirectoryName());
+	// const std::string engine_version = std::string(GetVersionDirectoryName());
+	const std::string engine_version = "v0.10.2";
 	const std::string engine_platform = std::string(DuckDB::Platform());
 
 	auto handle = fs.OpenFile(filename, FileFlags::FILE_FLAGS_READ);

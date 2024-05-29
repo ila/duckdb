@@ -1,0 +1,1 @@
+CREATE MATERIALIZED VIEW example_filter AS SELECT mode, value FROM example_table WHERE mode = 'a';

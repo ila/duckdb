@@ -106,13 +106,15 @@ static duckdb::unique_ptr<FunctionData> DoIVMDemoBind(ClientContext &context, Ta
 	// display the outputs (do not remove)
 	auto catalog_name = StringValue::Get(input.inputs[0]);
 	auto schema_name = StringValue::Get(input.inputs[1]);
-	auto path = StringValue::Get(input.inputs[2]);
+	auto database_name = StringValue::Get(input.inputs[2]);
+	auto path = StringValue::Get(input.inputs[3]);
 
 	input.named_parameters["catalog_name"] = catalog_name;
 	input.named_parameters["schema_name"] = schema_name;
+	input.named_parameters["database_name"] = database_name;
 	input.named_parameters["path"] = path;
 
-	RunIVMCrossSystemDemo(catalog_name, schema_name, path);
+	RunIVMCrossSystemDemo(catalog_name, schema_name, database_name, path);
 
 	// create result set using column bindings returned by the planner
 	auto result = make_uniq<DoIVMBenchmarkFunctionData>();
@@ -244,7 +246,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	TableFunction ivm_benchmark_func("IVMBenchmark", {LogicalType::VARCHAR, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER}, DoIVMBenchmarkFunction,
 	                       DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
-	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMDemoFunction,
+	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMDemoFunction,
 	                                 DoIVMDemoBind, DoIVMDemoInit);
 
 	con.BeginTransaction();
@@ -276,9 +278,10 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	con.BeginTransaction();
 	ivm_demo_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMDemo);
-	ivm_demo_func.name = "ivm_demo_postgres";
+	ivm_demo_func.name = "ivm_demo";
 	ivm_demo_func.named_parameters["catalog_name"];
 	ivm_demo_func.named_parameters["schema_name"];
+	ivm_demo_func.named_parameters["database_name"];
 	ivm_demo_func.named_parameters["path"];
 	CreateTableFunctionInfo ivm_demo_func_info(ivm_demo_func);
 	catalog.CreateTableFunction(*con.context, &ivm_demo_func_info);
