@@ -30,7 +30,12 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	string view_catalog_name;
 	string view_schema_name;
+	string attached_db_catalog_name;
+	string attached_db_schema_name;
 	string view_name;
+	bool cross_system = false; // to make checks easier
+	// if we are in a cross-system scenario, the tables need to be stored separately
+	// ex. the delta tables are on the attached database, while the delta views on DuckDB
 
 	// extracting the query from the view definition
 	Connection con(*context.db.get());
@@ -40,6 +45,14 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 		view_catalog_name = StringValue::Get(parameters.values[0]);
 		view_schema_name = StringValue::Get(parameters.values[1]);
 		view_name = StringValue::Get(parameters.values[2]);
+	} else if (parameters.values.size() == 5) {
+		// ivm_cross_system was called, so different schema and catalog
+		view_catalog_name = StringValue::Get(parameters.values[0]);
+		view_schema_name = StringValue::Get(parameters.values[1]);
+		attached_db_catalog_name = StringValue::Get(parameters.values[2]);
+		attached_db_schema_name = StringValue::Get(parameters.values[3]);
+		view_name = StringValue::Get(parameters.values[4]);
+		cross_system = true;
 	} else {
 		// simple ivm, we assume current schema and catalog
 		view_catalog_name = con.Query("select current_catalog();")->GetValue(0, 0).ToString();
@@ -117,7 +130,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	con.Rollback();
 
-	ivm_query += LogicalPlanToString(plan);
+	ivm_query += LogicalPlanToString(context, plan);
 
 	// now we delete everything from the delta view
 	string delete_from_view_query = "delete from delta_" + view_name + ";";
@@ -131,6 +144,9 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	for (size_t i = 0; i < tables->RowCount(); i++) {
 		auto table_name = tables->GetValue(0, i).ToString();
+		if (cross_system) {
+			table_name = attached_db_catalog_name + "." + attached_db_schema_name + "." + table_name;
+		}
 		delete_from_delta_table_query += "delete from " + table_name + " where timestamp < (select min(last_update) from _duckdb_ivm_delta_tables where table_name = '" + table_name + "');\n";
 	}
 
@@ -152,7 +168,9 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	Value execute;
 	context.TryGetCurrentSetting("execute", execute);
 	// the "execute" flag is only for benchmarking purposes
-	if (!context.db->config.options.database_path.empty() && execute.GetValue<bool>()) { // in memory
+	// if the database is in memory, we do not want to run the whole IVM thing
+	// so we return a dummy query (we must return something here)
+	if (!context.db->config.options.database_path.empty() && (execute.IsNull() || execute.GetValue<bool>())) { // in memory
 		return query;
 	} else {
 		return "select 1"; // dummy query

@@ -47,7 +47,7 @@ public:
 		}
 	};
 
-	static void IVMInsertRuleFunction(ClientContext &context, OptimizerExtensionInfo *info,
+	static void IVMInsertRuleFunction(OptimizerExtensionInput &input,
 	                                  duckdb::unique_ptr<LogicalOperator> &plan) {
 		// first function call
 		// we need to trigger this every time we see INSERT/DELETE/UPDATE on a table with IVM enabled
@@ -79,7 +79,7 @@ public:
 				auto insert_table = "delta_" + insert_node->table.name;
 				QueryErrorContext error_context = QueryErrorContext();
 				auto delta_table_catalog_entry = Catalog::GetEntry(
-				    context, CatalogType::TABLE_ENTRY, insert_node->table.catalog.GetName(),
+				    input.context, CatalogType::TABLE_ENTRY, insert_node->table.catalog.GetName(),
 				    insert_node->table.schema.name, insert_table, OnEntryNotFound::RETURN_NULL, error_context);
 
 				if (delta_table_catalog_entry) { // if it exists, we can append
@@ -90,13 +90,13 @@ public:
 					// both delta_V and delta_T exist, we don't want insertions in V to be propagated to delta_V
 					// we have metadata tables: _duckdb_ivm_views (view_name varchar primary key)
 
-					Connection con(*context.db);
+					Connection con(*input.context.db);
 					con.SetAutoCommit(false);
 					auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + insert_table_name + "'");
 					if (t->RowCount() == 0) {
 						// a view does not exist --> our table is actually a table and not a materialized view
 						// we need a flag otherwise the insertion is performed twice (bug?)
-						if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed) {
+						if (!dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed) {
 							// we need to reach the bottom of the tree to get the values to insert
 							// insertion trees consist of: INSERT, PROJECTION, EXPRESSION_GET and a DUMMY_SCAN
 							// we do not consider more complicated queries for the time being
@@ -146,7 +146,7 @@ public:
 									throw InternalException("Cannot insert in delta table! " + r->GetError());
 								}
 								con.Commit();
-								dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+								dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = true;
 
 							} else if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								// this is a COPY
@@ -163,11 +163,11 @@ public:
 									}
 								}
 								con.Commit();
-								dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+								dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = true;
 							}
 						} else {
 							// we skip the second insertion and reset the flag
-							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
+							dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = false;
 						}
 					}
 				}
@@ -185,16 +185,16 @@ public:
 				auto delta_delete_table = "delta_" + delete_node->table.name;
 				QueryErrorContext error_context = QueryErrorContext();
 				auto delta_table_catalog_entry = Catalog::GetEntry(
-				    context, CatalogType::TABLE_ENTRY, delete_node->table.catalog.GetName(),
+				    input.context, CatalogType::TABLE_ENTRY, delete_node->table.catalog.GetName(),
 				    delete_node->table.schema.name, delta_delete_table, OnEntryNotFound::RETURN_NULL, error_context);
 
 				if (delta_table_catalog_entry) { // if it exists, we can append
 					                             // check if already done
-					Connection con(*context.db);
+					Connection con(*input.context.db);
 					con.SetAutoCommit(false);
 					auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + delete_table_name + "'");
 					if (t->RowCount() == 0) {
-						if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed) {
+						if (!dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed) {
 							// I could not find any smart way to do this other than simply manipulating the string
 							// we don't have the string, so we need to reconstruct it from the plan
 							// todo 1 -- can there be other types of delete query?
@@ -227,10 +227,10 @@ public:
 								throw InternalException("Cannot insert in delta table! " + r->GetError());
 							}
 							con.Commit();
-							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+							dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = true;
 						} else {
 							// we skip the second insertion and reset the flag
-							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
+							dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = false;
 						}
 					}
 				}
@@ -248,16 +248,16 @@ public:
 				auto delta_update_table = "delta_" + update_node->table.name;
 				QueryErrorContext error_context = QueryErrorContext();
 				auto delta_table_catalog_entry = Catalog::GetEntry(
-				    context, CatalogType::TABLE_ENTRY, update_node->table.catalog.GetName(),
+				    input.context, CatalogType::TABLE_ENTRY, update_node->table.catalog.GetName(),
 				    update_node->table.schema.name, delta_update_table, OnEntryNotFound::RETURN_NULL, error_context);
 
 				if (delta_table_catalog_entry) { // if it exists, we can append
 					                             // check if already done
-					Connection con(*context.db);
+					Connection con(*input.context.db);
 					con.SetAutoCommit(false);
 					auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + update_table_name + "'");
 					if (t->RowCount() == 0) {
-						if (!dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed) {
+						if (!dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed) {
 							// here we also assume simple queries with at most a filter
 							// this is for the rows to delete
 							string insert_old = "insert into " + delta_update_table + " select *, false, now() from " +
@@ -338,10 +338,10 @@ public:
 							}
 
 							con.Commit();
-							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = true;
+							dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = true;
 						} else {
 							// we skip the second insertion and reset the flag
-							dynamic_cast<IVMInsertOptimizerInfo *>(info)->performed = false;
+							dynamic_cast<IVMInsertOptimizerInfo *>(input.info.get())->performed = false;
 						}
 					}
 				}

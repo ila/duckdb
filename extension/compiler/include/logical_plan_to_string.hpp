@@ -28,8 +28,8 @@
 #include "data_representation.hpp"
 
 namespace duckdb {
-string LogicalPlanToString(unique_ptr<LogicalOperator> &plan);
-void LogicalPlanToString(unique_ptr<LogicalOperator> &plan, string &plan_string,
+string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan);
+void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan, string &plan_string,
                          unique_ptr<DuckAST> &ql_tree, std::unordered_map<string, string> column_names,
                          std::vector<std::pair<string, string>> column_aliases, bool is_second_child=false);
 } // namespace duckdb

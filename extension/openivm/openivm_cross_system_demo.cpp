@@ -22,9 +22,9 @@ void ReplaceTableName(string &catalog, string &schema, string& query) {
 
 void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, string& path) {
 
-	// usage: call ivm_demo('p', 'public', 'database', 'file_path');
-
 	// note: I manually changed the engine_version here to make the extension work
+
+	// todo - maybe let's also run this in memory?
 
 	// path is the file with the materialized view definition
 	// this assumes (new) data already present in PostgreSQL
@@ -65,19 +65,22 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, st
 	rows->Print();
 
 	// now triggering the IVM
-	// PRAGMA ivm_options('catalog', 'schema', 'result')
+	// PRAGMA ivm_cross_system('duckdb_catalog', 'duckdb_schema', 'postgres_catalog', 'postgres_schema', 'result');
 	string input;
 	std::cout << "Enter 'OK' when changes are ready to be applied: ";
 	std::cin >> input;
 
 	// check if the input is equal to "OK"
 	if (input == "OK") {
-		res = con.Query("PRAGMA ivm_options('postgres', 'main', '" + table + "');");
+		res = con.Query("PRAGMA ivm_cross_system('postgres', 'main', 'p', 'public', '" + table + "');");
 		if (res->HasError()) {
 			throw Exception(ExceptionType::UNKNOWN_TYPE, "Could not complete IVM: " + res->GetError());
 		} else {
 			count = con.Query("SELECT COUNT(*) FROM " + table + ";")->GetValue(0, 0).ToString();
 			std::cout << "Rows in the materialized view after the update: " << Format(count) << "\n";
+			rows = con.Query("SELECT * FROM " + table + ";");
+			rows->Print();
+			std::cout << "\n";
 		}
 	} else {
 		std::cout << "Invalid input. Expected 'OK'.\n";

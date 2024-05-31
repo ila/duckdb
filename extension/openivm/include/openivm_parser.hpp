@@ -22,6 +22,7 @@ struct DoIVMBenchmarkFunctionData : public TableFunctionData {
 
 struct IVMInfo : ParserExtensionInfo {
 	unique_ptr<Connection> db_conn;
+	bool performed = false;
 	explicit IVMInfo(unique_ptr<Connection> db_conn) : db_conn(std::move(db_conn)) {
 	}
 };

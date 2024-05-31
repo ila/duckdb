@@ -1,4 +1,4 @@
--- download PostgreSQL extension at: http://extensions.duckdb.org/v0.10.2/linux_amd64/postgres_scanner.duckdb_extension.gz
+-- download PostgreSQL extension at: http://extensions.duckdb.org/v0.10.3/linux_amd64/postgres_scanner.duckdb_extension.gz
 -- move the extension and unzip it in the .duckdb/extensions folder
 
 

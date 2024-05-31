@@ -22,6 +22,7 @@
 namespace duckdb {
 
 // upsert: one lookup instead of two lookups (custom operator)
+bool done = false;
 
 ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionInfo *info, const string &query) {
 	// very rudimentary parser trying to find IVM statements
@@ -67,7 +68,9 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	auto &ivm_parse_data = dynamic_cast<IVMParseData &>(*parse_data);
 	auto statement = dynamic_cast<SQLStatement *>(ivm_parse_data.statement.get());
 
-	if (ivm_parse_data.plan) {
+	if (!done) {
+
+		Connection con(*context.db.get());
 
 		// we extract the table name
 		auto view_name = CompilerExtension::ExtractTableName(statement->query);
@@ -91,8 +94,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		string system_tables_path = db_path + "/ivm_system_tables.sql";
 		// we need a separate index file because it is faster to create the index after the materialized view
 		auto index_file_path = db_path + "/ivm_index_" + view_name + ".sql";
-
-		Connection con(*context.db.get());
 
 		auto table_names = con.GetTableNames(statement->query);
 
@@ -260,7 +261,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		Value execute;
 		context.TryGetCurrentSetting("execute", execute);
 
-		if (!context.db->config.options.database_path.empty() && execute.GetValue<bool>()) {
+		if (!context.db->config.options.database_path.empty() && (execute.IsNull() || execute.GetValue<bool>())) {
 			auto system_queries = duckdb::CompilerExtension::ReadFile(system_tables_path);
 			for (auto &query : StringUtil::Split(system_queries, '\n')) {
 				auto r = con.Query(query);
@@ -288,9 +289,12 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 				}
 			}
 		}
+		done = true;
+	} else {
+		done = false;
 	}
 
-	ParserExtensionPlanResult result;
+	ParserExtensionPlanResult result;// register ivmfunction with a string as parameter and pass it here (in place of true)
 	result.function = IVMFunction();
 	result.parameters.push_back(true); // this could be true or false if we add exception handling
 	result.modified_databases = {};

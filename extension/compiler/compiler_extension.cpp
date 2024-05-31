@@ -55,7 +55,7 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContex
 	planner.CreatePlan(statement->Copy());
 	planner.plan->Print();
 
-	string planString = LogicalPlanToString(planner.plan);
+	string planString = LogicalPlanToString(context, planner.plan);
 	Printer::Print("String: " + planString);
 
 	// create result set using column bindings returned by the planner
@@ -219,6 +219,19 @@ string CompilerExtension::GenerateDeltaTable(string &query) {
 	string delta_query = SQLToLowercase(query);
 	// remove any \" from the query
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\")"), "");
+	// extract the primary key(...) string
+	string primary_key_string;
+	std::regex rgx_primary_key(R"(primary\s+key\s*\([^)]+\))");
+	std::smatch match;
+	if (std::regex_search(delta_query, match, rgx_primary_key)) {
+		primary_key_string = match[0];
+	}
+	// remove the primary key string from the query
+	delta_query = std::regex_replace(delta_query, rgx_primary_key, "");
+	if (!primary_key_string.empty()) {
+		// remove the last comma before the last parenthesis from delta_query
+		delta_query = std::regex_replace(delta_query, std::regex(R"(,\s*\))"), ")");
+	}
 	// replace the table name with "delta_table_name"
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\b([a-zA-Z0-9_]+)\s*\()"), "delta_$1(");
 	// add a new column "multiplicity"
@@ -227,9 +240,10 @@ string CompilerExtension::GenerateDeltaTable(string &query) {
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\b\))"), ", timestamp timestamp default now())");
 	// add "if not exists"
 	delta_query = std::regex_replace(delta_query, std::regex(R"(\bcreate\s+table\s+)"), "create table if not exists ");
+	// todo - bug: this does not work if the primary key is on a single column
+	//delta_query = std::regex_replace(delta_query, std::regex(R"(primary\s+key\s*\()"), "primary key(_duckdb_ivm_multiplicity, ");
 	delta_query += "\n";
 	return delta_query;
-
 }
 
 void CompilerExtension::ReplaceCount(string &query) {

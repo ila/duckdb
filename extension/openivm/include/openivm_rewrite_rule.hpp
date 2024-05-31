@@ -324,8 +324,7 @@ public:
 		}
 	}
 
-	static void IVMRewriteRuleFunction(ClientContext &context, OptimizerExtensionInfo *info,
-	                                   duckdb::unique_ptr<LogicalOperator> &plan) {
+	static void IVMRewriteRuleFunction(OptimizerExtensionInput &input, duckdb::unique_ptr<LogicalOperator> &plan) {
 		// first function call
 		// the plan variable contains the plan for "SELECT * FROM DOIVM"
 		if (plan->children.empty()) {
@@ -353,9 +352,8 @@ public:
 		auto view_schema = child_get->named_parameters["view_schema_name"].ToString();
 
 		// obtain view definition from catalog
-		QueryErrorContext error_context = QueryErrorContext();
 		// generate the optimized logical plan
-		Connection con(*context.db);
+		Connection con(*input.context.db);
 
 		con.BeginTransaction();
 		// todo: maybe we want to disable more optimizers (internal_optimizer_types)
@@ -369,14 +367,14 @@ public:
 		string view_query = v->GetValue(0, 0).ToString();
 
 		Parser parser;
-		Planner planner(context);
+		Planner planner(input.context);
 
 		parser.ParseQuery(view_query);
 		auto statement = parser.statements[0].get();
 
 		planner.CreatePlan(statement->Copy());
 
-		Optimizer optimizer(*planner.binder, context);
+		Optimizer optimizer(*planner.binder, input.context);
 		auto optimized_plan = optimizer.Optimize(std::move(planner.plan));
 #ifdef DEBUG
 		printf("Optimized plan: \n%s\n", optimized_plan->ToString().c_str());
@@ -405,10 +403,10 @@ public:
 
 		// if there is no filter, we manually need to add one for the timestamp
 		string table;
-		ModifyPlan(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
+		ModifyPlan(input.context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
 		           table_catalog_entry, view, table);
-		ModifyTopNode(context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
-		AddInsertNode(context, optimized_plan, view, view_catalog, view_schema);
+		ModifyTopNode(input.context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
+		AddInsertNode(input.context, optimized_plan, view, view_catalog, view_schema);
 #ifdef DEBUG
 		std::cout << "\nFINAL PLAN:\n" << optimized_plan->ToString() << std::endl;
 #endif

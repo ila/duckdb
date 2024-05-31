@@ -227,7 +227,11 @@ static void LoadInternal(DatabaseInstance &instance) {
 	db_config.AddExtensionOption("ivm_catalog_name", "catalog name", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("ivm_schema_name", "schema name", LogicalType::VARCHAR);
 	db_config.AddExtensionOption("execute", "whether to execute queries", LogicalType::BOOLEAN);
+	db_config.AddExtensionOption("ivm_done", "whether the query has been parsed", LogicalType::BOOLEAN);
 	// the "execute" flag is only for benchmarking purposes
+	// the logic is: if the database is in memory, there is no point in executing IVM queries
+	// however, for my benchmarks it's easier to run every query separately (to measure runtime)
+	// so we use this flag to force/avoid execution
 
 	Connection con(instance);
 	auto ivm_parser = duckdb::IVMParserExtension();
@@ -288,12 +292,18 @@ static void LoadInternal(DatabaseInstance &instance) {
 	con.Commit();
 
 	// this is called at the database startup and every time a query fails
+	// these three functions are the same - they just take different parameters
+	// based on whether we want to specify the catalog and schema
 	auto ivm_options = PragmaFunction::PragmaCall(
 	    "ivm_options", UpsertDeltaQueries, {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, ivm_options);
 	auto ivm = PragmaFunction::PragmaCall(
 	    "ivm", UpsertDeltaQueries, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, ivm);
+	ExtensionUtil::RegisterFunction(instance, ivm); // default catalog and schema
+	// this is when we have two attached databases (so two catalogs and schemas)
+	auto ivm_cross_system = PragmaFunction::PragmaCall(
+	    "ivm_cross_system", UpsertDeltaQueries, {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
+	ExtensionUtil::RegisterFunction(instance, ivm_cross_system);
 }
 
 void OpenivmExtension::Load(DuckDB &db) {
