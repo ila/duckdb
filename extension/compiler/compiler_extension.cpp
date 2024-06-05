@@ -211,39 +211,72 @@ string CompilerExtension::SQLToLowercase(const string &sql) {
 	return lowercase_stream.str();
 }
 
-string CompilerExtension::GenerateDeltaTable(string &query) {
+string CompilerExtension::GenerateDeltaTable(string &input) {
 	// we need to do three things here:
 	// 1) replace the table_name (everything after the last dot and before the first "(") with "delta_table_name"
 	// 2) add a new bool column multiplicity
 	// 3) add a new timestamp column with default now()
-	string delta_query = SQLToLowercase(query);
+	input = SQLToLowercase(input);
 	// remove any \" from the query
-	delta_query = std::regex_replace(delta_query, std::regex(R"(\")"), "");
-	// extract the primary key(...) string
-	string primary_key_string;
-	std::regex rgx_primary_key(R"(primary\s+key\s*\([^)]+\))");
+	input = std::regex_replace(input, std::regex(R"(\")"), "");
+
+	// Define the regular expressions for matching
+	std::regex create_table_re(R"(create\s+table\s+(([^\s\(\)]+\.)?[^\s\(\)]+\.[^\s\(\)]+|[^\s\(\)]+)\s*\(([^;]+)\);)", std::regex::icase);
+	std::regex primary_key_re(R"((primary\s+key\s*\([^\)]+\))|([^\s,]+[^\),]*\s+primary\s+key))", std::regex::icase);
+
+	// Define the columns to be added
+	std::string multiplicity_col = "_duckdb_ivm_multiplicity boolean";
+	std::string timestamp_col = "timestamp timestamp default now()";
+
+	// Variables to hold matches
 	std::smatch match;
-	if (std::regex_search(delta_query, match, rgx_primary_key)) {
-		primary_key_string = match[0];
+	std::string output = input;
+
+	// Check if the input matches the create table statement pattern
+	if (std::regex_search(input, match, create_table_re)) {
+		std::string full_table_name = match[1].str();
+		std::string columns = match[3].str();
+		std::string primary_key;
+
+		// Extract the last part of the table name
+		size_t last_dot_pos = full_table_name.find_last_of('.');
+		std::string prefix, table_name;
+		if (last_dot_pos != std::string::npos) {
+			prefix = full_table_name.substr(0, last_dot_pos + 1);
+			table_name = full_table_name.substr(last_dot_pos + 1);
+		} else {
+			table_name = full_table_name;
+		}
+
+		// Add "delta_" prefix to the table name
+		std::string new_table_name = prefix + "delta_" + table_name;
+
+		// Check if there is a primary key
+		if (std::regex_search(columns, match, primary_key_re)) {
+			primary_key = match[0].str();
+			// Handle primary key defined as a separate constraint
+			if (primary_key.find("primary key") == 0) {
+				// Append the multiplicity column to the primary key
+				std::string modified_primary_key = primary_key;
+				modified_primary_key.insert(modified_primary_key.find_last_of(")"), ", _duckdb_ivm_multiplicity");
+
+				// Replace the old primary key with the new one
+				columns = std::regex_replace(columns, primary_key_re, modified_primary_key);
+			} else {
+				// Handle primary key defined inline with the column
+				std::string modified_primary_key = primary_key + ", _duckdb_ivm_multiplicity";
+				columns = std::regex_replace(columns, primary_key_re, modified_primary_key);
+			}
+		}
+
+		// Add the new columns to the column list
+		columns += ", " + multiplicity_col + ", " + timestamp_col;
+
+		// Reconstruct the create table statement
+		output = "create table if not exists " + new_table_name + "(" + columns + ");\n";
 	}
-	// remove the primary key string from the query
-	delta_query = std::regex_replace(delta_query, rgx_primary_key, "");
-	if (!primary_key_string.empty()) {
-		// remove the last comma before the last parenthesis from delta_query
-		delta_query = std::regex_replace(delta_query, std::regex(R"(,\s*\))"), ")");
-	}
-	// replace the table name with "delta_table_name"
-	delta_query = std::regex_replace(delta_query, std::regex(R"(\b([a-zA-Z0-9_]+)\s*\()"), "delta_$1(");
-	// add a new column "multiplicity"
-	delta_query = std::regex_replace(delta_query, std::regex(R"(\b\))"), ", _duckdb_ivm_multiplicity boolean)");
-	// add a new column "timestamp" with default now()
-	delta_query = std::regex_replace(delta_query, std::regex(R"(\b\))"), ", timestamp timestamp default now())");
-	// add "if not exists"
-	delta_query = std::regex_replace(delta_query, std::regex(R"(\bcreate\s+table\s+)"), "create table if not exists ");
-	// todo - bug: this does not work if the primary key is on a single column
-	//delta_query = std::regex_replace(delta_query, std::regex(R"(primary\s+key\s*\()"), "primary key(_duckdb_ivm_multiplicity, ");
-	delta_query += "\n";
-	return delta_query;
+
+	return output;
 }
 
 void CompilerExtension::ReplaceCount(string &query) {

@@ -86,6 +86,9 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	string upsert_query;
 
+	// this is to compile the query to merge the materialized view with its delta version
+	// depending on the query type, this procedure will be done differently
+	// aggregates require an upsert query, while simple filters and projections are an insert
 	switch (view_query_type) {
 	case IVMType::AGGREGATE_GROUP: {
 		upsert_query = CompileAggregateGroups(view_name, index_delta_view_catalog_entry, column_names);
@@ -126,20 +129,22 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	planner.CreatePlan(move(p.statements[0]));
 	auto plan = move(planner.plan);
 	Optimizer optimizer(*planner.binder, *con.context);
-	plan = optimizer.Optimize(move(plan));
+	plan = optimizer.Optimize(move(plan)); // this transforms the plan into an incremental plan
 
 	con.Rollback();
 
-	ivm_query += LogicalPlanToString(context, plan);
+	ivm_query += LogicalPlanToString(context, plan); // we turn the plan into a string
 
-	// now we delete everything from the delta view
+	// we delete everything from the delta view (we don't need the data anymore, it will be inserted in the view)
 	string delete_from_view_query = "delete from delta_" + view_name + ";";
-	// string ivm_result = "select * from " + view_name + ";";
 	string ivm_result;
 
 	// now we can also delete from the delta table, but only if all the dependent views have been refreshed
+	// example: if two views A and B are on the same table T, we can only remove tuples from T
+	// if both A and B have been refreshed (up to some timestamp)
 	// to check this, we extract the minimum timestamp from _duckdb_ivm_delta_tables
 	string delete_from_delta_table_query;
+	// firstly we reset the timestamp
 	string update_timestamp_query = "update _duckdb_ivm_delta_tables set last_update = now() where view_name = '" + view_name + "';\n";
 
 	for (size_t i = 0; i < tables->RowCount(); i++) {
@@ -147,10 +152,10 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 		if (cross_system) {
 			table_name = attached_db_catalog_name + "." + attached_db_schema_name + "." + table_name;
 		}
+		// now we delete anything we don't need anymore
 		delete_from_delta_table_query += "delete from " + table_name + " where timestamp < (select min(last_update) from _duckdb_ivm_delta_tables where table_name = '" + table_name + "');\n";
 	}
 
-	// string query = ivm_query + select_query;
 	string query = ivm_query + "\n\n" + update_timestamp_query + "\n" + upsert_query + "\n" + delete_from_view_query + "\n" + ivm_result + "\n" + delete_from_delta_table_query;
 
 	// now also compiling the queries for future usage
@@ -167,7 +172,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	Value execute;
 	context.TryGetCurrentSetting("execute", execute);
-	// the "execute" flag is only for benchmarking purposes
+	// (the "execute" flag is only for benchmarking purposes)
 	// if the database is in memory, we do not want to run the whole IVM thing
 	// so we return a dummy query (we must return something here)
 	if (!context.db->config.options.database_path.empty() && (execute.IsNull() || execute.GetValue<bool>())) { // in memory

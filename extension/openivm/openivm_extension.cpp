@@ -61,32 +61,28 @@ static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &contex
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
-	auto benchmark = StringValue::Get(input.inputs[0]);
-	auto scale_factor = DoubleValue::Get(input.inputs[1]);
-	auto insertions = IntegerValue::Get(input.inputs[2]);
-	auto deletions = IntegerValue::Get(input.inputs[3]);
-	auto updates = IntegerValue::Get(input.inputs[4]);
 
-	input.named_parameters["benchmark"] = benchmark;
-	input.named_parameters["scale_factor"] = scale_factor;
-	input.named_parameters["insertions"] = insertions;
-	input.named_parameters["deletions"] = deletions;
-	input.named_parameters["updates"] = updates;
-
-	if (benchmark == "lineitem") {
-		RunIVMLineitemBenchmark(scale_factor, insertions, updates, deletions);
-	} else if (benchmark == "groups") {
+	if (input.inputs.size() == 2) {
+		// lineitem benchmark
+		auto scale_factor = DoubleValue::Get(input.inputs[0]);
+		auto new_scale_factor = DoubleValue::Get(input.inputs[1]);
+		input.named_parameters["scale_factor"] = scale_factor;
+		input.named_parameters["new_scale_factor"] = new_scale_factor;
+		RunIVMLineitemBenchmark(scale_factor, new_scale_factor);
+	} else {
+		auto scale_factor = DoubleValue::Get(input.inputs[0]);
+		auto insertions = IntegerValue::Get(input.inputs[1]);
+		auto deletions = IntegerValue::Get(input.inputs[2]);
+		auto updates = IntegerValue::Get(input.inputs[3]);
+		input.named_parameters["scale_factor"] = scale_factor;
+		input.named_parameters["insertions"] = insertions;
+		input.named_parameters["deletions"] = deletions;
+		input.named_parameters["updates"] = updates;
 		if (insertions < 100 && updates < 100 && deletions < 100) {
 			throw NotImplementedException("Error: invalid benchmark parameters.");
 		}
-		int tuples = scale_factor;
+		int tuples = scale_factor; // casting
 		RunIVMGroupsBenchmark(tuples, insertions, updates, deletions);
-	} else if (benchmark == "postgres") {
-		RunIVMCrossSystemBenchmark(scale_factor, insertions, updates, deletions, BenchmarkType::POSTGRES);
-	} else if (benchmark == "cross-system") {
-		RunIVMCrossSystemBenchmark(scale_factor, insertions, updates, deletions, BenchmarkType::CROSS_SYSTEM);
-	} else {
-		throw NotImplementedException("Error: invalid benchmark name.");
 	}
 
 	// create result set using column bindings returned by the planner
@@ -247,8 +243,11 @@ static void LoadInternal(DatabaseInstance &instance) {
 	TableFunction ivm_func("DoIVM", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMFunction,
 	                       DoIVMBind, DoIVMInit);
 
-	TableFunction ivm_benchmark_func("IVMBenchmark", {LogicalType::VARCHAR, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER}, DoIVMBenchmarkFunction,
+	TableFunction ivm_benchmark_groups_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER}, DoIVMBenchmarkFunction,
 	                       DoIVMBenchmarkBind, DoIVMBenchmarkInit);
+
+	TableFunction ivm_benchmark_lineitem_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::DOUBLE}, DoIVMBenchmarkFunction,
+	                                 DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
 	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMDemoFunction,
 	                                 DoIVMDemoBind, DoIVMDemoInit);
@@ -269,15 +268,23 @@ static void LoadInternal(DatabaseInstance &instance) {
 	con.Commit();
 
 	con.BeginTransaction();
-	ivm_benchmark_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMBenchmark);
-	ivm_benchmark_func.name = "ivm_benchmark";
-	ivm_benchmark_func.named_parameters["benchmark"];
-	ivm_benchmark_func.named_parameters["scale_factor"];
-	ivm_benchmark_func.named_parameters["insertions"];
-	ivm_benchmark_func.named_parameters["deletes"];
-	ivm_benchmark_func.named_parameters["updates"];
-	CreateTableFunctionInfo ivm_benchmark_func_info(ivm_benchmark_func);
-	catalog.CreateTableFunction(*con.context, &ivm_benchmark_func_info);
+	ivm_benchmark_groups_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMBenchmark);
+	ivm_benchmark_groups_func.name = "ivm_benchmark_groups";
+	ivm_benchmark_groups_func.named_parameters["scale_factor"];
+	ivm_benchmark_groups_func.named_parameters["insertions"];
+	ivm_benchmark_groups_func.named_parameters["deletes"];
+	ivm_benchmark_groups_func.named_parameters["updates"];
+	CreateTableFunctionInfo ivm_benchmark_groups_func_info(ivm_benchmark_groups_func);
+	catalog.CreateTableFunction(*con.context, &ivm_benchmark_groups_func_info);
+	con.Commit();
+
+	con.BeginTransaction();
+	ivm_benchmark_lineitem_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMBenchmark);
+	ivm_benchmark_lineitem_func.name = "ivm_benchmark_lineitem";
+	ivm_benchmark_lineitem_func.named_parameters["scale_factor"];
+	ivm_benchmark_lineitem_func.named_parameters["new_scale_factor"];
+	CreateTableFunctionInfo ivm_benchmark_lineitem_func_info(ivm_benchmark_lineitem_func);
+	catalog.CreateTableFunction(*con.context, &ivm_benchmark_lineitem_func_info);
 	con.Commit();
 
 	con.BeginTransaction();
