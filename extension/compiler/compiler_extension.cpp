@@ -211,18 +211,17 @@ string CompilerExtension::SQLToLowercase(const string &sql) {
 	return lowercase_stream.str();
 }
 
-string CompilerExtension::GenerateDeltaTable(string &input) {
-	// we need to do three things here:
-	// 1) replace the table_name (everything after the last dot and before the first "(") with "delta_table_name"
-	// 2) add a new bool column multiplicity
-	// 3) add a new timestamp column with default now()
+std::string CompilerExtension::GenerateDeltaTable(std::string &input) {
+	// todo - I can't make this function work
+	// Convert the SQL statement to lowercase
 	input = SQLToLowercase(input);
-	// remove any \" from the query
+	// Remove any \" from the query
 	input = std::regex_replace(input, std::regex(R"(\")"), "");
 
 	// Define the regular expressions for matching
-	std::regex create_table_re(R"(create\s+table\s+(([^\s\(\)]+\.)?[^\s\(\)]+\.[^\s\(\)]+|[^\s\(\)]+)\s*\(([^;]+)\);)", std::regex::icase);
-	std::regex primary_key_re(R"((primary\s+key\s*\([^\)]+\))|([^\s,]+[^\),]*\s+primary\s+key))", std::regex::icase);
+	std::regex create_table_re(R"(create\s+table\s+([^\s\(\)]+(?:\.[^\s\(\)]+){0,2})\s*\(([^;]+)\);)", std::regex::icase);
+	std::regex primary_key_re(R"((primary\s+key\s*\([^\)]+\)))", std::regex::icase);
+	std::regex inline_primary_key_re(R"(([^\s,]+[^\),]*\s+primary\s+key))", std::regex::icase);
 
 	// Define the columns to be added
 	std::string multiplicity_col = "_duckdb_ivm_multiplicity boolean";
@@ -235,8 +234,9 @@ string CompilerExtension::GenerateDeltaTable(string &input) {
 	// Check if the input matches the create table statement pattern
 	if (std::regex_search(input, match, create_table_re)) {
 		std::string full_table_name = match[1].str();
-		std::string columns = match[3].str();
+		std::string columns = match[2].str();
 		std::string primary_key;
+		std::string pk_columns;
 
 		// Extract the last part of the table name
 		size_t last_dot_pos = full_table_name.find_last_of('.');
@@ -251,29 +251,34 @@ string CompilerExtension::GenerateDeltaTable(string &input) {
 		// Add "delta_" prefix to the table name
 		std::string new_table_name = prefix + "delta_" + table_name;
 
-		// Check if there is a primary key
+		// Check if there is a primary key constraint defined at the end
 		if (std::regex_search(columns, match, primary_key_re)) {
 			primary_key = match[0].str();
-			// Handle primary key defined as a separate constraint
-			if (primary_key.find("primary key") == 0) {
-				// Append the multiplicity column to the primary key
-				std::string modified_primary_key = primary_key;
-				modified_primary_key.insert(modified_primary_key.find_last_of(")"), ", _duckdb_ivm_multiplicity");
+			pk_columns = primary_key.substr(primary_key.find('(') + 1, primary_key.find(')') - primary_key.find('(') - 1);
+			columns = std::regex_replace(columns, primary_key_re, "");
+		}
 
-				// Replace the old primary key with the new one
-				columns = std::regex_replace(columns, primary_key_re, modified_primary_key);
-			} else {
-				// Handle primary key defined inline with the column
-				std::string modified_primary_key = primary_key + ", _duckdb_ivm_multiplicity";
-				columns = std::regex_replace(columns, primary_key_re, modified_primary_key);
-			}
+		// Check for inline primary key definitions and extract them
+		if (std::regex_search(columns, match, inline_primary_key_re)) {
+			primary_key = match[0].str();
+			std::string col_name = primary_key.substr(0, primary_key.find(' '));
+			pk_columns = col_name;
+			columns = std::regex_replace(columns, inline_primary_key_re, col_name);
+		}
+
+		// Append the multiplicity column to the primary key columns
+		if (!pk_columns.empty()) {
+			pk_columns += ", _duckdb_ivm_multiplicity";
+		} else {
+			pk_columns = "_duckdb_ivm_multiplicity";
 		}
 
 		// Add the new columns to the column list
 		columns += ", " + multiplicity_col + ", " + timestamp_col;
+		columns += ", PRIMARY KEY(" + pk_columns + ")";
 
 		// Reconstruct the create table statement
-		output = "create table if not exists " + new_table_name + "(" + columns + ");\n";
+		output = "create table if not exists " + new_table_name + " (" + columns + ");\n";
 	}
 
 	return output;

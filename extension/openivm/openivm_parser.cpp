@@ -219,13 +219,21 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 				schema_value = Value("main"); // default schema
 			}
 
+			/*
 			auto catalog_entry =
 			    catalog.GetEntry(context, CatalogType::TABLE_ENTRY, catalog_value.ToString(), schema_value.ToString(),
 			                     table_name, OnEntryNotFound::THROW_EXCEPTION, error_context);
-			auto table_entry = dynamic_cast<TableCatalogEntry *>(catalog_entry.get());
-			auto table_string = table_entry->ToSQL();
+			*/
 
-			auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
+			auto catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
+
+			//auto table_entry = dynamic_cast<TableCatalogEntry *>(catalog_entry.get());
+			//auto table_string = table_entry->ToSQL();
+			//auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
+
+			auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
+			                   " as select *, true as _duckdb_ivm_multiplicity from " + catalog_schema + table_name +
+			                   " limit 0;\n";
 			CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 
 			auto delta_table_insert = "insert into _duckdb_ivm_delta_tables values ('" + view_name + "', 'delta_" + table_name + "', now());\n";
