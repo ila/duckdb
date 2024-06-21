@@ -10,6 +10,10 @@ Given a base table `my_table` and a view `my_view` on top of `my_table`, this ex
 This extension replicates changes to base table `my_table` in the delta table `delta_my_table`. This table additionally has a multiplicity column `_duckdb_ivm_multiplicity` of type `BOOL`, and a timestamp column to track refresh operations on the views. `duckdb_ivm_multiplicity=true` means insertions and `_duckdb_ivm_multiplicity` means deletion. 
 Updates to a row in base table `my_table` are modelled as deletion + insertion.
 
+Note: if the extension is called with an in-memory database, the tables do not get created. We envision this use case for cross-system incremental view maintenance.
+If the extension is called with a persistent database, the tables are created and the changes are stored in the delta tables.
+In order to attach a database, use `duckdb my_database.db' from the CLI.
+
 Here is an example. First create the base table and the view:
 ```SQL
 CREATE TABLE sales (order_id INT PRIMARY KEY, product_name VARCHAR(1), amount INT, date_ordered DATE);
