@@ -16,7 +16,7 @@ In order to attach a database, use `duckdb my_database.db' from the CLI.
 
 Here is an example. First create the base table and the view:
 ```SQL
-CREATE TABLE sales (order_id INT PRIMARY KEY, product_name VARCHAR(1), amount INT, date_ordered DATE);
+CREATE TABLE sales (order_id INT, product_name VARCHAR(1), amount INT, date_ordered DATE);
 ```
 Insert sample data:
 ```SQL

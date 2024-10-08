@@ -105,23 +105,29 @@ public:
 #endif
 	}
 
-	static void ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan,
+	static unique_ptr<LogicalOperator> ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan,
 	                       idx_t &multiplicity_col_idx, idx_t &multiplicity_table_idx,
 	                       optional_ptr<CatalogEntry> &table_catalog_entry, string &view, string &table) {
-		if (!plan->children[0]->children.empty()) {
-			// Assume only one child per node
-			// TODO: Add support for modification of plan with multiple children
-			ModifyPlan(context, plan->children[0], multiplicity_col_idx, multiplicity_table_idx,
-			           table_catalog_entry, view, table);
+		// previously: Assume only one child per node
+		// now: Support modification of plan with multiple children.
+		unique_ptr<LogicalOperator> left_child, right_child;
+		if (plan.get()->type == LogicalOperatorType::LOGICAL_JOIN) {
+			left_child =  plan->children[0]->Copy(context);
+			right_child =  plan->children[1]->Copy(context);
 		}
-
+		for (auto &&child : plan->children) {
+			child = ModifyPlan(context, child, multiplicity_col_idx, multiplicity_table_idx,
+					   table_catalog_entry, view, table);
+		}
 		QueryErrorContext error_context = QueryErrorContext();
 
-		switch (plan->children[0].get()->type) {
+		switch (plan.get()->type) {
+		case LogicalOperatorType::LOGICAL_JOIN: {
+			break; // TODO: Finish.
+		}
 		case LogicalOperatorType::LOGICAL_GET: {
 			// we are at the bottom of the tree
-			auto child = std::move(plan->children[0]);
-			auto child_get = dynamic_cast<LogicalGet *>(child.get());
+			auto old_get = dynamic_cast<LogicalGet *>(plan.get());
 
 #ifdef DEBUG
 			printf("Create replacement get node \n");
@@ -130,16 +136,16 @@ public:
 			string delta_table_schema;
 			string delta_table_catalog;
 			// checking if the table to be scanned exists in DuckDB
-			if (child_get->GetTable().get() == nullptr) {
+			if (old_get->GetTable().get() == nullptr) {
 				// we are using PostgreSQL (the underlying table does not exist)
-				delta_table = "delta_" + dynamic_cast<PostgresBindData *>(child_get->bind_data.get())->table_name;
+				delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
 				delta_table_schema = "public";
 				delta_table_catalog = "p"; // todo
 			} else {
 				// DuckDB (default case)
-				delta_table = "delta_" + child_get->GetTable().get()->name;
-				delta_table_schema = child_get->GetTable().get()->schema.name;
-				delta_table_catalog = child_get->GetTable().get()->catalog.GetName();
+				delta_table = "delta_" + old_get->GetTable().get()->name;
+				delta_table_schema = old_get->GetTable().get()->schema.name;
+				delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
 			}
 			table_catalog_entry =
 			    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, delta_table_catalog, delta_table_schema,
@@ -169,7 +175,7 @@ public:
 			// this is ugly, but needs to stay like this
 			// sometimes DuckDB likes to randomly invert columns, so we need to check all of them
 			// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
-			for (auto &id : child_get->column_ids) {
+			for (auto &id : old_get->column_ids) {
 				column_ids.push_back(id);
 				for (auto &col : table_entry.GetColumns().Logical()) {
 					if (col.Oid() == id) {
@@ -184,7 +190,7 @@ public:
 			return_names.push_back("_duckdb_ivm_multiplicity");
 			column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 2);
 
-			multiplicity_table_idx = child_get->table_index;
+			multiplicity_table_idx = old_get->table_index;
 			multiplicity_col_idx = column_ids.size() - 1;
 
 			// we also add the timestamp column
@@ -193,10 +199,10 @@ public:
 			column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 1);
 
 			// the new get node that reads the delta table gets a new table index
-			auto replacement_get_node = make_uniq<LogicalGet>(child_get->table_index, scan_function, std::move(bind_data),
+			auto replacement_get_node = make_uniq<LogicalGet>(old_get->table_index, scan_function, std::move(bind_data),
 			                                                  std::move(return_types), std::move(return_names));
 			replacement_get_node->column_ids = std::move(column_ids);
-			replacement_get_node->table_filters = std::move(child_get->table_filters); // this should be empty
+			replacement_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
 
 			// we add the filter for the timestamp if there is no filter in the plan
 			Connection con(*context.db);
@@ -224,14 +230,11 @@ public:
 
 			table = table_entry.name; // to use later
 
-			plan->children.clear();
-			plan->children.emplace_back(std::move(replacement_get_node));
-			break;
-
+			return replacement_get_node;
 		}
 		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 
-			auto modified_node_logical_agg = dynamic_cast<LogicalAggregate *>(plan->children[0].get());
+			auto modified_node_logical_agg = dynamic_cast<LogicalAggregate *>(plan.get());
 #ifdef DEBUG
 			for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
 				printf("aggregate node CB before %zu %s\n", i,
@@ -274,7 +277,7 @@ public:
 				printf("Top node CB before %zu %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
 			}
 
-			auto projection_node = dynamic_cast<LogicalProjection *>(plan->children[0].get());
+			auto projection_node = dynamic_cast<LogicalProjection *>(plan.get());
 			printf("Plan: %s %s\n", projection_node->ToString().c_str(), projection_node->ParamsToString().c_str());
 
 			// the table_idx used to create ColumnBinding will be that of the top node's child
@@ -293,7 +296,7 @@ public:
 			break;
 		}
 		case LogicalOperatorType::LOGICAL_FILTER: {
-			auto filter_node = dynamic_cast<LogicalFilter *>(plan->children[0].get());
+			auto filter_node = dynamic_cast<LogicalFilter *>(plan.get());
 			filter_node->projection_map.clear();
 			// we build another expression for the timestamp
 			// the expression is at the topmost level: timestamp >= last_update AND everything else
@@ -322,6 +325,7 @@ public:
 			throw NotImplementedException("Operator type %s not supported",
 			                              LogicalOperatorToString(plan->children[0].get()->type));
 		}
+		return std::move(plan);
 	}
 
 	static void IVMRewriteRuleFunction(OptimizerExtensionInput &input, duckdb::unique_ptr<LogicalOperator> &plan) {

@@ -35,6 +35,7 @@ string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &
 	return plan_string;
 }
 
+// TODO: support multiple children (not sure if here or elsewhere).
 void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan,
                          string &plan_string, unique_ptr<DuckAST> &ql_tree,
                          std::unordered_map<string, string> column_names,
