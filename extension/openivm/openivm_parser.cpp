@@ -161,7 +161,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// we create the lookup tables for views -> materialized_view_name | sql_string | type | filter | last_update
 		// we need to know if the query has a filter in order to check the timestamp of updates
 		auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
-		                    "varchar, type tinyint, filter bool);\n";
+		                    "varchar, type tinyint, filter bool, last_update timestamp);\n";
 		// recreate the file - we assume the queries will be executed after the parsing is done
 		CompilerExtension::WriteFile(system_tables_path, false, system_table);
 
@@ -178,7 +178,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// now we insert the details in the openivm view lookup table
 		auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
 		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
-		                        ", " + to_string(found_filter) + ");\n";
+		                        ", " + to_string(found_filter) + ", now());\n";
 		CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
 
 		// now we create the table (the view, internally stored as a table)
@@ -232,8 +232,8 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			//auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
 
 			auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
-			                   " as select *, true as _duckdb_ivm_multiplicity from " + catalog_schema + table_name +
-			                   " limit 0;\n";
+			                   " as select *, true as _duckdb_ivm_multiplicity, now() as _duckdb_ivm_timestamp from "
+			                   + catalog_schema + table_name + " limit 0;\n";
 			CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 
 			auto delta_table_insert = "insert into _duckdb_ivm_delta_tables values ('" + view_name + "', 'delta_" + table_name + "', now());\n";
