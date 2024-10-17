@@ -17,6 +17,7 @@
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
+#include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
@@ -105,10 +106,11 @@ public:
 #endif
 	}
 
-	static unique_ptr<LogicalOperator> ModifyPlan(ClientContext &context, unique_ptr<LogicalOperator> &plan,
+	static unique_ptr<LogicalOperator> ModifyPlan(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan,
 	                       idx_t &multiplicity_col_idx, idx_t &multiplicity_table_idx,
 	                       optional_ptr<CatalogEntry> &table_catalog_entry, string &view, string &table) {
 		// previously: Assume only one child per node
+		ClientContext &context = input.context;
 		// now: Support modification of plan with multiple children.
 		unique_ptr<LogicalOperator> left_child, right_child;
 		if (plan.get()->type == LogicalOperatorType::LOGICAL_JOIN) {
@@ -116,13 +118,28 @@ public:
 			right_child =  plan->children[1]->Copy(context);
 		}
 		for (auto &&child : plan->children) {
-			child = ModifyPlan(context, child, multiplicity_col_idx, multiplicity_table_idx,
+			child = ModifyPlan(input, child, multiplicity_col_idx, multiplicity_table_idx,
 					   table_catalog_entry, view, table);
 		}
 		QueryErrorContext error_context = QueryErrorContext();
 
-		switch (plan.get()->type) {
+		switch (plan->type) {
 		case LogicalOperatorType::LOGICAL_JOIN: {
+			auto join = static_cast<LogicalJoin*>(plan.get());
+			if (join->join_type != JoinType::INNER) {
+				throw Exception(ExceptionType::OPTIMIZER, JoinTypeToString(join->join_type) + " type not yet supported in OpenIVM");
+			}
+			auto left_delta = std::move(plan->children[0]);
+			auto right_delta = std::move(plan->children[1]);
+			auto join1 = plan->Copy(context);
+			auto join2 = plan->Copy(context);
+			auto join3 = plan->Copy(context);
+			join1->children[0] = std::move(left_child);
+			join2->children[1] = std::move(right_child);
+			auto copy_union = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), 1U, std::move(join1),
+															 std::move(join2), LogicalOperatorType::LOGICAL_UNION, true);
+			plan = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), 1U, std::move(copy_union),
+															 std::move(join3), LogicalOperatorType::LOGICAL_UNION, true);
 			break; // TODO: Finish.
 		}
 		case LogicalOperatorType::LOGICAL_GET: {
@@ -407,7 +424,7 @@ public:
 
 		// if there is no filter, we manually need to add one for the timestamp
 		string table;
-		ModifyPlan(input.context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
+		ModifyPlan(input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
 		           table_catalog_entry, view, table);
 		ModifyTopNode(input.context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
 		AddInsertNode(input.context, optimized_plan, view, view_catalog, view_schema);
