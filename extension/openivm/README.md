@@ -25,9 +25,12 @@ INSERT INTO sales VALUES (1, 'a', 100, '2023-01-10'), (2, 'b', 50, '2023-01-12')
 Now create a materialized view with ONE of the following queries:
 ```SQL
 CREATE MATERIALIZED VIEW product_sales AS SELECT product_name, SUM(amount) AS total_amount, COUNT(*) AS total_orders FROM sales WHERE product_name = 'a' OR product_name = 'b' GROUP BY product_name;
+```
 
+```SQL
 CREATE MATERIALIZED VIEW product_sales_1 AS SELECT * FROM sales WHERE product_name = 'a';
-
+```
+```SQL
 CREATE MATERIALIZED VIEW product_sales AS SELECT SUM(amount) AS total_amount FROM sales;
 ```
 Look at the content:
