@@ -69,6 +69,12 @@ public:
 
 	static void ModifyTopNode(ClientContext &context, unique_ptr<LogicalOperator> &plan, idx_t &multiplicity_col_idx,
 	                          idx_t &multiplicity_table_idx) {
+
+#ifdef DEBUG
+		if (plan == nullptr) {
+			printf("\nModifyTopNode: received nullptr as input!\n");
+		}
+#endif
 		if (plan->type != LogicalOperatorType::LOGICAL_PROJECTION) {
 			throw NotImplementedException("Assumption being made: top node has to be projection node");
 		}
@@ -424,14 +430,24 @@ public:
 
 		// if there is no filter, we manually need to add one for the timestamp
 		string table;
-		ModifyPlan(input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,
-		           table_catalog_entry, view, table);
-		ModifyTopNode(input.context, optimized_plan, multiplicity_col_idx, multiplicity_table_idx);
-		AddInsertNode(input.context, optimized_plan, view, view_catalog, view_schema);
 #ifdef DEBUG
-		std::cout << "\nFINAL PLAN:\n" << optimized_plan->ToString() << std::endl;
+		std::cout << "Running ModifyPlan..." << std::endl;
 #endif
-		plan = std::move(optimized_plan);
+		unique_ptr<LogicalOperator> modified_plan = ModifyPlan(
+		    input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx, table_catalog_entry, view, table
+		);
+#ifdef DEBUG
+		std::cout << "Running ModifyTopNode..." << std::endl;
+#endif
+		ModifyTopNode(input.context, modified_plan, multiplicity_col_idx, multiplicity_table_idx);
+#ifdef DEBUG
+		std::cout << "Running AddInsertNode..." << std::endl;
+#endif
+		AddInsertNode(input.context, modified_plan, view, view_catalog, view_schema);
+#ifdef DEBUG
+		std::cout << "\nFINAL PLAN:\n" << modified_plan->ToString() << std::endl;
+#endif
+		plan = std::move(modified_plan);
 		return;
 	}
 };
