@@ -30,11 +30,12 @@ CREATE MATERIALIZED VIEW recipients AS
 -- Normally, the GROUP BY would be by ID, and then the projection is by username, but DuckDB does not like this.
 -- Perhaps because of the lack of primary/foreign keys in this example.
 -- TODO: Operator type GET not supported. (When running PRAGMA ivm()).
+-- TODO: Support primary key so that GROUP BY g.user_name does not have to be used, but g.user_id as g's PK instead.
 CREATE MATERIALIZED VIEW income AS
   SELECT g.user_name, sum(p.amount)
   FROM gods as g, payments as p
   WHERE p.to_uid = g.uid
-  GROUP BY g.user_name;
+  GROUP BY g.user_name;  -- Replace by the more correct "GROUP BY g.uid" once primary keys are supported.
 
 
 -- Add another payment (this time to Apollo)

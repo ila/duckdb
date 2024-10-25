@@ -345,8 +345,7 @@ public:
 			break;
 		}
 		default:
-			throw NotImplementedException("Operator type %s not supported",
-			                              LogicalOperatorToString(plan->children[0].get()->type));
+			throw NotImplementedException("Operator type %s not supported", LogicalOperatorToString(plan->type));
 		}
 		return std::move(plan);
 	}
