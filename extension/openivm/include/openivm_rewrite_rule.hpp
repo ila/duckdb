@@ -40,7 +40,7 @@ public:
 	                          string &view_name, string &view_catalog_name, string &view_schema_name) {
 #ifdef DEBUG
 		printf("\nAdd the insert node to the plan...\n");
-		printf("Plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
+		printf("Plan: %s\n", plan->ToString().c_str());
 #endif
 
 		auto delta_table_catalog_entry =
@@ -81,7 +81,7 @@ public:
 
 #ifdef DEBUG
 		printf("\nAdd the multiplicity column to the top projection node...\n");
-		printf("Plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
+		printf("Plan: %s\n", plan->ToString().c_str());
 		for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
 			printf("Top node CB before %zu %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
 		}
@@ -105,7 +105,7 @@ public:
 		plan->expressions.emplace_back(std::move(e));
 
 #ifdef DEBUG
-		printf("Modified plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
+		printf("Modified plan: %s\n", plan->ToString().c_str());
 		for (size_t i = 0; i < plan.get()->GetColumnBindings().size(); i++) {
 			printf("Top node CB %zu %s\n", i, plan.get()->GetColumnBindings()[i].ToString().c_str());
 		}
@@ -198,7 +198,7 @@ public:
 			// this is ugly, but needs to stay like this
 			// sometimes DuckDB likes to randomly invert columns, so we need to check all of them
 			// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
-			for (auto &id : old_get->column_ids) {
+			for (auto &id : old_get->GetColumnIds()) {
 				column_ids.push_back(id);
 				for (auto &col : table_entry.GetColumns().Logical()) {
 					if (col.Oid() == id) {
@@ -224,7 +224,7 @@ public:
 			// the new get node that reads the delta table gets a new table index
 			auto replacement_get_node = make_uniq<LogicalGet>(old_get->table_index, scan_function, std::move(bind_data),
 			                                                  std::move(return_types), std::move(return_names));
-			replacement_get_node->column_ids = std::move(column_ids);
+			replacement_get_node->SetColumnIds(std::move(column_ids));
 			replacement_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
 
 			// we add the filter for the timestamp if there is no filter in the plan
@@ -289,19 +289,19 @@ public:
 				printf("aggregate node CB after %zu %s\n", i,
 				       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
 			}
-			printf("Modified plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
+			printf("Modified plan: %s\n", plan->ToString().c_str());
 #endif
 			break;
 		}
 		case LogicalOperatorType::LOGICAL_PROJECTION: {
 			printf("\nIn logical projection case \n Add the multiplicity column to the second node...\n");
-			printf("Plan: %s %s\n", plan->ToString().c_str(), plan->ParamsToString().c_str());
+			printf("Modified plan: %s\n", plan->ToString().c_str());
 			for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
 				printf("Top node CB before %zu %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
 			}
 
 			auto projection_node = dynamic_cast<LogicalProjection *>(plan.get());
-			printf("Plan: %s %s\n", projection_node->ToString().c_str(), projection_node->ParamsToString().c_str());
+			printf("Plan: %s\n", projection_node->ToString().c_str());
 
 			// the table_idx used to create ColumnBinding will be that of the top node's child
 			// the column_idx used to create ColumnBinding for the multiplicity column will be stored using the context from the child
@@ -311,8 +311,7 @@ public:
 			printf("Add mult column to exp\n");
 			projection_node->expressions.emplace_back(std::move(e));
 
-			printf("Modified plan: %s %s\n", projection_node->ToString().c_str(),
-			       projection_node->ParamsToString().c_str());
+			printf("Modified plan: %s\n", projection_node->ToString().c_str());
 			for (size_t i = 0; i < projection_node->GetColumnBindings().size(); i++) {
 				printf("Top node CB %zu %s\n", i, projection_node->GetColumnBindings()[i].ToString().c_str());
 			}

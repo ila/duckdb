@@ -200,18 +200,18 @@ public:
 							// todo 1 -- can there be other types of delete query?
 							// todo 2 -- implement this in LPTS
 							// todo 3 -- throw exception if the plan is too complicated
-							auto string = "insert into " + delta_delete_table + " select *, false, now() from " +
+							string insert_string = "insert into " + delta_delete_table + " select *, false, now() from " +
 							              delete_table_name;
 							// handling the potential filters
 							if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
-								string += " where " + filter->ParamsToString();
+								insert_string += " where " + filter->ToString();
 							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								auto get = dynamic_cast<LogicalGet *>(plan->children[0].get());
 								// we only add WHERE if there are table filters
 								if (!get->table_filters.filters.empty()) {
-									string += " where " + get->ParamsToString();
-									string = string.substr(0, string.find('\n'));
+									insert_string += " where " + get->ToString();
+									insert_string = insert_string.substr(0, insert_string.find('\n'));
 								}
 							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
 								// do nothing?
@@ -222,7 +222,7 @@ public:
 								throw NotImplementedException("Only simple DELETE statements are supported in IVM!");
 							}
 
-							auto r = con.Query(string);
+							auto r = con.Query(insert_string);
 							if (r->HasError()) {
 								throw InternalException("Cannot insert in delta table! " + r->GetError());
 							}
@@ -295,16 +295,16 @@ public:
 							if (projection->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(projection->children[0].get());
 								// we always add WHERE (it's a filter, duh)
-								where_string += " where " + filter->ParamsToString();
+								where_string += " where " + filter->ToString();
 							} else if (projection->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								auto get = dynamic_cast<LogicalGet *>(projection->children[0].get());
 								// we only add WHERE if there are table filters
 								if (!get->table_filters.filters.empty()) {
-									where_string += " where " + get->ParamsToString();
+									where_string += " where " + get->ToString();
 									where_string = where_string.substr(0, where_string.find('\n'));
 								}
 							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
-								// do nothing?
+								// do nothing
 								// this might cause bugs but will be fixed as soon as we implement coalescing
 								return;
 							} else {
