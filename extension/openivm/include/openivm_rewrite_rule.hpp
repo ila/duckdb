@@ -40,7 +40,12 @@ public:
 	                          string &view_name, string &view_catalog_name, string &view_schema_name) {
 #ifdef DEBUG
 		printf("\nAdd the insert node to the plan...\n");
-		printf("Plan: %s\n", plan->ToString().c_str());
+		printf("Plan:\n%s\nParameters:", plan->ToString().c_str());
+		// Get whatever ParameterToString yields.
+		for (const auto& i_param : plan->ParamsToString()) {
+			printf("%s", i_param.second.c_str());
+		}
+		printf("\n---end of insert node output---\n");
 #endif
 
 		auto delta_table_catalog_entry =

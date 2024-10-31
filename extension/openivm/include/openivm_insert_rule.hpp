@@ -131,6 +131,7 @@ public:
 												values += constant->value.ToString() + ",";
 											}
 										} else {
+											// printf("\nType of value: %d\n", static_cast<int>(value->type));
 											throw NotImplementedException("Only constant values are supported for now");
 										}
 									}
