@@ -86,10 +86,15 @@ public:
 
 #ifdef DEBUG
 		printf("\nAdd the multiplicity column to the top projection node...\n");
-		printf("Plan: %s\n", plan->ToString().c_str());
-		for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
-			printf("Top node CB before %zu %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
+		printf("Plan:\n%s\nParameters:", plan->ToString().c_str());
+		// Output ParameterToString.
+		for (const auto& i_param : plan->ParamsToString()) {
+			printf("%s", i_param.second.c_str());
 		}
+		for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
+			printf("\nTop node CB before %zu %s", i, plan->GetColumnBindings()[i].ToString().c_str());
+		}
+		printf("\n---end of ModifyTopNode (multiplicity column) output---\n");
 #endif
 
 		// the table_idx used to create ColumnBinding will be that of the top node's child
@@ -110,10 +115,15 @@ public:
 		plan->expressions.emplace_back(std::move(e));
 
 #ifdef DEBUG
-		printf("Modified plan: %s\n", plan->ToString().c_str());
+		printf("Plan:\n%s\nParameters:", plan->ToString().c_str());
+		// Output ParameterToString.
+		for (const auto& i_param : plan->ParamsToString()) {
+			printf("%s", i_param.second.c_str());
+		}
 		for (size_t i = 0; i < plan.get()->GetColumnBindings().size(); i++) {
 			printf("Top node CB %zu %s\n", i, plan.get()->GetColumnBindings()[i].ToString().c_str());
 		}
+		printf("\n---end of ModifyTopNode (finish) output---\n");
 #endif
 	}
 
@@ -294,19 +304,32 @@ public:
 				printf("aggregate node CB after %zu %s\n", i,
 				       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
 			}
-			printf("Modified plan: %s\n", plan->ToString().c_str());
+			printf("Modified plan (aggregate/group by):\n%s\nParameters:", plan->ToString().c_str());
+			// Output ParameterToString.
+			for (const auto& i_param : plan->ParamsToString()) {
+				printf("%s", i_param.second.c_str());
+			}
+			printf("\n---end of modified plan (aggregate/group by)---\n");
 #endif
 			break;
 		}
 		case LogicalOperatorType::LOGICAL_PROJECTION: {
 			printf("\nIn logical projection case \n Add the multiplicity column to the second node...\n");
-			printf("Modified plan: %s\n", plan->ToString().c_str());
+			printf("Modified plan (projection, start):\n%s\nParameters:", plan->ToString().c_str());
+			for (const auto& i_param : plan->ParamsToString()) {
+				printf("%s", i_param.second.c_str());
+			}
+			printf("\n---end of modified plan (projection)---\n");
 			for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
 				printf("Top node CB before %zu %s\n", i, plan->GetColumnBindings()[i].ToString().c_str());
 			}
 
 			auto projection_node = dynamic_cast<LogicalProjection *>(plan.get());
-			printf("Plan: %s\n", projection_node->ToString().c_str());
+			printf("plan (of projection_node):\n%s\nParameters:", projection_node->ToString().c_str());
+			for (const auto& i_param : projection_node->ParamsToString()) {
+				printf("%s", i_param.second.c_str());
+			}
+			printf("\n---end of projection_node plan---\n");
 
 			// the table_idx used to create ColumnBinding will be that of the top node's child
 			// the column_idx used to create ColumnBinding for the multiplicity column will be stored using the context from the child
@@ -316,7 +339,12 @@ public:
 			printf("Add mult column to exp\n");
 			projection_node->expressions.emplace_back(std::move(e));
 
-			printf("Modified plan: %s\n", projection_node->ToString().c_str());
+			printf("Modified plan (of projection_node):\n%s\nParameters:", projection_node->ToString().c_str());
+			// Output ParameterToString.
+			for (const auto& i_param : projection_node->ParamsToString()) {
+				printf("%s", i_param.second.c_str());
+			}
+			printf("\n---end of modified plan (of projection_node)---\n");
 			for (size_t i = 0; i < projection_node->GetColumnBindings().size(); i++) {
 				printf("Top node CB %zu %s\n", i, projection_node->GetColumnBindings()[i].ToString().c_str());
 			}
