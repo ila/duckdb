@@ -263,10 +263,12 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		} else {
 			scan_column_names = dynamic_cast<PostgresBindData *>(node->bind_data.get())->names;
 		}
+		/* 2024-11-03 Not used.
 		auto current_table_index = node->GetTableIndex()[0];
+        */
 		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
 
-		for (int i = 0; i < bindings.size(); i++) {
+		for (size_t i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];
 			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
 			    scan_column_names[column_ids[i]];
@@ -294,7 +296,7 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			}
 		} */
 
-		for (int i = 0; i < bindings.size(); i++) {
+		for (size_t i = 0; i < bindings.size(); i++) {
 			auto key = std::to_string(bindings[i].table_index) + "." + std::to_string(bindings[i].column_index);
 			auto it1 = column_names.find(key);
 			auto it2 = cur_col_map.find(key);
@@ -310,7 +312,7 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		if (column_aliases.size() == scan_column_names.size()) {
 			// we might be in a SELECT * case
 			// we need to check 1) the order and 2) the aliases
-			for (int i = 0; i < column_aliases.size(); i++) {
+			for (size_t i = 0; i < column_aliases.size(); i++) {
 				if (column_aliases[i].first != scan_column_names[i] ||
 				    column_aliases[i].second != "duckdb_placeholder_internal") {
 					ql_get_exp->all_columns = false;
