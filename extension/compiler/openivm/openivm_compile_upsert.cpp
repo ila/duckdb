@@ -10,7 +10,7 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 
 	vector<string> keys;
 	vector<string> aggregates;
-	for (auto i = 0; i < key_ids.size(); i++) {
+	for (size_t i = 0; i < key_ids.size(); i++) {
 		keys.emplace_back(column_names[key_ids[i]]);
 	}
 

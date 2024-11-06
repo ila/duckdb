@@ -189,8 +189,10 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// the API does not support consecutive CREATE + ALTER instructions, so we rewrite it as one query
 		// we need IF NOT EXISTS - there can be multiple views over the same table
 
+		/* 2024-11-06 not used
 		auto &catalog = Catalog::GetSystemCatalog(context);
 		QueryErrorContext error_context = QueryErrorContext();
+		*/
 
 		for (const auto &table_name : table_names) {
 
