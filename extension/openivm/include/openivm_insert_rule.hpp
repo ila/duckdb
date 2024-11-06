@@ -206,11 +206,13 @@ public:
 							// handling the potential filters
 							if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
+								// FIXME 2024-11-04 use ToString or do something with ParamsToString?
 								insert_string += " where " + filter->ToString();
 							} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								auto get = dynamic_cast<LogicalGet *>(plan->children[0].get());
 								// we only add WHERE if there are table filters
 								if (!get->table_filters.filters.empty()) {
+									// FIXME 2024-11-04 use ToString or do something with ParamsToString?
 									insert_string += " where " + get->ToString();
 									insert_string = insert_string.substr(0, insert_string.find('\n'));
 								}
@@ -296,11 +298,13 @@ public:
 							if (projection->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 								auto filter = dynamic_cast<LogicalFilter *>(projection->children[0].get());
 								// we always add WHERE (it's a filter, duh)
+								// FIXME 2024-11-04 use ToString or do something with ParamsToString?
 								where_string += " where " + filter->ToString();
 							} else if (projection->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 								auto get = dynamic_cast<LogicalGet *>(projection->children[0].get());
 								// we only add WHERE if there are table filters
 								if (!get->table_filters.filters.empty()) {
+									// FIXME 2024-11-04 use ToString or do something with ParamsToString?
 									where_string += " where " + get->ToString();
 									where_string = where_string.substr(0, where_string.find('\n'));
 								}
