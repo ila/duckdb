@@ -145,6 +145,7 @@ public:
 		QueryErrorContext error_context = QueryErrorContext();
 
 		switch (plan->type) {
+		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 		case LogicalOperatorType::LOGICAL_JOIN: {
 			auto join = static_cast<LogicalJoin*>(plan.get());
 			if (join->join_type != JoinType::INNER) {
@@ -371,9 +372,17 @@ public:
 			    move(timestamp_column),
 			    make_uniq<BoundConstantExpression>(r->GetValue(0, 0)));
 
-			auto e = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND, std::move(timestamp_expr), std::move(filter_node->expressions[0]));
-			filter_node->expressions.clear();
-			filter_node->expressions.emplace_back(std::move(e));
+//			unique_ptr<BoundComparisonExpression> e;
+
+			if (!filter_node->expressions.empty()) {
+				auto e = make_uniq<BoundConjunctionExpression>(
+				    ExpressionType::CONJUNCTION_AND, std::move(timestamp_expr), std::move(filter_node->expressions[0]));
+				filter_node->expressions.clear();
+				filter_node->expressions.emplace_back(std::move(e));
+			}
+			else {
+				filter_node->expressions.emplace_back(std::move(timestamp_expr));
+			}
 			break;
 		}
 		default:

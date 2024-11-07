@@ -11,7 +11,6 @@ INSERT INTO gods VALUES (1, 'Apollo'), (2, 'Artemis'), (3, 'Dionysus'), (4, 'Pos
 INSERT INTO payments VALUES (1, 2, 1722), (2, 3, 53), (2, 5, 360), (3, 1, 80), (3, 2, 137), (3, 5, 83), (5, 1, 42), (1, 2, 222);
 
 -- All payments, annotated with the sender's name.
--- TODO: Operator type GET not supported. (When running PRAGMA ivm()).
 CREATE MATERIALIZED VIEW named_payments AS
     SELECT g.user_name, p.*
     FROM gods AS g, payments AS p
@@ -20,7 +19,6 @@ CREATE MATERIALIZED VIEW named_payments AS
 SELECT * FROM named_payments;
 
 -- All payments from uid 3, including the amount.
--- TODO: Operator type FILTER not supported. (When running PRAGMA ivm()).
 CREATE MATERIALIZED VIEW recipients AS
   SELECT g.user_name, p.amount
   FROM gods as g, payments as p
@@ -29,7 +27,6 @@ CREATE MATERIALIZED VIEW recipients AS
 -- Sum of incoming payments made by a god.
 -- Normally, the GROUP BY would be by ID, and then the projection is by username, but DuckDB does not like this.
 -- Perhaps because of the lack of primary/foreign keys in this example.
--- TODO: Operator type GET not supported. (When running PRAGMA ivm()).
 -- TODO: Support primary key so that GROUP BY g.user_name does not have to be used, but g.user_id as g's PK instead.
 CREATE MATERIALIZED VIEW income AS
   SELECT g.user_name, sum(p.amount)
