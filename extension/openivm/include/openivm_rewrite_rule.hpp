@@ -134,9 +134,9 @@ public:
 		ClientContext &context = input.context;
 		// now: Support modification of plan with multiple children.
 		unique_ptr<LogicalOperator> left_child, right_child;
-		if (plan.get()->type == LogicalOperatorType::LOGICAL_JOIN) {
-			left_child =  plan->children[0]->Copy(context);
-			right_child =  plan->children[1]->Copy(context);
+		if (plan.get()->type == LogicalOperatorType::LOGICAL_JOIN || plan.get()->type == LogicalOperatorType::LOGICAL_COMPARISON_JOIN) {
+			left_child = plan->children[0]->Copy(context);
+			right_child = plan->children[1]->Copy(context);
 		}
 		for (auto &&child : plan->children) {
 			child = ModifyPlan(input, child, multiplicity_col_idx, multiplicity_table_idx,
@@ -148,20 +148,51 @@ public:
 		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 		case LogicalOperatorType::LOGICAL_JOIN: {
 			auto join = static_cast<LogicalJoin*>(plan.get());
+			printf("Modified plan (join, start, post-cast):\n%s\nParameters:", join->ToString().c_str());
+			for (const auto& i_param : join->ParamsToString()) {
+				printf("%s", i_param.second.c_str());
+			}
+#ifdef DEBUG
+			printf("join detected. join child count: %zu\n", join->children.size());
+			printf("plan left_child child count: %zu\n", left_child->children.size());
+			printf("plan right_child child count: %zu\n", right_child->children.size());
+#endif
 			if (join->join_type != JoinType::INNER) {
 				throw Exception(ExceptionType::OPTIMIZER, JoinTypeToString(join->join_type) + " type not yet supported in OpenIVM");
 			}
-			auto left_delta = std::move(plan->children[0]);
-			auto right_delta = std::move(plan->children[1]);
-			auto join1 = plan->Copy(context);
-			auto join2 = plan->Copy(context);
-			auto join3 = plan->Copy(context);
-			join1->children[0] = std::move(left_child);
-			join2->children[1] = std::move(right_child);
-			auto copy_union = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), 1U, std::move(join1),
+			// make a copy of a join between deltas
+			auto join1 = join->Copy(context);
+
+			// remove the deltas: join1 has no children (temporarily)
+			auto left_delta = std::move(join1->children[0]);
+			auto right_delta = std::move(join1->children[1]);
+
+			// copy the child-less join
+			auto join2 = join1->Copy(context);
+			auto types = join->types;
+
+			// put back the children in the two new joins
+			join1->children[0] = std::move(left_delta);
+			join1->children[1] = std::move(right_child);
+			join1->types = types;
+			join2->children[0] = std::move(left_child);
+			join2->children[1] = std::move(right_delta);
+			join2->types = types;
+#ifdef DEBUG
+			printf("join 1 child count: %zu\n", join1->children.size());
+			printf("join 2 child count: %zu\n", join2->children.size());
+			printf("join 3 child count: %zu\n", join->children.size());
+#endif
+			auto copy_union = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join1),
 															 std::move(join2), LogicalOperatorType::LOGICAL_UNION, true);
-			plan = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), 1U, std::move(copy_union),
-															 std::move(join3), LogicalOperatorType::LOGICAL_UNION, true);
+			copy_union->types = types;
+			plan = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(copy_union),
+															 std::move(plan), LogicalOperatorType::LOGICAL_UNION, true);
+			plan->types = types;
+			printf("Modified plan (join, end):\n%s\nParameters:", plan->ToString().c_str());
+			for (const auto& i_param : plan->ParamsToString()) {
+				printf("%s", i_param.second.c_str());
+			}
 			break; // TODO: Finish.
 		}
 		case LogicalOperatorType::LOGICAL_GET: {
