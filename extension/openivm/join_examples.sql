@@ -12,7 +12,7 @@ INSERT INTO payments VALUES (1, 2, 1722), (2, 3, 53), (2, 5, 360), (3, 1, 80), (
 
 -- All payments, annotated with the sender's name.
 CREATE MATERIALIZED VIEW named_payments AS
-    SELECT g.user_name, p.*
+    SELECT g.user_name, p.from_uid, p.to_uid, p.amount
     FROM gods AS g, payments AS p
     WHERE p.to_uid = g.uid;
 

@@ -1,4 +1,3 @@
-
 #ifndef DUCKDB_OPENIVM_REWRITE_RULE_HPP
 #define DUCKDB_OPENIVM_REWRITE_RULE_HPP
 
@@ -7,10 +6,13 @@
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/main/connection.hpp"
+#include "duckdb/optimizer/column_binding_replacer.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/planner/expression.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
+#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
@@ -19,10 +21,8 @@
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb/planner/planner.hpp"
-#include "duckdb/planner/tableref/bound_basetableref.hpp"
-#include "duckdb/planner/expression/bound_comparison_expression.hpp"
-#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/table_filter.hpp"
+#include "duckdb/planner/tableref/bound_basetableref.hpp"
 #include "openivm_parser.hpp"
 
 #include <iostream>
@@ -127,9 +127,16 @@ public:
 #endif
 	}
 
-	static unique_ptr<LogicalOperator> ModifyPlan(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan,
-	                       idx_t &multiplicity_col_idx, idx_t &multiplicity_table_idx,
-	                       optional_ptr<CatalogEntry> &table_catalog_entry, string &view, string &table) {
+	static unique_ptr<LogicalOperator> ModifyPlan(
+	    OptimizerExtensionInput &input,
+	    unique_ptr<LogicalOperator> &plan,
+		idx_t &multiplicity_col_idx,
+	    idx_t &multiplicity_table_idx,
+		optional_ptr<CatalogEntry> &table_catalog_entry,
+	    string &view,
+	    string &table,
+	    LogicalOperator* &root
+	) {
 		// previously: Assume only one child per node
 		ClientContext &context = input.context;
 		// now: Support modification of plan with multiple children.
@@ -140,7 +147,7 @@ public:
 		}
 		for (auto &&child : plan->children) {
 			child = ModifyPlan(input, child, multiplicity_col_idx, multiplicity_table_idx,
-					   table_catalog_entry, view, table);
+					   table_catalog_entry, view, table, root);
 		}
 		QueryErrorContext error_context = QueryErrorContext();
 
@@ -186,14 +193,28 @@ public:
 			auto copy_union = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join1),
 															 std::move(join2), LogicalOperatorType::LOGICAL_UNION, true);
 			copy_union->types = types;
-			plan = make_uniq<LogicalSetOperation>(input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(copy_union),
+			auto upper_u_table_index = input.optimizer.binder.GenerateTableIndex();
+			plan = make_uniq<LogicalSetOperation>(upper_u_table_index, types.size(), std::move(copy_union),
 															 std::move(plan), LogicalOperatorType::LOGICAL_UNION, true);
 			plan->types = types;
 			printf("Modified plan (join, end):\n%s\nParameters:", plan->ToString().c_str());
 			for (const auto& i_param : plan->ParamsToString()) {
 				printf("%s", i_param.second.c_str());
 			}
-			break; // TODO: Finish.
+			// TODO: Rebind everything, because new joins have been implemented.
+			/*
+			ColumnBindingReplacer replacer;
+			auto &replacement_bindings = replacer.replacement_bindings;
+			const auto bindings = plan->GetColumnBindings();
+			for (idx_t col_idx = 0; col_idx < bindings.size(); col_idx++) {
+				const auto &old_binding = bindings[col_idx];
+				const auto &new_binding = ColumnBinding(upper_u_table_index, old_binding.column_index);
+				replacement_bindings.emplace_back(old_binding, new_binding);
+			}
+			replacer.stop_operator = plan;
+			replacer.VisitOperator(*root);
+			*/
+			break;
 		}
 		case LogicalOperatorType::LOGICAL_GET: {
 			// we are at the bottom of the tree
@@ -504,8 +525,9 @@ public:
 #ifdef DEBUG
 		std::cout << "Running ModifyPlan..." << std::endl;
 #endif
+		auto root = optimized_plan.get();
 		unique_ptr<LogicalOperator> modified_plan = ModifyPlan(
-		    input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx, table_catalog_entry, view, table
+		    input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx, table_catalog_entry, view, table, root
 		);
 #ifdef DEBUG
 		std::cout << "Running ModifyTopNode..." << std::endl;
