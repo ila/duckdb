@@ -95,7 +95,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 		break;
 	}
 
-	case IVMType::SIMPLE_FILTER:
+	// note: simple_filter removed 2024-12-11
 	case IVMType::SIMPLE_PROJECTION: {
 		upsert_query = CompileProjectionsFilters(view_name, column_names);
 		break;
