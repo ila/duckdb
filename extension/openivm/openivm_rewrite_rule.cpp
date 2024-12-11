@@ -453,21 +453,21 @@ void IVMRewriteRule::IVMRewriteRuleFunction(OptimizerExtensionInput &input, duck
 
 	// if there is no filter, we manually need to add one for the timestamp
 #ifdef DEBUG
-	std::cout << "Running ModifyPlan..." << std::endl;
+	std::cout << "Running ModifyPlan..." << '\n';
 #endif
 	auto root = optimized_plan.get();
 	auto start_pw = PlanWrapper(input, optimized_plan, mul_binding, view, root);
 	unique_ptr<LogicalOperator> modified_plan = ModifyPlan(start_pw);
 #ifdef DEBUG
-	std::cout << "Running ModifyTopNode..." << std::endl;
+	std::cout << "Running ModifyTopNode..." << '\n';
 #endif
 	ModifyTopNode(input.context, modified_plan, mul_binding);
 #ifdef DEBUG
-	std::cout << "Running AddInsertNode..." << std::endl;
+	std::cout << "Running AddInsertNode..." << '\n';
 #endif
 	AddInsertNode(input.context, modified_plan, view, view_catalog, view_schema);
 #ifdef DEBUG
-	std::cout << "\nFINAL PLAN:\n" << modified_plan->ToString() << std::endl;
+	std::cout << "\nFINAL PLAN:\n" << modified_plan->ToString() << '\n';
 #endif
 	plan = std::move(modified_plan);
 	return;
