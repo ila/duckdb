@@ -105,7 +105,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		std::stack<LogicalOperator *> node_stack;
 		node_stack.push(plan.get());
 
-		bool found_filter = false;
 		bool found_aggregation = false;
 		bool found_projection = false;
 		vector<string> aggregate_columns;
@@ -113,10 +112,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		while (!node_stack.empty()) { // depth-first search
 			auto current = node_stack.top();
 			node_stack.pop();
-
-			if (current->type == LogicalOperatorType::LOGICAL_FILTER) {
-				found_filter = true;
-			}
 
 			if (current->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
 				found_aggregation = true;
@@ -148,9 +143,6 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		} else if (found_aggregation && aggregate_columns.empty()) {
 			// SELECT COUNT(*) FROM table; (without GROUP BY)
 			ivm_type = IVMType::SIMPLE_AGGREGATE;
-		} else if (found_filter && !found_aggregation) {
-			// SELECT stuff FROM table WHERE condition;
-			ivm_type = IVMType::SIMPLE_FILTER;
 		} else if (found_projection && !found_aggregation) {
 			// SELECT stuff FROM table;
 			ivm_type = IVMType::SIMPLE_PROJECTION;
@@ -161,7 +153,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// we create the lookup tables for views -> materialized_view_name | sql_string | type | filter | last_update
 		// we need to know if the query has a filter in order to check the timestamp of updates
 		auto system_table = "create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string "
-		                    "varchar, type tinyint, filter bool, last_update timestamp);\n";
+		                    "varchar, type tinyint, last_update timestamp);\n";
 		// recreate the file - we assume the queries will be executed after the parsing is done
 		CompilerExtension::WriteFile(system_tables_path, false, system_table);
 
@@ -178,7 +170,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// now we insert the details in the openivm view lookup table
 		auto ivm_table_insert = "insert or replace into _duckdb_ivm_views values ('" + view_name + "', '" +
 		                        CompilerExtension::EscapeSingleQuotes(view_query) + "', " + to_string((int)ivm_type) +
-		                        ", " + to_string(found_filter) + ", now());\n";
+		                        ", now());\n";
 		CompilerExtension::WriteFile(system_tables_path, true, ivm_table_insert);
 
 		// now we create the table (the view, internally stored as a table)

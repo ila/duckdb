@@ -7,7 +7,7 @@
 
 namespace duckdb {
 
-enum class IVMType : uint8_t { AGGREGATE_GROUP, SIMPLE_FILTER, SIMPLE_AGGREGATE, SIMPLE_PROJECTION };
+enum class IVMType : uint8_t { AGGREGATE_GROUP, SIMPLE_AGGREGATE, SIMPLE_PROJECTION };
 
 string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &parameters);
 

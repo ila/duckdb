@@ -130,11 +130,9 @@ public:
 	static unique_ptr<LogicalOperator> ModifyPlan(
 	    OptimizerExtensionInput &input,
 	    unique_ptr<LogicalOperator> &plan,
-		idx_t &multiplicity_col_idx,
+		idx_t &multiplicity_col_idx, // create a struct along with table index ("ColumnBinding").
 	    idx_t &multiplicity_table_idx,
-		optional_ptr<CatalogEntry> &table_catalog_entry,
 	    string &view,
-	    string &table,
 	    LogicalOperator* &root
 	) {
 		// previously: Assume only one child per node
@@ -146,8 +144,7 @@ public:
 			right_child = plan->children[1]->Copy(context);
 		}
 		for (auto &&child : plan->children) {
-			child = ModifyPlan(input, child, multiplicity_col_idx, multiplicity_table_idx,
-					   table_catalog_entry, view, table, root);
+			child = ModifyPlan(input, child, multiplicity_col_idx, multiplicity_table_idx, view, root);
 		}
 		QueryErrorContext error_context = QueryErrorContext();
 
@@ -238,7 +235,7 @@ public:
 				delta_table_schema = old_get->GetTable().get()->schema.name;
 				delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
 			}
-			table_catalog_entry =
+			auto table_catalog_entry =
 			    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, delta_table_catalog, delta_table_schema,
 			                      delta_table, OnEntryNotFound::RETURN_NULL, error_context);
 			if (table_catalog_entry == nullptr) {
@@ -295,31 +292,22 @@ public:
 			replacement_get_node->SetColumnIds(std::move(column_ids));
 			replacement_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
 
+			// FIXME: Why add the filter if there is no filter in the plan???
 			// we add the filter for the timestamp if there is no filter in the plan
 			Connection con(*context.db);
 			con.SetAutoCommit(false);
-			auto filter_query = "select filter from _duckdb_ivm_views where view_name = '" + view + "'";
-			auto r = con.Query(filter_query);
+			// we add a table filter
+			auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + view + "' and table_name = '" + table_entry.name + "';";
+			auto r = con.Query(timestamp_query);
 			if (r->HasError()) {
 				throw InternalException("Error while querying last_update");
 			}
+			auto timestamp_column = make_uniq<BoundColumnRefExpression>(
+				"timestamp", LogicalType::TIMESTAMP,
+				ColumnBinding(multiplicity_table_idx, multiplicity_col_idx + 1));
 
-			if (!r->GetValue(0, 0).GetValue<bool>()) {
-				// we add a table filter
-				auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + view + "' and table_name = '" + table_entry.name + "';";
-				r = con.Query(timestamp_query);
-				if (r->HasError()) {
-					throw InternalException("Error while querying last_update");
-				}
-				auto timestamp_column = make_uniq<BoundColumnRefExpression>(
-				    "timestamp", LogicalType::TIMESTAMP,
-				    ColumnBinding(multiplicity_table_idx, multiplicity_col_idx + 1));
-
-				auto table_filter = make_uniq<ConstantFilter>(ExpressionType::COMPARE_GREATERTHANOREQUALTO, r->GetValue(0, 0));
-				replacement_get_node->table_filters.filters[multiplicity_col_idx + 1] = std::move(table_filter);
-			}
-
-			table = table_entry.name; // to use later
+			auto table_filter = make_uniq<ConstantFilter>(ExpressionType::COMPARE_GREATERTHANOREQUALTO, r->GetValue(0, 0));
+			replacement_get_node->table_filters.filters[multiplicity_col_idx + 1] = std::move(table_filter);
 
 			return replacement_get_node;
 		}
@@ -404,37 +392,6 @@ public:
 			break;
 		}
 		case LogicalOperatorType::LOGICAL_FILTER: {
-			auto filter_node = dynamic_cast<LogicalFilter *>(plan.get());
-			filter_node->projection_map.clear();
-			// we build another expression for the timestamp
-			// the expression is at the topmost level: timestamp >= last_update AND everything else
-			// first, we create the timestamp expression
-			auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + view + "' and table_name = '" + table + "';";
-			// converting to timestamp
-			Connection con(*context.db);
-			con.SetAutoCommit(false);
-			auto r = con.Query(timestamp_query);
-			if (r->HasError()) {
-				throw InternalException("Error while querying last_update");
-			}
-			auto timestamp_column = make_uniq<BoundColumnRefExpression>("timestamp", LogicalType::TIMESTAMP,
-			                                                            ColumnBinding(multiplicity_table_idx, multiplicity_col_idx + 1));
-			auto timestamp_expr = make_uniq<BoundComparisonExpression>(
-			    ExpressionType::COMPARE_GREATERTHANOREQUALTO,
-			    move(timestamp_column),
-			    make_uniq<BoundConstantExpression>(r->GetValue(0, 0)));
-
-//			unique_ptr<BoundComparisonExpression> e;
-
-			if (!filter_node->expressions.empty()) {
-				auto e = make_uniq<BoundConjunctionExpression>(
-				    ExpressionType::CONJUNCTION_AND, std::move(timestamp_expr), std::move(filter_node->expressions[0]));
-				filter_node->expressions.clear();
-				filter_node->expressions.emplace_back(std::move(e));
-			}
-			else {
-				filter_node->expressions.emplace_back(std::move(timestamp_expr));
-			}
 			break;
 		}
 		default:
@@ -521,13 +478,12 @@ public:
 		// 5) Add the insert node to the plan (to insert the query result in the delta table)
 
 		// if there is no filter, we manually need to add one for the timestamp
-		string table;
 #ifdef DEBUG
 		std::cout << "Running ModifyPlan..." << std::endl;
 #endif
 		auto root = optimized_plan.get();
 		unique_ptr<LogicalOperator> modified_plan = ModifyPlan(
-		    input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx, table_catalog_entry, view, table, root
+		    input, optimized_plan, multiplicity_col_idx, multiplicity_table_idx,  view, root
 		);
 #ifdef DEBUG
 		std::cout << "Running ModifyTopNode..." << std::endl;
