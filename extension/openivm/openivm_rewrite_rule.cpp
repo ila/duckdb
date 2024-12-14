@@ -109,62 +109,85 @@ void IVMRewriteRule::ModifyTopNode(
 }
 
 unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
-	// previously: Assume only one child per node
 	ClientContext &context = pw.input.context;
-	// now: Support modification of plan with multiple children.
+	/*
+	 * For join support, create a copy of both children for use later.
+	 * The reason is that both the delta "state" and the original "state" of each child are needed.
+	 * Without a copy, the original (non-delta) state of the children would be lost during recursion.
+	 */
 	unique_ptr<LogicalOperator> left_child, right_child;
 	if (pw.plan.get()->type == LogicalOperatorType::LOGICAL_JOIN ||
 	    pw.plan.get()->type == LogicalOperatorType::LOGICAL_COMPARISON_JOIN) {
 		left_child = pw.plan->children[0]->Copy(context);
 		right_child = pw.plan->children[1]->Copy(context);
 	}
+	// Call each child of `plan` recursively (depth-first).
 	for (auto &&child : pw.plan->children) {
 		auto rec_pw = PlanWrapper(pw.input, child, pw.mul_binding, pw.view, pw.root);
 		child = ModifyPlan(rec_pw);
 	}
 	QueryErrorContext error_context = QueryErrorContext();
 
+	// Rewrite operators depending on their type.
 	switch (pw.plan->type) {
 	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 	case LogicalOperatorType::LOGICAL_JOIN: {
-		auto join = static_cast<LogicalJoin*>(pw.plan.get());
-		printf("Modified plan (join, start, post-cast):\n%s\nParameters:", join->ToString().c_str());
-		for (const auto& i_param : join->ParamsToString()) {
+		auto join_dl_dr = static_cast<LogicalJoin*>(pw.plan.get());
+		printf("Modified plan (join, start, post-cast):\n%s\nParameters:", join_dl_dr->ToString().c_str());
+		for (const auto& i_param : join_dl_dr->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 #ifdef DEBUG
-		printf("join detected. join child count: %zu\n", join->children.size());
+		printf("join detected. join child count: %zu\n", join_dl_dr->children.size());
 		printf("plan left_child child count: %zu\n", left_child->children.size());
 		printf("plan right_child child count: %zu\n", right_child->children.size());
 #endif
-		if (join->join_type != JoinType::INNER) {
-			throw Exception(ExceptionType::OPTIMIZER, JoinTypeToString(join->join_type) + " type not yet supported in OpenIVM");
+		if (join_dl_dr->join_type != JoinType::INNER) {
+			throw Exception(ExceptionType::OPTIMIZER, JoinTypeToString(join_dl_dr->join_type) + " type not yet supported in OpenIVM");
 		}
-		// make a copy of a join between deltas
-		auto join1 = join->Copy(context);
+		/* Suppose the query tree (below this join) as an L-side (left child) and an R side (right child).
+		 * Before any modification, the query simply joins "current" L with "current" R.
+		 * However, now, this query should act as an *update* to the original view.
+		 * To this end, a comparison between `current L` and `current R` is not needed.
+		 * Rather, this query should yield the union of the following result sets:
+		 * 1. `delta R` joined with `current R` -> `join_dl_r`
+		 * 2. `current L` joined with `delta R` -> `join_l_dr`
+		 * 3. `delta L` joined with `delta R`, iff the multiplicity matches -> `join`
+		 *
+		 * The code below adapts the tree such that `current L` JOIN `current R` is modified to the 3 joins of interest.
+		 */
+		// Make a copy of a join between deltas. This copy will eventually become `delta L` with `current R`.
+		auto join_dl_r = join_dl_dr->Copy(context);
+		// Remove the deltas: join_dl_r temporarily has no children.
+		auto left_delta = std::move(join_dl_r->children[0]);
+		auto right_delta = std::move(join_dl_r->children[1]);
+		// Copy the (now child-less) join, to form the basis for `join_l_dr`.
+		auto join_l_dr = join_dl_r->Copy(context);
+		// The return type should be the same for each join, so make a copy (to apply below).
+		auto types = join_dl_dr->types;
 
-		// remove the deltas: join1 has no children (temporarily)
-		auto left_delta = std::move(join1->children[0]);
-		auto right_delta = std::move(join1->children[1]);
-
-		// copy the child-less join
-		auto join2 = join1->Copy(context);
-		auto types = join->types;
-
-		// put back the children in the two new joins
-		join1->children[0] = std::move(left_delta);
-		join1->children[1] = std::move(right_child);
-		join1->types = types;
-		join2->children[0] = std::move(left_child);
-		join2->children[1] = std::move(right_delta);
-		join2->types = types;
+		// Give these two join their appropriate children.
+		join_dl_r->children[0] = std::move(left_delta);
+		join_dl_r->children[1] = std::move(right_child);
+		join_dl_r->types = types;
+		join_l_dr->children[0] = std::move(left_child);
+		join_l_dr->children[1] = std::move(right_delta);
+		join_l_dr->types = types;
 #ifdef DEBUG
-		printf("join 1 child count: %zu\n", join1->children.size());
-		printf("join 2 child count: %zu\n", join2->children.size());
-		printf("join 3 child count: %zu\n", join->children.size());
+		printf("`delta L` JOIN `R` child count: %zu\n", join_dl_r->children.size());
+		printf("`L` JOIN `delta R` child count: %zu\n", join_l_dr->children.size());
+		printf("`delta L` JOIN `delta R` child count: %zu\n", join_dl_dr->children.size());
 #endif
-		auto copy_union = make_uniq<LogicalSetOperation>(pw.input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join1),
-														 std::move(join2), LogicalOperatorType::LOGICAL_UNION, true);
+		// Add an extra join condition for dl_dr (on multiplicity).
+		// If possible, filter out left multiplicity table here already.
+		;
+		// Add projection above `dl_r` (to put the multiplicity on the right spot).
+		// TODO: Implement right projections here.
+//		auto temp = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(), );
+		;
+		// Now that all joins are correct, and their columns in the right order, perform the UNIONs.
+		auto copy_union = make_uniq<LogicalSetOperation>(pw.input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join_dl_r),
+														 std::move(join_l_dr), LogicalOperatorType::LOGICAL_UNION, true);
 		copy_union->types = types;
 		auto upper_u_table_index = pw.input.optimizer.binder.GenerateTableIndex();
 		pw.plan = make_uniq<LogicalSetOperation>(upper_u_table_index, types.size(), std::move(copy_union),
