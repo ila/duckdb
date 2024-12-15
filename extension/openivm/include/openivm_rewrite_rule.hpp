@@ -33,6 +33,7 @@ public:
 		optimize_function = IVMRewriteRuleFunction;
 	}
 
+	/// Add an Insert node to the top of the plan, such that an update on the view can be performed.
 	static void AddInsertNode(
 	    ClientContext &context,
 	    unique_ptr<LogicalOperator> &plan,
@@ -41,6 +42,7 @@ public:
 	    string &view_schema_name
 	);
 
+	/// Add the multiplicity column to the top node (which should be a projection).
 	static void ModifyTopNode(ClientContext &context, unique_ptr<LogicalOperator> &plan, ColumnBinding& mul_binding);
 
 	static unique_ptr<LogicalOperator> ModifyPlan(PlanWrapper pw);

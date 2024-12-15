@@ -88,6 +88,7 @@ void IVMRewriteRule::ModifyTopNode(
 			// example: with queries like "SELECT COUNT(*) FROM table", the binding will be 3, but we want 2
 			mul_binding.table_index = dynamic_cast<LogicalAggregate *>(plan->children[0].get())->group_index;
 		} else {
+		    // TODO: does this break with joins? Or do joins have different logic?
 			// this might break with joins
 			mul_binding.table_index = dynamic_cast<BoundColumnRefExpression *>(plan->expressions[0].get())->binding.table_index;
 		}
@@ -157,16 +158,16 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		 * The code below adapts the tree such that `current L` JOIN `current R` is modified to the 3 joins of interest.
 		 */
 		// Make a copy of a join between deltas. This copy will eventually become `delta L` with `current R`.
-		auto join_dl_r = join_dl_dr->Copy(context);
+		auto join_dl_r = unique_ptr_cast<LogicalOperator, LogicalJoin>(join_dl_dr->Copy(context));
 		// Remove the deltas: join_dl_r temporarily has no children.
 		auto left_delta = std::move(join_dl_r->children[0]);
 		auto right_delta = std::move(join_dl_r->children[1]);
 		// Copy the (now child-less) join, to form the basis for `join_l_dr`.
-		auto join_l_dr = join_dl_r->Copy(context);
+		auto join_l_dr = unique_ptr_cast<LogicalOperator, LogicalJoin>(join_dl_r->Copy(context));
 		// The return type should be the same for each join, so make a copy (to apply below).
 		auto types = join_dl_dr->types;
 
-		// Give these two join their appropriate children.
+		// Give these two joins their appropriate children.
 		join_dl_r->children[0] = std::move(left_delta);
 		join_dl_r->children[1] = std::move(right_child);
 		join_dl_r->types = types;
@@ -178,14 +179,51 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("`L` JOIN `delta R` child count: %zu\n", join_l_dr->children.size());
 		printf("`delta L` JOIN `delta R` child count: %zu\n", join_dl_dr->children.size());
 #endif
-		// Add an extra join condition for dl_dr (on multiplicity).
-		// If possible, filter out left multiplicity table here already.
-		;
-		// Add projection above `dl_r` (to put the multiplicity on the right spot).
-		// TODO: Implement right projections here.
-//		auto temp = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(), );
-		;
-		// Now that all joins are correct, and their columns in the right order, perform the UNIONs.
+
+
+		// dLR -> project dL-mul to end.
+		// First, get the table index of whatever is on the left side.
+		vector<ColumnBinding> dl_bindings = join_dl_r->children[0]->GetColumnBindings();
+		vector<ColumnBinding> r_bindings = join_dl_r->children[1]->GetColumnBindings();
+		// Contains the column IDs of within the LEFT side of the projection.
+		// From there, we want everything but the last element to stay in order.
+		size_t dl_col_count = dl_bindings.size();
+		size_t r_col_count = r_bindings.size();
+		size_t projection_col_count = dl_col_count + r_col_count;
+		auto projection_bindings = vector<ColumnBinding>(projection_col_count); // Note: slots already made.
+		// TODO: Do we need to do anything with the `left/right_projection_map`?
+		/*
+		 * What is done here:
+		 * For all except of the last element of L's column bindings,
+		 *  the respective ColumnBinding is added to the projection.
+		 * The last element of L's bindings (the multiplicity column) is specially kept to insert last.
+		 */
+		// Mind the `-1`: the last element does not get added yet but only at the very end.
+		idx_t last_dl_col_idx = dl_col_count - 1;
+		for (idx_t i = 0; i < last_dl_col_idx; ++i ) {
+			projection_bindings[i] = dl_bindings[i];
+		}
+		// Insert the multiplicity column at the end.
+		projection_bindings[projection_col_count - 1] = dl_bindings[last_dl_col_idx];
+		// Now insert everything of R. Here, everything is inserted, so no special increment cutoff.
+		for (idx_t i = 0; i < r_col_count; ++i) {
+			// First index here should be where dL left off.
+			// Omitting the mul column, that is therefore `last_dl_col_idx` (which is unoccupied).
+			// Note that `i = 0`, and thus `last_dl_col_idx + i` = `last_dl_col_idx` (which is intended).
+			projection_bindings[last_dl_col_idx + i] = r_bindings[i];
+		}
+		// Now, the vector with bindings should be complete. Let's put it in a Projection node!
+//		auto projection_node = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex());
+
+		join_dl_dr->left_projection_map; // Get everything here but the last element.
+		// TODO: set the types somehow.
+
+
+
+		// LdR -> keep as-is
+
+		// dLdR -> project out dL-mul
+
 		auto copy_union = make_uniq<LogicalSetOperation>(pw.input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join_dl_r),
 														 std::move(join_l_dr), LogicalOperatorType::LOGICAL_UNION, true);
 		copy_union->types = types;
@@ -459,22 +497,32 @@ void IVMRewriteRule::IVMRewriteRuleFunction(OptimizerExtensionInput &input, duck
 	// because this information will not be available while modifying the parent node
 	// for ex. parent.children[0] will not contain column names to find the index of the multiplicity column
 	ColumnBinding mul_binding;
-	optional_ptr<CatalogEntry> table_catalog_entry = nullptr;
+	optional_ptr<CatalogEntry> table_catalog_entry = nullptr; // TODO: 2024-12-13 set but not used
 
 	if (optimized_plan->children.empty()) {
 		throw NotImplementedException("Plan contains single node, this is not supported");
 	}
 
+	/* +++ Old logic. (outdated as of December 2024) +++
 	// recursively modify the optimized logical plan
-
 	// IVM does the following steps:
 	// 1) Replace the GET (scan) node with a new GET node that reads the delta table
 	// 2) Add a filter with the timestamp (only taking the data updated after the last refresh)
 	// 3) Add the multiplicity column all other nodes (aggregates etc.)
 	// 4) Add the multiplicity column to the top projection node
 	// 5) Add the insert node to the plan (to insert the query result in the delta table)
-
 	// if there is no filter, we manually need to add one for the timestamp
+    */
+
+	/* The IVM logic takes the following steps:
+	 * 1. Replace the GET (scan) node with a new GET note, reading the delta table.
+	 * 2. Add a timestamp filter expression to this new GET note
+	 *     (i.e. only consider records updated after the last refresh)
+	 * 3. Recursively add the multiplicity column upwards into the tree.
+	 * 4. Replace any occurrences of joins with 3 joins (permutations with a delta on either/both sides)
+	 * 5. Add an insert node to the top of the plan, such that the result can be inserted into the delta table.
+	 */
+
 #ifdef DEBUG
 	std::cout << "Running ModifyPlan..." << '\n';
 #endif

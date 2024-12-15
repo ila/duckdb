@@ -54,6 +54,8 @@ UPDATE sales SET amount = 200 WHERE order_id = 3;
 There are two ways to trigger the refresh of a materialized view:
 ```SQL
 PRAGMA ivm('product_sales'); -- will use current catalog and schema
+```
+```SQL
 PRAGMA ivm_options('test_sales', 'main', 'product_sales'); -- specifying catalog and schema
 ```
 The output of the above will be the table `delta_product_sales`, which will contain incremental processing of the changes to the base table of view `product_sales`. 
