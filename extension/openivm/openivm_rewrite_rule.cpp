@@ -14,6 +14,45 @@
 #include <iostream>
 #include <utility>
 
+namespace {
+	using duckdb::vector;
+    using duckdb::ColumnBinding;
+
+	vector<ColumnBinding> project_dl_r_join(
+    const vector<ColumnBinding>& dl_bindings, const vector<ColumnBinding>& r_bindings
+    ) {
+	// Contains the column IDs of within the LEFT side of the projection.
+	// From there, we want everything but the last element to stay in order.
+	size_t dl_col_count = dl_bindings.size();
+	size_t r_col_count = r_bindings.size();
+	size_t projection_col_count = dl_col_count + r_col_count;
+	auto projection_bindings = vector<ColumnBinding>(projection_col_count); // Note: slots already made.
+	// TODO: Do we need to do anything with the `left/right_projection_map`?
+	/*
+		 * What is done here:
+		 * For all except of the last element of L's column bindings,
+		 *  the respective ColumnBinding is added to the projection.
+		 * The last element of L's bindings (the multiplicity column) is specially kept to insert last.
+	 */
+	// Mind the `-1`: the last element does not get added yet but only at the very end.
+	idx_t last_dl_col_idx = dl_col_count - 1;
+	for (idx_t i = 0; i < last_dl_col_idx; ++i ) {
+		projection_bindings[i] = dl_bindings[i];
+	}
+	// Insert the multiplicity column at the end.
+	projection_bindings[projection_col_count - 1] = dl_bindings[last_dl_col_idx];
+	// Now insert everything of R. Here, everything is inserted, so no special increment cutoff.
+	for (idx_t i = 0; i < r_col_count; ++i) {
+		// First index here should be where dL left off.
+		// Omitting the mul column, that is therefore `last_dl_col_idx` (which is unoccupied).
+		// Note that `i = 0`, and thus `last_dl_col_idx + i` = `last_dl_col_idx` (which is intended).
+		projection_bindings[last_dl_col_idx + i] = r_bindings[i];
+	}
+	return projection_bindings;
+}
+} // namespace
+
+
 namespace duckdb {
 
 void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan,
@@ -185,36 +224,15 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// First, get the table index of whatever is on the left side.
 		vector<ColumnBinding> dl_bindings = join_dl_r->children[0]->GetColumnBindings();
 		vector<ColumnBinding> r_bindings = join_dl_r->children[1]->GetColumnBindings();
-		// Contains the column IDs of within the LEFT side of the projection.
-		// From there, we want everything but the last element to stay in order.
-		size_t dl_col_count = dl_bindings.size();
-		size_t r_col_count = r_bindings.size();
-		size_t projection_col_count = dl_col_count + r_col_count;
-		auto projection_bindings = vector<ColumnBinding>(projection_col_count); // Note: slots already made.
-		// TODO: Do we need to do anything with the `left/right_projection_map`?
-		/*
-		 * What is done here:
-		 * For all except of the last element of L's column bindings,
-		 *  the respective ColumnBinding is added to the projection.
-		 * The last element of L's bindings (the multiplicity column) is specially kept to insert last.
-		 */
-		// Mind the `-1`: the last element does not get added yet but only at the very end.
-		idx_t last_dl_col_idx = dl_col_count - 1;
-		for (idx_t i = 0; i < last_dl_col_idx; ++i ) {
-			projection_bindings[i] = dl_bindings[i];
-		}
-		// Insert the multiplicity column at the end.
-		projection_bindings[projection_col_count - 1] = dl_bindings[last_dl_col_idx];
-		// Now insert everything of R. Here, everything is inserted, so no special increment cutoff.
-		for (idx_t i = 0; i < r_col_count; ++i) {
-			// First index here should be where dL left off.
-			// Omitting the mul column, that is therefore `last_dl_col_idx` (which is unoccupied).
-			// Note that `i = 0`, and thus `last_dl_col_idx + i` = `last_dl_col_idx` (which is intended).
-			projection_bindings[last_dl_col_idx + i] = r_bindings[i];
-		}
+		vector<ColumnBinding> dl_r_projection_bindings = project_dl_r_join(dl_bindings, r_bindings);
+
+		auto select_clause = make_uniq<Expression>()
 		// Now, the vector with bindings should be complete. Let's put it in a Projection node!
 //		auto projection_node = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex());
+		auto dl_r_proj = make_uniq<LogicalProjection>(
+		                     pw.input.optimizer.binder.GenerateTableIndex(),
 
+		                     )
 		join_dl_dr->left_projection_map; // Get everything here but the last element.
 		// TODO: set the types somehow.
 
