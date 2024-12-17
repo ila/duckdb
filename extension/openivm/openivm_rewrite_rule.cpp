@@ -226,13 +226,10 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		vector<ColumnBinding> r_bindings = join_dl_r->children[1]->GetColumnBindings();
 		vector<ColumnBinding> dl_r_projection_bindings = project_dl_r_join(dl_bindings, r_bindings);
 
-		auto select_clause = make_uniq<Expression>()
+
+//		auto select_clause = make_uniq<Expression>()
 		// Now, the vector with bindings should be complete. Let's put it in a Projection node!
 //		auto projection_node = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex());
-		auto dl_r_proj = make_uniq<LogicalProjection>(
-		                     pw.input.optimizer.binder.GenerateTableIndex(),
-
-		                     )
 		join_dl_dr->left_projection_map; // Get everything here but the last element.
 		// TODO: set the types somehow.
 
