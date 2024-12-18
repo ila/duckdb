@@ -200,7 +200,7 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		 * However, now, this query should act as an *update* to the original view.
 		 * To this end, a comparison between `current L` and `current R` is not needed.
 		 * Rather, this query should yield the union of the following result sets:
-		 * 1. `delta R` joined with `current R` -> `join_dl_r`
+		 * 1. `delta L` joined with `current R` -> `join_dl_r`
 		 * 2. `current L` joined with `delta R` -> `join_l_dr`
 		 * 3. `delta L` joined with `delta R`, iff the multiplicity matches -> `join`
 		 *
@@ -241,17 +241,28 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			dl_bindings, dl_types, r_bindings, r_types
         );
 		// Now, the vector with bindings should be complete. Let's put it in a Projection node!
-        auto projection_node = make_uniq<LogicalProjection>(
+        auto projection_dl_r = make_uniq<LogicalProjection>(
         	pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_r_projection_bindings)
         );
+		projection_dl_r->children.emplace_back(std::move(join_dl_r));
 
 		// LdR -> keep as-is.
 		/* Don't do anything here */
 
 		// dLdR -> project out dL-mul.
+		// First, add an additional join condition (dL.mul = dR.mul).
 
-		auto copy_union = make_uniq<LogicalSetOperation>(pw.input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join_dl_r),
-														 std::move(join_l_dr), LogicalOperatorType::LOGICAL_UNION, true);
+
+
+		// Now that all joins have the same columns, create a Union!
+		auto copy_union = make_uniq<LogicalSetOperation>(
+			pw.input.optimizer.binder.GenerateTableIndex(),
+			types.size(),
+			std::move(projection_dl_r),
+			std::move(join_l_dr),  // No projection needed, multiplicity column on the right place.
+			LogicalOperatorType::LOGICAL_UNION,
+			true
+        );
 		copy_union->types = types;
 		auto upper_u_table_index = pw.input.optimizer.binder.GenerateTableIndex();
 		pw.plan = make_uniq<LogicalSetOperation>(upper_u_table_index, types.size(), std::move(copy_union),

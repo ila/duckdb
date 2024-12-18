@@ -11,7 +11,7 @@
 #include "duckdb.hpp"
 #include "postgres_version.hpp"
 
-#include <postgresql/libpq-fe.h>
+#include <libpq-fe.h>
 
 namespace duckdb {
 class PostgresSchemaEntry;
