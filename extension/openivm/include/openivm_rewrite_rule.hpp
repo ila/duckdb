@@ -47,7 +47,7 @@ public:
 
 	static unique_ptr<LogicalOperator> ModifyPlan(PlanWrapper pw);
 
-	static void IVMRewriteRuleFunction(OptimizerExtensionInput &input, duckdb::unique_ptr<LogicalOperator> &plan);
+	static void IVMRewriteRuleFunction(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan);
 };
 
 } // namespace duckdb

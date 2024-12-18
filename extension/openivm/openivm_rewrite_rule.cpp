@@ -1,6 +1,3 @@
-//
-// Created by go on 11/12/24.
-//
 #include "openivm_rewrite_rule.hpp"
 
 // From DuckDB.
@@ -11,22 +8,33 @@
 #include "duckdb.hpp"
 
 // Std.
+#include "../../third_party/zstd/include/zstd/common/debug.h"
 #include <iostream>
-#include <utility>
 
 namespace {
 	using duckdb::vector;
     using duckdb::ColumnBinding;
+	using duckdb::Expression;
+	using duckdb::BoundColumnRefExpression;
+    using duckdb::LogicalType;
+	using duckdb::unique_ptr;
 
-	vector<ColumnBinding> project_dl_r_join(
-    const vector<ColumnBinding>& dl_bindings, const vector<ColumnBinding>& r_bindings
+	/// Adjust the column order for a join between Delta-L and R.
+	/// This vector of Expressions is meant to be used in conjunction with a LogicalProjection.
+	vector<unique_ptr<Expression>> project_dl_r_join(
+    const vector<ColumnBinding>& dl_bindings, const vector<LogicalType>& dl_types,
+    const vector<ColumnBinding>& r_bindings, const vector<LogicalType>& r_types
     ) {
 	// Contains the column IDs of within the LEFT side of the projection.
 	// From there, we want everything but the last element to stay in order.
-	size_t dl_col_count = dl_bindings.size();
-	size_t r_col_count = r_bindings.size();
-	size_t projection_col_count = dl_col_count + r_col_count;
-	auto projection_bindings = vector<ColumnBinding>(projection_col_count); // Note: slots already made.
+	const size_t dl_col_count = dl_bindings.size();
+	const size_t r_col_count = r_bindings.size();
+    assert(dl_col_count == dl_types.size());
+	assert(r_col_count == r_types.size());
+
+	const size_t projection_col_count = dl_col_count + r_col_count;
+    // Note: slots are already made here, only need to be "populated".
+	auto projection_col_refs = vector<unique_ptr<Expression>>(projection_col_count);
 	// TODO: Do we need to do anything with the `left/right_projection_map`?
 	/*
 		 * What is done here:
@@ -35,20 +43,22 @@ namespace {
 		 * The last element of L's bindings (the multiplicity column) is specially kept to insert last.
 	 */
 	// Mind the `-1`: the last element does not get added yet but only at the very end.
-	idx_t last_dl_col_idx = dl_col_count - 1;
+	const idx_t last_dl_col_idx = dl_col_count - 1;
 	for (idx_t i = 0; i < last_dl_col_idx; ++i ) {
-		projection_bindings[i] = dl_bindings[i];
+		projection_col_refs[i] = make_uniq<BoundColumnRefExpression>(dl_types[i], dl_bindings[i]);
 	}
 	// Insert the multiplicity column at the end.
-	projection_bindings[projection_col_count - 1] = dl_bindings[last_dl_col_idx];
+	projection_col_refs[projection_col_count - 1] = make_uniq<BoundColumnRefExpression>(
+		dl_types[last_dl_col_idx], r_bindings[last_dl_col_idx]
+    );
 	// Now insert everything of R. Here, everything is inserted, so no special increment cutoff.
 	for (idx_t i = 0; i < r_col_count; ++i) {
 		// First index here should be where dL left off.
 		// Omitting the mul column, that is therefore `last_dl_col_idx` (which is unoccupied).
 		// Note that `i = 0`, and thus `last_dl_col_idx + i` = `last_dl_col_idx` (which is intended).
-		projection_bindings[last_dl_col_idx + i] = r_bindings[i];
+		projection_col_refs[last_dl_col_idx + i] = make_uniq<BoundColumnRefExpression>(r_types[i], r_bindings[i]);
 	}
-	return projection_bindings;
+	return projection_col_refs;
 }
 } // namespace
 
@@ -122,7 +132,7 @@ void IVMRewriteRule::ModifyTopNode(
 		// the column_idx used to create ColumnBinding for multiplicity column will be stored along with the context
 		// from the child node
 		if (plan->children[0]->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
-			// if we have an aggregate, we can't extract the column index from the expression
+			// if we have an aggregate, we can't extract the column index from the expression.
 			// the expression might be an aggregate and the multiplicity column will be a grouping column
 			// example: with queries like "SELECT COUNT(*) FROM table", the binding will be 3, but we want 2
 			mul_binding.table_index = dynamic_cast<LogicalAggregate *>(plan->children[0].get())->group_index;
@@ -197,13 +207,14 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		 * The code below adapts the tree such that `current L` JOIN `current R` is modified to the 3 joins of interest.
 		 */
 		// Make a copy of a join between deltas. This copy will eventually become `delta L` with `current R`.
-		auto join_dl_r = unique_ptr_cast<LogicalOperator, LogicalJoin>(join_dl_dr->Copy(context));
+		unique_ptr<LogicalJoin> join_dl_r = unique_ptr_cast<LogicalOperator, LogicalJoin>(join_dl_dr->Copy(context));
 		// Remove the deltas: join_dl_r temporarily has no children.
 		auto left_delta = std::move(join_dl_r->children[0]);
 		auto right_delta = std::move(join_dl_r->children[1]);
 		// Copy the (now child-less) join, to form the basis for `join_l_dr`.
-		auto join_l_dr = unique_ptr_cast<LogicalOperator, LogicalJoin>(join_dl_r->Copy(context));
+		unique_ptr<LogicalJoin> join_l_dr = unique_ptr_cast<LogicalOperator, LogicalJoin>(join_dl_r->Copy(context));
 		// The return type should be the same for each join, so make a copy (to apply below).
+		// FIXME: This only holds AFTER a projection! Before that, the types may differ.
 		auto types = join_dl_dr->types;
 
 		// Give these two joins their appropriate children.
@@ -223,21 +234,21 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// dLR -> project dL-mul to end.
 		// First, get the table index of whatever is on the left side.
 		vector<ColumnBinding> dl_bindings = join_dl_r->children[0]->GetColumnBindings();
+		vector<LogicalType> dl_types = join_dl_r ->children[0]->types;
 		vector<ColumnBinding> r_bindings = join_dl_r->children[1]->GetColumnBindings();
-		vector<ColumnBinding> dl_r_projection_bindings = project_dl_r_join(dl_bindings, r_bindings);
-
-
-//		auto select_clause = make_uniq<Expression>()
+		vector<LogicalType> r_types = join_dl_r ->children[1]->types;
+		vector<unique_ptr<Expression>> dl_r_projection_bindings = project_dl_r_join(
+			dl_bindings, dl_types, r_bindings, r_types
+        );
 		// Now, the vector with bindings should be complete. Let's put it in a Projection node!
-//		auto projection_node = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex());
-		join_dl_dr->left_projection_map; // Get everything here but the last element.
-		// TODO: set the types somehow.
+        auto projection_node = make_uniq<LogicalProjection>(
+        	pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_r_projection_bindings)
+        );
 
+		// LdR -> keep as-is.
+		/* Don't do anything here */
 
-
-		// LdR -> keep as-is
-
-		// dLdR -> project out dL-mul
+		// dLdR -> project out dL-mul.
 
 		auto copy_union = make_uniq<LogicalSetOperation>(pw.input.optimizer.binder.GenerateTableIndex(), types.size(), std::move(join_dl_r),
 														 std::move(join_l_dr), LogicalOperatorType::LOGICAL_UNION, true);
