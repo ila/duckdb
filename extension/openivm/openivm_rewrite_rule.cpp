@@ -18,6 +18,7 @@ namespace {
 	using duckdb::BoundColumnRefExpression;
     using duckdb::LogicalType;
 	using duckdb::unique_ptr;
+    using duckdb::make_uniq;
 
 	/// Adjust the column order for a join between Delta-L and R.
 	/// This vector of Expressions is meant to be used in conjunction with a LogicalProjection.
