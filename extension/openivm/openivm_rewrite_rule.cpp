@@ -6,11 +6,11 @@
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb.hpp"
+#include <duckdb/optimizer/column_binding_replacer.hpp>
+#include <duckdb/planner/operator/logical_comparison_join.hpp>
 
 // Std.
 #include "../../third_party/zstd/include/zstd/common/debug.h"
-
-#include <duckdb/planner/operator/logical_comparison_join.hpp>
 #include <iostream>
 
 namespace {
@@ -227,6 +227,10 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	switch (pw.plan->type) {
 	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 	{
+		// Store the table indices of the left and right child for usage in column binding replacer much later.
+		// Needed here, because the left and right child will eventually be `std::move`d.
+		vector<ColumnBinding> lc_binds = left_child->GetColumnBindings();
+		vector<ColumnBinding> rc_binds = right_child->GetColumnBindings();
 		/* Ensure that the resulting types of each join is consistent.
 		 * To help with that, create a copy of the `types` of pw.plan (which is a vec of logicaltype).
 		 * This should be equivalent to the types of `L.*, R.*`
@@ -354,19 +358,30 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		for (const auto& i_param : pw.plan->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
-		// TODO: Rebind everything, because new joins have been implemented.
-		/*
+		// Rebind everything, because new joins have been implemented.
 		ColumnBindingReplacer replacer;
 		auto &replacement_bindings = replacer.replacement_bindings;
-		const auto bindings = plan->GetColumnBindings();
-		for (idx_t col_idx = 0; col_idx < bindings.size(); col_idx++) {
-			const auto &old_binding = bindings[col_idx];
-			const auto &new_binding = ColumnBinding(upper_u_table_index, old_binding.column_index);
+		const auto bindings = pw.plan->GetColumnBindings();
+		// Old bindings get rebound to the union's columns, where everything goes from left to right.
+		// To form the old bindings, use the original left child and right child of the original join.
+		vector<ColumnBinding> old_bindings = lc_binds;
+		old_bindings.insert(old_bindings.end(), rc_binds.begin(), rc_binds.end());
+		// Finally, rebind multiplicity column. Since it has no representative in the original tables,
+		// For now, this needs to be adapted from rc_binds.
+		/*{
+			ColumnBinding bad_mul_binding = lc_binds.back();
+			++bad_mul_binding.column_index;
+			old_bindings.emplace_back(bad_mul_binding);
+		}*/
+		//for (idx_t col_idx = 0; col_idx < bindings.size() ; col_idx++) {
+		for (idx_t col_idx = 0; col_idx < bindings.size() ; col_idx++) {
+			// Old binding should be 0.0 or 1.0 something.
+			const auto &old_binding = old_bindings[col_idx];
+			const auto &new_binding = ColumnBinding(upper_u_table_index, col_idx);
 			replacement_bindings.emplace_back(old_binding, new_binding);
 		}
-		replacer.stop_operator = plan;
-		replacer.VisitOperator(*root);
-		*/
+		replacer.stop_operator = pw.plan;
+		replacer.VisitOperator(*pw.root);
 		break;
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
@@ -447,7 +462,8 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 
 		// the new get node that reads the delta table gets a new table index
 		auto replacement_get_node = make_uniq<LogicalGet>(
-			old_get->table_index,  // FIXME: "New table index" -> but inherits old one?
+			// NOTE: "New table index" -> but inherits old one? so -> pw.input.optimizer.binder.GenerateTableIndex()
+			old_get->table_index,
 			scan_function,
 			std::move(bind_data),
 			std::move(return_types),
