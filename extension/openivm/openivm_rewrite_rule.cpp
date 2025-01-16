@@ -236,7 +236,6 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		 * This should be equivalent to the types of `L.*, R.*`
 		 * The union, however, assumes the columns to be equivalent to `L.*, R.*, mul`.
 		 * This means that mul must be added at some point before the union takes place.
-		 * FIXME: Find out the logic for this.
 		 */
 		auto types = pw.plan->types;
 		types.emplace_back(LogicalType::BOOLEAN); // Add bool type for multiplicity.
@@ -285,8 +284,6 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("`L` JOIN `delta R` child count: %zu\n", join_l_dr->children.size());
 		printf("`delta L` JOIN `delta R` child count: %zu\n", join_dl_dr->children.size());
 #endif
-
-
 		// dLR -> project dL-mul to end.
 		// First, get the table index of whatever is on the left side.
 		unique_ptr<LogicalProjection> projection_dl_r;
@@ -311,7 +308,6 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 
 		// dLdR -> project out dL-mul.
 		// First, add an additional join condition (dL.mul = dR.mul).
-		/// Gonna make some pseudocode so that I can at least make clear what I want.
 		unique_ptr<LogicalProjection> projection_dl_dr;
 		{
 			// Note: in its own block, to avoid potential conflicts with join_dl_r ones.
@@ -322,7 +318,7 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			vector<LogicalType> dr_types = join_dl_dr->children[1]->types;
 			// Create the join condition.
             join_dl_dr->conditions.emplace_back(
-            	std::move(create_mul_join_condition(dl_bindings, dl_types, dr_bindings, dr_types))
+            	create_mul_join_condition(dl_bindings, dl_types, dr_bindings, dr_types)
             );
 			// Get rid of dL's column using a projection.
 			vector<unique_ptr<Expression>> dl_dr_projection_bindings = project_dl_dr_join(
