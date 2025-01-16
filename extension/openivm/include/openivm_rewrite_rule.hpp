@@ -42,9 +42,6 @@ public:
 	    string &view_schema_name
 	);
 
-	/// Add the multiplicity column to the top node (which should be a projection).
-	static void ModifyTopNode(ClientContext &context, unique_ptr<LogicalOperator> &plan, ColumnBinding& mul_binding);
-
 	static unique_ptr<LogicalOperator> ModifyPlan(PlanWrapper pw);
 
 	static void IVMRewriteRuleFunction(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan);

@@ -144,63 +144,6 @@ void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOpe
 	plan = std::move(insert_node);
 }
 
-void IVMRewriteRule::ModifyTopNode(
-    ClientContext &context,
-    unique_ptr<LogicalOperator> &plan,
-	ColumnBinding& mul_binding
-) {
-	#ifdef DEBUG
-		if (plan == nullptr) {
-			printf("\nModifyTopNode: received nullptr as input!\n");
-		}
-	#endif
-		if (plan->type != LogicalOperatorType::LOGICAL_PROJECTION) {
-			throw NotImplementedException("Assumption being made: top node has to be projection node");
-		}
-
-	#ifdef DEBUG
-		printf("\nAdd the multiplicity column to the top projection node...\n");
-		printf("Plan:\n%s\nParameters:", plan->ToString().c_str());
-		// Output ParameterToString.
-		for (const auto& i_param : plan->ParamsToString()) {
-			printf("%s", i_param.second.c_str());
-		}
-		for (size_t i = 0; i < plan->GetColumnBindings().size(); i++) {
-			printf("\nTop node CB before %zu %s", i, plan->GetColumnBindings()[i].ToString().c_str());
-		}
-		printf("\n---end of ModifyTopNode (multiplicity column) output---\n");
-	#endif
-
-		// the table_idx used to create ColumnBinding will be that of the top node's child
-		// the column_idx used to create ColumnBinding for multiplicity column will be stored along with the context
-		// from the child node
-		if (plan->children[0]->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
-			// if we have an aggregate, we can't extract the column index from the expression.
-			// the expression might be an aggregate and the multiplicity column will be a grouping column
-			// example: with queries like "SELECT COUNT(*) FROM table", the binding will be 3, but we want 2
-			mul_binding.table_index = dynamic_cast<LogicalAggregate *>(plan->children[0].get())->group_index;
-		} else {
-		    // TODO: does this break with joins? Or do joins have different logic?
-			// this might break with joins
-			mul_binding.table_index = dynamic_cast<BoundColumnRefExpression *>(plan->expressions[0].get())->binding.table_index;
-		}
-		//multiplicity_col_idx = plan->GetColumnBindings().size();
-		auto e = make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", LogicalType::BOOLEAN, mul_binding);
-		plan->expressions.emplace_back(std::move(e));
-
-	#ifdef DEBUG
-		printf("Plan:\n%s\nParameters:", plan->ToString().c_str());
-		// Output ParameterToString.
-		for (const auto& i_param : plan->ParamsToString()) {
-			printf("%s", i_param.second.c_str());
-		}
-		for (size_t i = 0; i < plan.get()->GetColumnBindings().size(); i++) {
-			printf("Top node CB %zu %s\n", i, plan.get()->GetColumnBindings()[i].ToString().c_str());
-		}
-		printf("\n---end of ModifyTopNode (finish) output---\n");
-	#endif
-}
-
 unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	ClientContext &context = pw.input.context;
 	/*
@@ -213,6 +156,7 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	    pw.plan.get()->type == LogicalOperatorType::LOGICAL_COMPARISON_JOIN) {
 		left_child = pw.plan->children[0]->Copy(context);
 		right_child = pw.plan->children[1]->Copy(context);
+		// TODO: are those needed here? Check!
 		left_child->ResolveOperatorTypes();
 		right_child->ResolveOperatorTypes();
 	}
@@ -588,6 +532,12 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		break;
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
+		// If the filter does nothing, ignore it completely.
+		if (pw.plan->expressions.empty()) {
+			return std::move(pw.plan->children[0]);
+		}
+		// FIXME: If filter is NOT empty, the LOGICAL_FILTER should copy the bindings, projection map etc etc
+		//  from its only child (whatever that child may be).
 		break;
 	}
 	default:
@@ -688,10 +638,6 @@ void IVMRewriteRule::IVMRewriteRuleFunction(OptimizerExtensionInput &input, duck
 	auto root = optimized_plan.get();
 	auto start_pw = PlanWrapper(input, optimized_plan, mul_binding, view, root);
 	unique_ptr<LogicalOperator> modified_plan = ModifyPlan(start_pw);
-#ifdef DEBUG
-	std::cout << "Running ModifyTopNode..." << '\n';
-#endif
-	ModifyTopNode(input.context, modified_plan, mul_binding);
 #ifdef DEBUG
 	std::cout << "Running AddInsertNode..." << '\n';
 #endif
