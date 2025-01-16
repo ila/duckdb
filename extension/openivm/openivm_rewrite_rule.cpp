@@ -355,29 +355,45 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("%s", i_param.second.c_str());
 		}
 		// Rebind everything, because new joins have been implemented.
-		ColumnBindingReplacer replacer;
-		auto &replacement_bindings = replacer.replacement_bindings;
-		const auto bindings = pw.plan->GetColumnBindings();
-		// Old bindings get rebound to the union's columns, where everything goes from left to right.
-		// To form the old bindings, use the original left child and right child of the original join.
-		vector<ColumnBinding> old_bindings = lc_binds;
-		old_bindings.insert(old_bindings.end(), rc_binds.begin(), rc_binds.end());
-		// Finally, rebind multiplicity column. Since it has no representative in the original tables,
-		// For now, this needs to be adapted from rc_binds.
-		/*{
-			ColumnBinding bad_mul_binding = lc_binds.back();
-			++bad_mul_binding.column_index;
-			old_bindings.emplace_back(bad_mul_binding);
-		}*/
-		//for (idx_t col_idx = 0; col_idx < bindings.size() ; col_idx++) {
-		for (idx_t col_idx = 0; col_idx < bindings.size() ; col_idx++) {
-			// Old binding should be 0.0 or 1.0 something.
-			const auto &old_binding = old_bindings[col_idx];
-			const auto &new_binding = ColumnBinding(upper_u_table_index, col_idx);
-			replacement_bindings.emplace_back(old_binding, new_binding);
+		{
+			ColumnBindingReplacer replacer;
+			vector<ReplacementBinding>& replacement_bindings = replacer.replacement_bindings;
+			const auto bindings = pw.plan->GetColumnBindings();
+			// Old bindings get rebound to the union's columns, where everything goes from left to right.
+			// To form the old bindings, use the original left child and right child of the original join.
+			vector<ColumnBinding> old_bindings = lc_binds;
+			old_bindings.insert(old_bindings.end(), rc_binds.begin(), rc_binds.end());
+			// `-1`, because multiplicity column is not part of the ColumnBindingReplacer (but handled right after).
+			idx_t mul_col_idx = bindings.size() - 1;
+			for (idx_t col_idx = 0; col_idx < mul_col_idx ; col_idx++) {
+				// Old binding should be 0.0 or 1.0 something.
+				const auto &old_binding = old_bindings[col_idx];
+				const auto &new_binding = ColumnBinding(upper_u_table_index, col_idx);
+				replacement_bindings.emplace_back(old_binding, new_binding);
+			}
+#ifdef DEBUG
+			// Print the replacement bindings.
+			printf("\n--- Running a ColumnBindingReplacer after the Union ---\n");
+			for (const auto& i_binding : replacement_bindings) {
+				// Split up in two because of encoding issues.
+				printf("old binding %s -> ", (i_binding.old_binding.ToString().c_str()));
+				printf("new binding %s\n", (i_binding.new_binding.ToString().c_str()));
+			}
+#endif
+			replacer.stop_operator = pw.plan;
+			replacer.VisitOperator(*pw.root);
+			/* Finally, change the ColumnBinding of the multiplicity column in the pw object.
+			 * This will be used by later steps of ModifyPlan (including ModifyTopNode)
+			 * to add the multiplicity column to wherever needed (mainly projections).
+			 * Once again, it is assumed that the multiplicity column is at the END of the bindings.
+			 */
+		    ColumnBinding new_mul_binding = {upper_u_table_index, mul_col_idx};
+			pw.mul_binding = new_mul_binding;
+#ifdef DEBUG
+			printf("The new multiplicity binding shall be %s.\n", (new_mul_binding.ToString().c_str()));
+			printf("--- End of ColumnBindingReplacer ---\n");
+#endif
 		}
-		replacer.stop_operator = pw.plan;
-		replacer.VisitOperator(*pw.root);
 		break;
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
@@ -535,6 +551,7 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		break;
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
+		// FIXME: Review logic, and heavily reduce complexity.
 		printf("\nIn logical projection case \n Add the multiplicity column to the second node...\n");
 		printf("Modified plan (projection, start):\n%s\nParameters:", pw.plan->ToString().c_str());
 		for (const auto& i_param : pw.plan->ParamsToString()) {
