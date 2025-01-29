@@ -108,6 +108,17 @@ JoinCondition create_mul_join_condition(
 
 namespace duckdb {
 
+optional_idx IVMRewriteRule::RenumberTableIndices(PlanWrapper &pw) {
+
+	for (auto &&child : pw.plan->children) {
+		auto rec_pw = PlanWrapper(pw.input, child, pw.mul_binding, pw.view, pw.root);
+		optional_idx child_idx = RenumberTableIndices(rec_pw);
+	}
+
+	return optional_idx();
+}
+
+
 void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan,
 						  string &view_name, string &view_catalog_name, string &view_schema_name) {
 #ifdef DEBUG

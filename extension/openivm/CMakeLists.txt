@@ -10,9 +10,8 @@ include_directories(include ../../extension/compiler/include ../../extension/pos
 
 add_library(
         openivm_extension STATIC
-        openivm_extension.cpp openivm_parser.cpp openivm_benchmark.cpp openivm_lineitem_benchmark.cpp openivm_groups_benchmark.cpp openivm_cross_system_benchmark.cpp openivm_cross_system_demo.cpp openivm_upsert.cpp ../compiler/logical_plan_to_string.cpp
+        openivm_extension.cpp openivm_parser.cpp openivm_benchmark.cpp openivm_lineitem_benchmark.cpp openivm_groups_benchmark.cpp openivm_cross_system_benchmark.cpp openivm_cross_system_demo.cpp openivm_upsert.cpp openivm_rewrite_rule.cpp openivm_index_regen.cpp ../compiler/logical_plan_to_string.cpp
         ../compiler/compiler_extension.cpp ../compiler/openivm/openivm_compile_upsert.cpp
-        openivm_rewrite_rule.cpp
 )
 
 set(PARAMETERS "-warnings")
@@ -27,6 +26,8 @@ build_loadable_extension(
         openivm_cross_system_benchmark.cpp
         openivm_cross_system_demo.cpp
         openivm_upsert.cpp
+        openivm_rewrite_rule.cpp
+        openivm_index_regen.cpp
         ../compiler/logical_plan_to_string.cpp
         ../compiler/compiler_extension.cpp
         ../compiler/openivm/openivm_compile_upsert.cpp
