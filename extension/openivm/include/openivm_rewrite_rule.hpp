@@ -34,19 +34,13 @@ public:
 	}
 
 	/// Add an Insert node to the top of the plan, such that an update on the view can be performed.
-	static void AddInsertNode(
-	    ClientContext &context,
-	    unique_ptr<LogicalOperator> &plan,
-	    string &view_name,
-	    string &view_catalog_name,
-	    string &view_schema_name
-	);
+	static void AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan, string &view_name,
+	                          string &view_catalog_name, string &view_schema_name);
 
 	static unique_ptr<LogicalOperator> ModifyPlan(PlanWrapper pw);
 
 	static void IVMRewriteRuleFunction(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan);
-
-
+};
 
 } // namespace duckdb
 
