@@ -3,6 +3,7 @@
 
 #include <duckdb/planner/operator/logical_aggregate.hpp>
 #include <duckdb/planner/operator/logical_get.hpp>
+#include <duckdb/planner/operator/logical_projection.hpp>
 
 namespace duckdb {
 
@@ -10,7 +11,7 @@ std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOper
 
 	// First, traverse the children, and collect their maps into a singular map.
 	std::unordered_map<old_idx, new_idx> current_map;
-	for (auto child: plan->children) {
+	for (auto& child: plan->children) {
 		auto child_map = RenumberTableIndices(child, binder);
 		current_map.insert(child_map.begin(), child_map.end());
 	}
@@ -52,15 +53,29 @@ std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOper
 		unique_ptr<LogicalGet> get_ptr = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(plan));
 		const idx_t current_idx = get_ptr->table_index;
 		const idx_t new_idx = binder.GenerateTableIndex();
+		get_ptr->table_index = new_idx;
 		auto ret_map = std::unordered_map<idx_t, idx_t>();
 		ret_map[current_idx] = new_idx;
 		return ret_map;
 	}
-	default:
-		throw NotImplementedException("Operator type %s not supported", LogicalOperatorToString(plan->type));
+	case LogicalOperatorType::LOGICAL_PROJECTION: {
+		// Breaking operator; return only new table index.
+		unique_ptr<LogicalProjection> get_ptr = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(plan));
+		const idx_t current_idx = get_ptr->table_index;
+		const idx_t new_idx = binder.GenerateTableIndex();
+		get_ptr->table_index = new_idx;
+		auto ret_map = std::unordered_map<idx_t, idx_t>();
+		ret_map[current_idx] = new_idx;
+		return ret_map;
 	}
-
-	// TODO: replace with proper return value.
-	return std::unordered_map<idx_t, idx_t>();
+	default: {
+#ifdef DEBUG
+		printf("table indices of type %s ignored.\n", LogicalOperatorToString(plan->type).c_str());
+#endif
+		break;
+	}
+	}
+	// Default return value (when switch doesn't change anything) is current_map.
+	return current_map;
 }
 } // namespace duckdb
