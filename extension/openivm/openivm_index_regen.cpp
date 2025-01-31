@@ -4,16 +4,21 @@
 #include <duckdb/planner/operator/logical_aggregate.hpp>
 #include <duckdb/planner/operator/logical_get.hpp>
 #include <duckdb/planner/operator/logical_projection.hpp>
+#include <duckdb/planner/operator/logical_filter.hpp>
 
 namespace duckdb {
 
-std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOperator> &plan, Binder &binder) {
+RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder &binder) {
 
 	// First, traverse the children, and collect their maps into a singular map.
 	std::unordered_map<old_idx, new_idx> current_map;
+	// Initialise the bindings with the ColumnBindings of the current operator.
+	std::vector<ColumnBinding> current_bindings = plan->GetColumnBindings();
 	for (auto& child: plan->children) {
-		auto child_map = RenumberTableIndices(child, binder);
-		current_map.insert(child_map.begin(), child_map.end());
+		RenumberWrapper child_wrap = renumber_table_indices(std::move(child), binder);
+		current_map.insert(child_wrap.idx_map.cbegin(), child_wrap.idx_map.cend());
+		// Add the bindings of the children as well.
+		current_bindings.insert(current_bindings.end(), child_wrap.column_bindings.cbegin(), child_wrap.column_bindings.cend());
 	}
 
 	switch (plan->type) {
@@ -46,7 +51,7 @@ std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOper
 				agg_reassign_map[old_gs_idx] = new_gs_idx;
 			}
 		}
-		return agg_reassign_map;
+		return {std::move(agg_ptr), agg_reassign_map, current_bindings};
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		// Breaking operator; return only new table index.
@@ -56,7 +61,7 @@ std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOper
 		get_ptr->table_index = new_idx;
 		auto ret_map = std::unordered_map<idx_t, idx_t>();
 		ret_map[current_idx] = new_idx;
-		return ret_map;
+		return {std::move(get_ptr), ret_map, current_bindings};
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		// Breaking operator; return only new table index.
@@ -66,8 +71,15 @@ std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOper
 		get_ptr->table_index = new_idx;
 		auto ret_map = std::unordered_map<idx_t, idx_t>();
 		ret_map[current_idx] = new_idx;
-		return ret_map;
+		return {std::move(get_ptr), ret_map, current_bindings};
 	}
+	/*
+	// Logical Filter has no GetTableIndex.
+	case LogicalOperatorType::LOGICAL_FILTER: {
+		// Change the table index based on the mapping.
+		unique_ptr<LogicalFilter> filter_ptr = unique_ptr_cast<LogicalOperator, LogicalFilter>(std::move(plan));
+		idx_t current_idx = filter_ptr->GetTableIndex();
+	}*/
 	default: {
 #ifdef DEBUG
 		printf("table indices of type %s ignored.\n", LogicalOperatorToString(plan->type).c_str());
@@ -76,6 +88,31 @@ std::unordered_map<old_idx, new_idx> RenumberTableIndices(unique_ptr<LogicalOper
 	}
 	}
 	// Default return value (when switch doesn't change anything) is current_map.
-	return current_map;
+	return {std::move(plan), current_map, current_bindings};
 }
+
+ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx> table_mapping) {
+	std::unordered_map<old_idx, std::unordered_set<col_idx>> to_replace;
+	// We only need to include those bindings whose tables are in the table mapping.
+	for (const ColumnBinding col_binding : bindings) {
+		idx_t table_index = col_binding.table_index;
+		if (table_mapping.find(table_index) != table_mapping.end()) {
+			// Binding's table index will be replaced!
+			to_replace[table_index].insert(col_binding.column_index);
+		}
+	}
+	// Now that all bindings are checked, let's create a ColumnBindingReplacer!
+	ColumnBindingReplacer replacer;
+	for (const auto& pair : to_replace) {
+		old_idx old_t = pair.first;
+		new_idx new_t = table_mapping.at(old_t);
+		for (const col_idx col : pair.second) {
+			ColumnBinding old_binding = ColumnBinding(old_t, col);
+			ColumnBinding new_binding = ColumnBinding(new_t, col);
+			replacer.replacement_bindings.emplace_back(old_binding, new_binding);
+		}
+	}
+	return replacer;
+}
+
 } // namespace duckdb

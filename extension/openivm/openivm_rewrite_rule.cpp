@@ -8,6 +8,7 @@
 #include "duckdb.hpp"
 #include <duckdb/optimizer/column_binding_replacer.hpp>
 #include <duckdb/planner/operator/logical_comparison_join.hpp>
+#include "openivm_index_regen.hpp"
 
 // Std.
 #include "../../third_party/zstd/include/zstd/common/debug.h"
@@ -228,6 +229,34 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("`L` JOIN `delta R` child count: %zu\n", join_l_dr->children.size());
 		printf("`delta L` JOIN `delta R` child count: %zu\n", join_dl_dr->children.size());
 #endif
+		// Renumber the table indices of each DELTA left/right child.
+		{
+			auto res_l = renumber_table_indices(std::move(join_dl_dr->children[0]), pw.input.optimizer.binder);
+			auto res_r = renumber_table_indices(std::move(join_dl_dr->children[1]), pw.input.optimizer.binder);
+			join_dl_dr->children[0] = std::move(res_l.op);
+			join_dl_dr->children[1] = std::move(res_r.op);
+			// Run two ColumnBindingReplacers (one for each child) on the level of the join.
+			// Caveat of doing it this way: both times you traverse one child for nothing.
+			// But hey, if it yields the correct result it yields the correct result.
+			ColumnBindingReplacer dl_replacer = vec_to_replacer(res_l.column_bindings, res_l.idx_map);
+			ColumnBindingReplacer dr_replacer = vec_to_replacer(res_r.column_bindings, res_r.idx_map);
+			dl_replacer.VisitOperator(*join_dl_dr);
+			dr_replacer.VisitOperator(*join_dl_dr);
+		}
+		{
+			auto res = renumber_table_indices(std::move(join_dl_r->children[0]), pw.input.optimizer.binder);
+			join_dl_r->children[0] = std::move(res.op);
+			// Run a ColumnBindingReplacer after moving the operator, such that the join itself also gets replacements.
+			ColumnBindingReplacer replacer = vec_to_replacer(res.column_bindings, res.idx_map);
+			replacer.VisitOperator(*join_dl_r);
+		}
+		{
+			auto res = renumber_table_indices(std::move(join_l_dr->children[1]), pw.input.optimizer.binder);
+			join_l_dr->children[1] = std::move(res.op);
+			// Run a ColumnBindingReplacer after moving the operator, such that the join itself also gets replacements.
+			ColumnBindingReplacer replacer = vec_to_replacer(res.column_bindings, res.idx_map);
+			replacer.VisitOperator(*join_l_dr);
+		}
 		// dLR -> project dL-mul to end.
 		// First, get the table index of whatever is on the left side.
 		unique_ptr<LogicalProjection> projection_dl_r;
