@@ -10,9 +10,6 @@ namespace duckdb {
 TableScope ParseScope(std::string &query) {
 	std::regex scope_regex("\\b(create)\\s+(\\bcentralized\\b|\\bdecentralized\\b|\\breplicated\\b)\\s+(table|"
 	                       "materialized\\s+view)\\s+(.*)");
-
-	std::cout << query;
-
 	std::smatch scope_match;
 	TableScope scope = TableScope::null;
 
@@ -41,8 +38,9 @@ TableScope ParseScope(std::string &query) {
 	return scope;
 }
 
-vector<RDDAConstraint> ParseCreateTable(std::string &query) {
-	vector<RDDAConstraint> constraints;
+unordered_map<string, constraints> ParseCreateTable(std::string &query) {
+
+	unordered_map<string, constraints> constraints_table;
 
 	std::regex columns_regex("\\((.*)\\)");
 	std::smatch columns_match;
@@ -54,23 +52,21 @@ vector<RDDAConstraint> ParseCreateTable(std::string &query) {
 		std::sregex_token_iterator split_iter(columns_definition.begin(), columns_definition.end(), split_regex, -1);
 		std::sregex_token_iterator split_end;
 
-		bool sensitive_found = false;
-		bool minimum_aggregation_found = false;
-
 		for (; split_iter != split_end; split_iter++) {
 			std::string split = split_iter->str();
 			StringUtil::Trim(split);
 
 			// parsing column name
-			RDDAConstraint constraint;
+			constraints constraints_column;
+			string column_name;
 			std::smatch column_name_matches;
 			if (regex_search(split, column_name_matches, column_name_regex)) {
-				constraint.column_name = column_name_matches.str(1);
+				column_name = column_name_matches.str(1);
 			}
 
 			// checking for randomized
 			if (regex_search(split, std::regex("\\brandomized\\b"))) {
-				constraint.randomized = true;
+				constraints_column.randomized = true;
 			}
 
 			// checking for minimum aggregation
@@ -80,30 +76,23 @@ vector<RDDAConstraint> ParseCreateTable(std::string &query) {
 				if (minimum_aggregation_value <= 0) {
 					throw ParserException("Invalid minimum aggregation value, must be greater than zero.");
 				}
-				constraint.minimum_aggregation = minimum_aggregation_value;
-				minimum_aggregation_found = true;
+				constraints_column.minimum_aggregation = minimum_aggregation_value;
 			}
 
 			if (regex_search(split, std::regex("\\bsensitive\\b"))) {
-				constraint.sensitive = true;
-				sensitive_found = true;
+				constraints_column.sensitive = true;
 			}
 
-			duckdb::StringUtil::Trim(split);
-			constraints.push_back(constraint);
+			StringUtil::Trim(split);
+			constraints_table.insert(make_pair(column_name, constraints_column));
 		}
 
 		// remove keywords from the query string
 		query =
 		    regex_replace(query, std::regex("\\bsensitive\\b|\\brandomized\\b|\\bminimum aggregation\\s+\\d+\\b"), "");
-
-		if (sensitive_found && !minimum_aggregation_found) {
-			throw ParserException(
-			    "Sensitive columns must have at least one minimum aggregation constraint on the table!");
-		}
 	}
 
-	return constraints;
+	return constraints_table;
 }
 
 } // namespace duckdb

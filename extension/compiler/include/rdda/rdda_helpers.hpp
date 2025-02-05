@@ -12,10 +12,10 @@ namespace duckdb {
 // helpers containing the newly introduced keywords
 enum class TableScope { null = 0, centralized = 1, decentralized = 2, replicated = 3 };
 
-struct RDDAConstraint {
-	string column_name;
+// unordered_map<string, constraints> RDDAConstraints;
+struct constraints {
 	bool randomized = false;
-	int minimum_aggregation = 0;
+	int minimum_aggregation = -1;
 	bool sensitive = false;
 };
 

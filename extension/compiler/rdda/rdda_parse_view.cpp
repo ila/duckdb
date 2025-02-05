@@ -30,7 +30,6 @@ RDDAViewConstraint ParseCreateView(string &query) {
 		query = regex_replace(query, ttl_regex, "");
 	}
 
-	CompilerExtension::ReplaceMaterializedView(query);
 	return constraint;
 }
 

@@ -9,9 +9,6 @@
 #include "duckdb/common/types/uuid.hpp"
 #include "duckdb/main/appender.hpp"
 #include "duckdb/parallel/thread_context.hpp"
-#include "duckdb/parser/parser.hpp"
-#include "duckdb/parser/statement/logical_plan_statement.hpp"
-#include "duckdb/planner/planner.hpp"
 
 #include <fcntl.h>
 #include <iostream>
@@ -28,34 +25,31 @@ namespace duckdb {
 
 static int32_t ConnectClient(unordered_map<string, string> &config) {
 
-	int sock = 0, client_fd;
-	struct sockaddr_in serv_addr;
+	sockaddr_in serv_addr;
 
-	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		printf("\n Socket creation error \n");
+	int sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (sock < 0) {
+		Printer::Print("\n Socket creation error \n");
 	}
 
-	struct hostent *h;
-
-	if ((h = gethostbyname(config["server_addr"].c_str())) == nullptr) { // lookup the hostname
-		printf("Unknown host\n");
+	hostent *h = gethostbyname(config["server_addr"].c_str());
+	if (h == nullptr) { // lookup the hostname
+		Printer::Print("Unknown host\n");
 	}
 
-	memset(&serv_addr, '\0', sizeof(serv_addr));                                // zero structure out
-	serv_addr.sin_family = AF_INET;                                             // match the socket() call
-	memcpy((char *)&serv_addr.sin_addr.s_addr, h->h_addr_list[0], h->h_length); // copy the address
+	memset(&serv_addr, '\0', sizeof(serv_addr)); // zero structure out
+	serv_addr.sin_family = AF_INET; // match the socket() call
+	memcpy(&serv_addr.sin_addr.s_addr, h->h_addr_list[0], h->h_length); // copy the address
 	serv_addr.sin_port = htons(stoi(config["server_port"]));
 
-	if ((client_fd = connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0) {
-		printf("\nConnection failed %i\n", client_fd);
-		std::cout << errno << "\n";
+	const int client_fd = connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+	if (client_fd < 0) {
+		Printer::Print("\nConnection failed: " + to_string(client_fd) + ", error " + to_string(errno) + "\n");
 	}
-
-	// std::cout << "Connected, status " << client_fd << "\n";
 	return sock;
 }
 
-static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string &timestamp) {
+static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t timestamp) {
 
 	string table_name;
 	if (config["schema_name"] != "main") {
@@ -70,10 +64,10 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 
 static void GenerateClientInformation(Connection &con, unordered_map<string, string> &config) {
 
-	// id, creation, last_update, last_result
-	auto id = UUID::GenerateRandomUUID();
-	auto timestamp = Timestamp::GetCurrentTimestamp();
-	auto timestamp_string = Timestamp::ToString(timestamp);
+	// id, creation, last_update
+	const auto id = UUID::GenerateRandomUUID();
+	const auto timestamp = Timestamp::GetCurrentTimestamp();
+	const auto timestamp_string = Timestamp::ToString(timestamp);
 
 	InsertClient(con, config, id.lower, timestamp_string);
 
@@ -99,11 +93,9 @@ static void SendChunks(std::unique_ptr<MaterializedQueryResult> &result, int32_t
 
 	auto &collection = result->Collection();
 	idx_t num_chunks = collection.ChunkCount();
-	std::cout << "Chunks: " << num_chunks << "\n";
 	send(sock, &num_chunks, sizeof(idx_t), 0);
 
 	for (auto &chunk : collection.Chunks()) {
-		std::cout << "Sending chunk\n";
 		MemoryStream target;
 		BinarySerializer serializer(target);
 		serializer.Begin();
@@ -114,20 +106,16 @@ static void SendChunks(std::unique_ptr<MaterializedQueryResult> &result, int32_t
 		idx_t len = target.GetPosition();
 
 		send(sock, &len, sizeof(ssize_t), 0);
-		std::cout << "Sent chunk len " << len << "\n";
 		send(sock, data, len, 0);
-		std::cout << "Sent chunk\n";
 	}
+	Printer::Print("Sent data to the server!\n");
 }
 
-static void InsertChunks(std::unique_ptr<MaterializedQueryResult> &result, unique_ptr<TableDescription> view_info,
+static void InsertChunks(const std::unique_ptr<MaterializedQueryResult> &result,
+                         const unique_ptr<TableDescription> &view_info,
                          Connection &con) {
 
-	auto &collection = result->Collection();
-	idx_t num_chunks = collection.ChunkCount();
-	std::cout << "Chunks: " << num_chunks << "\n";
-
-	for (auto &chunk : collection.Chunks()) {
+	for (auto &chunk : result->Collection().Chunks()) {
 		// appending one chunk at the time in order to free memory
 		con.Append(*view_info, chunk);
 	}
@@ -141,7 +129,6 @@ static void SendJSON(std::unordered_map<string, string> &config, int32_t sock) {
 
 	send(sock, &len, sizeof(len), 0);
 	send(sock, buffer, len, 0);
-	std::cout << "Sent JSON\n";
 }
 
 static void LoadInternal(DatabaseInstance &instance) {
@@ -172,7 +159,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	}
 
 	// client connected, ready to do operations
-	uint8_t query_execution_time_hours = std::stoi(config["query_execution_time_hours"]);
+	uint8_t refresh_hours = std::stoi(config["refresh_hours"]);
 
 	con.Query("PRAGMA enable_profiling=json");
 	con.Query("PRAGMA profile_output='profile_output.json'");
@@ -228,7 +215,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 			// done
 
-			std::cout << "Closing\n";
+			Printer::Print("Sent data to the server!\n");
 
 			// closing the connected socket
 			message = close_connection;
@@ -241,7 +228,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 		// calculate the time for the next execution
 		std::chrono::system_clock::time_point next =
-		    std::chrono::system_clock::now() + std::chrono::hours(query_execution_time_hours);
+		    std::chrono::system_clock::now() + std::chrono::hours(refresh_hours);
 
 		// sleep until the next execution time
 		std::this_thread::sleep_until(next);

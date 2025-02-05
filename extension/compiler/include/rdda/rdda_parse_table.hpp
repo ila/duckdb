@@ -7,7 +7,7 @@
 namespace duckdb {
 TableScope ParseScope(std::string &query);
 string ExtractTableName(const std::string &sql);
-vector<RDDAConstraint> ParseCreateTable(string &query);
+unordered_map<string, constraints> ParseCreateTable(string &query);
 } // namespace duckdb
 
 #endif // DUCKDB_RDDA_TABLE_H

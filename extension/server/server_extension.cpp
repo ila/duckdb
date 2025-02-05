@@ -24,9 +24,12 @@
 
 // TODO cleanup unused libraries
 #include <arpa/inet.h>
+#include <common.hpp>
+#include <duckdb/common/serializer/binary_serializer.hpp>
 #include <map>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <rdda_parser.hpp>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -230,7 +233,7 @@ static void DeserializeQueryPlan(string &path, string &dbname) {
 	result->Print();
 }
 
-static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string &timestamp) {
+static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t &timestamp) {
 
 	string table_name;
 	if (config["schema_name"] != "main") {
@@ -271,7 +274,7 @@ static void ParseJSON(Connection &con, std::unordered_map<string, string> &confi
 	// todo add schema name
 	Appender appender(con, "statistics");
 	appender.BeginRow();
-	appender.Append<string>(string(buffer.begin(), buffer.end()));
+	appender.Append<string_t>(string(buffer.begin(), buffer.end()));
 	appender.Append<hugeint_t>(client);
 	appender.Append<timestamp_t>(Timestamp::GetCurrentTimestamp());
 	appender.EndRow();
@@ -310,8 +313,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	// add a parser extension
 	// will probably break, let's see
-	auto &db_config = duckdb::DBConfig::GetConfig(instance);
-	auto rdda_parser = duckdb::RDDAParserExtension();
+	auto &db_config = DBConfig::GetConfig(instance);
+	auto rdda_parser = RDDAParserExtension();
 	// db.LoadExtension<RDDAParserExtension>();
 	rdda_parser.path = config["db_path"];
 	rdda_parser.db = config["db_name"];

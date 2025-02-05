@@ -1,8 +1,4 @@
-#include "../../compiler/include/rdda/rdda_parse_select.hpp"
-#include "../../compiler/include/rdda/rdda_parse_table.hpp"
-#include "../../compiler/include/rdda/rdda_parse_view.hpp"
 #include "duckdb.hpp"
-// #include "common.hpp"
 
 #ifndef DUCKDB_RDDA_PARSER_HPP
 #define DUCKDB_RDDA_PARSER_HPP
@@ -12,15 +8,15 @@ namespace duckdb {
 //===--------------------------------------------------------------------===//
 // Parser extension
 //===--------------------------------------------------------------------===//
-struct RDDAExtensionData : public ParserExtensionParseData {
-
-	RDDAExtensionData() {
-	}
-
-	duckdb::unique_ptr<ParserExtensionParseData> Copy() const override {
-		return make_uniq<RDDAExtensionData>();
-	}
-};
+// struct RDDAExtensionData : public ParserExtensionParseData {
+//
+// 	RDDAExtensionData() {
+// 	}
+//
+// 	duckdb::unique_ptr<ParserExtensionParseData> Copy() const override {
+// 		return make_uniq<RDDAExtensionData>();
+// 	}
+// };
 
 class RDDAParserExtension : public ParserExtension {
 public:
