@@ -13,6 +13,12 @@ TableScope ParseScope(std::string &query) {
 	std::smatch scope_match;
 	TableScope scope = TableScope::null;
 
+	// if we have "view" without "materialized" we throw an exception
+	if (std::regex_search(query, std::regex("\\bview\\b")) &&
+	    !std::regex_search(query, std::regex("\\bmaterialized\\b"))) {
+		throw ParserException("Views should be materialized!");
+	}
+
 	if (std::regex_search(query, scope_match, scope_regex)) {
 		if (scope_match.size() == 5) {
 			if ((scope_match[2].str() == "centralized" &&

@@ -245,10 +245,7 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 	appender.AppendRow(id, timestamp);
 }
 
-static void InitializeServer(string &config_path, unordered_map<string, string> &config) {
-
-	DuckDB db(config["db_path"] + config["db_name"]);
-	Connection con(db);
+static void InitializeServer(Connection &con, string &config_path, unordered_map<string, string> &config) {
 
 	CreateSystemTables(config_path, config["db_path"], config["db_name"], config["schema_name"], con);
 
@@ -294,31 +291,27 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// encryption
 	// backups
 
+	// todo hardcoded
 	string config_path = "/home/ila/Code/duckdb/extension/server/";
 	string config_file = "server.config";
 
 	// reading config args
-	// todo path is still hardcoded, fix this
 	auto config = ParseConfig(config_path, config_file);
 
-	DuckDB db(config["db_path"] + config["db_name"]);
+	DuckDB db(instance);
 	Connection con(db);
 
-	auto client_info = con.TableInfo(config["schema_name"], "clients");
+	auto client_info = con.TableInfo("test", "main", "clients");
 	if (!client_info) {
 		// table does not exist --> the database should be initialized
+		// fixme
 		std::cout << "Initializing server\n";
-		InitializeServer(config_path, config);
+		InitializeServer(con, config_path, config);
 	}
 
 	// add a parser extension
-	// will probably break, let's see
 	auto &db_config = DBConfig::GetConfig(instance);
 	auto rdda_parser = RDDAParserExtension();
-	// db.LoadExtension<RDDAParserExtension>();
-	rdda_parser.path = config["db_path"];
-	rdda_parser.db = config["db_name"];
-
 	db_config.parser_extensions.push_back(rdda_parser);
 
 	// initialize server sockets

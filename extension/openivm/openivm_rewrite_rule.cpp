@@ -413,7 +413,7 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		auto scan_function = table_entry.GetScanFunction(context, bind_data);
 		vector<LogicalType> return_types = {};
 		vector<string> return_names = {};
-		vector<column_t> column_ids = {};
+		vector<ColumnIndex> column_ids = {};
 
 		// the delta table has the same columns and column names as the base table, in the same order
 		// therefore, we just need to add the columns that we need
@@ -423,7 +423,7 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		for (auto &id : old_get->GetColumnIds()) {
 			column_ids.push_back(id);
 			for (auto &col : table_entry.GetColumns().Logical()) {
-				if (col.Oid() == id) {
+				if (col.Oid() == id.GetPrimaryIndex()) {
 					return_types.push_back(col.Type());
 					return_names.push_back(col.Name());
 				}
@@ -433,7 +433,8 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// we also need to add the multiplicity column
 		return_types.push_back(LogicalType::BOOLEAN);
 		return_names.push_back("_duckdb_ivm_multiplicity");
-		column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 2);
+		auto idx = ColumnIndex(table_entry.GetColumns().GetColumnTypes().size() - 2);
+		column_ids.push_back(idx);
 
 		pw.mul_binding.table_index = old_get->table_index;
 		pw.mul_binding.column_index = column_ids.size() - 1;
@@ -443,7 +444,9 @@ unique_ptr<LogicalOperator> IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// we also add the timestamp column
 		return_types.push_back(LogicalType::TIMESTAMP);
 		return_names.push_back("timestamp");
-		column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 1);
+		//column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 1);
+		idx = ColumnIndex(table_entry.GetColumns().GetColumnTypes().size() - 1);
+		column_ids.push_back(idx);
 
 		// the new get node that reads the delta table gets a new table index
 		auto replacement_get_node = make_uniq<LogicalGet>(

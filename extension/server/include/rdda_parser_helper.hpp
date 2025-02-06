@@ -12,7 +12,7 @@
 
 namespace duckdb {
 
-void CheckConstraints(Connection &con, string &query, unordered_map<string, constraints> &constraints);
+void CheckConstraints(LogicalOperator &plan, unordered_map<string, constraints> &constraints);
 
 }
 

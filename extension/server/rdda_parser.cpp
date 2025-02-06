@@ -28,13 +28,11 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// firstly, we try to understand whether this is a SELECT/ALTER/CREATE/DROP/... expression
 
-	// auto query_lower = RDDALowerCase(StringUtil::Replace(query, "\n", ""));
-	auto query_lower = StringUtil::Lower(StringUtil::Replace(query, "\n", ""));
+	auto query_lower = StringUtil::Lower(StringUtil::Replace(query, "\n", " "));
 	StringUtil::Trim(query_lower);
 	query_lower += "\n";
 
 	// each instruction set gets saved to a file, for portability
-	string parser_query; // the SQL-compliant query to be fed to the parser
 	string centralized_queries = "";
 	string decentralized_queries = "";
 	string secure_queries = "";
@@ -71,9 +69,18 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 			if (result->HasError()) {
 				throw ParserException("Error while parsing query: " + result->GetError());
 			}
+
 			auto table_name = CompilerExtension::ExtractTableName(query_lower);
+
 			if (scope == TableScope::decentralized) {
-				CheckConstraints(parser_con, query_lower, constraints);
+				parser_con.BeginTransaction();
+				Parser parser;
+				parser.ParseQuery(query_lower);
+				auto statement = parser.statements[0].get();
+				Planner planner(*parser_con.context);
+				planner.CreatePlan(statement->Copy());
+
+				CheckConstraints(*planner.plan, constraints);
 				decentralized_queries += query_lower;
 				for (auto &constraint : constraints) {
 					// we assume that the system table already exists
@@ -83,6 +90,7 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 					                         std::to_string(constraint.second.minimum_aggregation) + ");\n";
 					centralized_queries += constraint_string;
 				}
+				parser_con.Rollback();
 			} else {
 				if (scope == TableScope::replicated) {
 					centralized_queries += query_lower;

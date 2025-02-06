@@ -8,7 +8,7 @@
 
 namespace duckdb {
 
-void CheckConstraints(Connection &con, string &query, unordered_map<string, constraints> &constraints) {
+void CheckConstraints(LogicalOperator &plan, unordered_map<string, constraints> &constraints) {
 
 	if (constraints.empty()) {
 		throw ParserException("Decentralized tables must have privacy-preserving constraints!");
@@ -19,13 +19,6 @@ void CheckConstraints(Connection &con, string &query, unordered_map<string, cons
 	// 2. if a sensitive column is in a group by clause, there must be a minimum aggregation (in any other column)
 	// 3. if a column has minimum aggregation, there must be another sensitive column in the same table
 	// 4. minimum aggregation columns must be used in a query with a group by
-
-	// todo move this outside
-	Parser parser;
-	parser.ParseQuery(query);
-	auto statement = parser.statements[0].get();
-	Planner planner(*con.context);
-	planner.CreatePlan(statement->Copy());
 
 	// first we do some pre-validation
 	bool sensitive_found = false;
@@ -46,11 +39,9 @@ void CheckConstraints(Connection &con, string &query, unordered_map<string, cons
 		throw ParserException("A table with minimum aggregation must have a sensitive attribute!");
 	}
 
-	// now traverse the logical plan
-	auto plan = planner.plan.get();
 	// write a DFS
 	std::stack<LogicalOperator*> node_stack;
-	node_stack.push(plan);
+	node_stack.push(&plan);
 	while (!node_stack.empty()) {
 		auto node = node_stack.top();
 		node_stack.pop();
