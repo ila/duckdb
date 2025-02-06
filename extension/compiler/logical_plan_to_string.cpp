@@ -271,7 +271,7 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		for (size_t i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];
 			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
-			    scan_column_names[column_ids[i]];
+			    scan_column_names[column_ids[i].GetPrimaryIndex()];
 		}
 
 		// Checking for aliases with context to the current table only
