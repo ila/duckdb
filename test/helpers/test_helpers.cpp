@@ -126,6 +126,24 @@ string TestDirectoryPath() {
 	return path;
 }
 
+void ClearTestDirectory() {
+	duckdb::unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	auto test_dir = TestDirectoryPath();
+	// try to clear any files we created in the test directory
+	fs->ListFiles(test_dir, [&](const string &file, bool is_dir) {
+		auto full_path = fs->JoinPath(test_dir, file);
+		try {
+			if (is_dir) {
+				fs->RemoveDirectory(full_path);
+			} else {
+				fs->RemoveFile(full_path);
+			}
+		} catch (...) {
+			// skip
+		}
+	});
+}
+
 string TestCreatePath(string suffix) {
 	duckdb::unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
 	return fs->JoinPath(TestDirectoryPath(), suffix);
@@ -336,7 +354,7 @@ bool compare_result(string csv, ColumnDataCollection &collection, vector<Logical
 	// set up the CSV reader
 	CSVReaderOptions options;
 	options.auto_detect = false;
-	options.dialect_options.state_machine_options.delimiter = '|';
+	options.dialect_options.state_machine_options.delimiter = {"|"};
 	options.dialect_options.header = has_header;
 	options.dialect_options.state_machine_options.quote = '\"';
 	options.dialect_options.state_machine_options.escape = '\"';
