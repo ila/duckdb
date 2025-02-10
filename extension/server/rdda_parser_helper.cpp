@@ -39,7 +39,7 @@ void CheckConstraints(LogicalOperator &plan, unordered_map<string, constraints> 
 		throw ParserException("A table with minimum aggregation must have a sensitive attribute!");
 	}
 
-	// write a DFS
+	// DFS
 	std::stack<LogicalOperator*> node_stack;
 	node_stack.push(&plan);
 	while (!node_stack.empty()) {

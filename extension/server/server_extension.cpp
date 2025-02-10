@@ -49,119 +49,8 @@ int32_t MinimumResponse() {
 } */
 
 static void Flush(Connection &con, string &query_name) {
-	// calling this function on centralized views
-	// two parameters: window and TTL
-	// window = maximum number of windows that should be kept in the decentralized view before copying
-	// ttl = maximum time-to-live of a record [hours]
-	// we also need minimum aggregation (minimum number of elements in a group)
 
-	// assuming the data here is decrypted, let's check if the minimum aggregation is met
-	// find the columns with minimum aggregation
 
-	// data looks like this:
-	// | field1 | field2 | ... | grouping_key | client_id | timestamp |
-
-	// the grouping key is the column with maximum minimum_aggregation
-
-	string centralized_table_name = "rdda_centralized_table_" + query_name;
-	auto table_info = con.TableInfo(centralized_table_name); // todo test schema
-
-	// extract window and ttl of the view
-	auto window_ttl = con.Query(
-	    "select window, ttl from rdda_view_constraints where view_name = 'rdda_centralized_view_" + query_name + "';");
-	// todo exception handling
-	auto window = window_ttl->Fetch()->GetValue(0, 1).GetValue<uint8_t>();
-	auto ttl = window_ttl->Fetch()->GetValue(1, 1).GetValue<uint8_t>();
-
-	// SELECT *, CEIL(EXTRACT(EPOCH FROM timestamp) / (ttl * 3600)) AS window FROM view WHERE window <= n_windows;\
-
-	// now check if minimum granularity is met and either discard or insert into a centralized view
-	// extracting minimum granularity (if more than one column in the table has it, select the max)
-	// todo check the column exists in the query
-	auto result = con.Query("select column, max(minimum aggregation) "
-	                        "from rdda_table_constraints "
-	                        "where table in (select tables from rdda_queries) "
-	                        "and minimum_aggregation > 0 "
-	                        "group by column order by max;");
-	auto column_name = result->Fetch()->GetValue(0, 1).GetValue<string>(); // todo check this
-	auto granularity = result->Fetch()->GetValue(1, 1).GetValue<uint8_t>();
-
-	if (window > 0 && ttl > 0) {
-		if (granularity > 0) {
-			// divide the data in window and check if any tuple is out of scope
-			// window needs to be recalculated every time, so can't be permanently stored
-			// todo make sure the timestamp field is properly named
-			// extracting all the tuples out of scope
-			// I am honestly ashamed of this code
-			string query_in = "WITH tuples_out_of_scope as "
-			                  "(SELECT *, CEIL(EXTRACT(EPOCH FROM timestamp) / " +
-			                  std::to_string(ttl) +
-			                  " * 3600)) "
-			                  "AS window FROM rdda_centralized_view_" +
-			                  query_name + " WHERE window > " + std::to_string(window) +
-			                  ") "
-			                  "select * from tuples_out_of_scope "
-			                  "where " +
-			                  column_name + " in (select " + column_name +
-			                  ", count(*) "
-			                  "from tuples_out_of_scope group by " +
-			                  column_name + "having count >= " + std::to_string(granularity) + ");";
-
-			auto result_in = con.Query(query_in);
-			auto &collection = result_in->Collection();
-			idx_t num_chunks = collection.ChunkCount();
-
-			for (auto &chunk : collection.Chunks()) {
-				con.Append(*table_info, chunk);
-			}
-
-			// now remove all the windows out of scope
-			string query_out = "delete from rdda_decentralized_view_" + query_name +
-			                   " where rowid in "
-			                   "(select rowid from (SELECT rowid, CEIL(EXTRACT(EPOCH FROM timestamp) / " +
-			                   std::to_string(ttl) +
-			                   " * 3600)) "
-			                   "AS window FROM rdda_centralized_view_\" + query_name +\n"
-			                   " WHERE window > \" + std::to_string(window) + \"))";
-			con.Query(query_out);
-		}
-	} else if (window == 0 && ttl > 0) {
-		// just flush expired tuples
-		if (granularity > 0) { // todo null?
-			string query_insert = "with tuples_out_of_scope as"
-			                      "(select * from rdda_centralized_view_" +
-			                      query_name + " where timestamp < (current_time - interval " + std::to_string(ttl) +
-			                      " hours))"
-			                      "select * from tuples_out_of_scope where column in "
-			                      "(select " +
-			                      column_name + ", count(*) from tuples_out_of_scope group by " + column_name +
-			                      " having count >= " + std::to_string(granularity) + ");";
-			auto tuples_ok = con.Query(query_insert);
-			auto &collection = tuples_ok->Collection();
-			idx_t num_chunks = collection.ChunkCount();
-
-			for (auto &chunk : collection.Chunks()) {
-				con.Append(*table_info, chunk);
-			}
-			// now remove everything from the query
-			string query_delete = "delete from rdda_centralized_view_" + query_name +
-			                      " where rowid in (select rowid from rdda_centralized_view_" + query_name +
-			                      " where timestamp < (current_time - interval " + std::to_string(ttl) + " hours));";
-			con.Query(query_delete);
-		} else {
-			// no granularity specified, just flush everything out of scope
-			auto tuples = con.Query("select * from " + query_name + " where timestamp >= (current_time - interval " +
-			                        std::to_string(ttl) + " hours));");
-			auto &collection = tuples->Collection();
-			idx_t num_chunks = collection.ChunkCount();
-
-			for (auto &chunk : collection.Chunks()) {
-				con.Append(*table_info, chunk);
-			}
-			con.Query("delete from rdda_centralized_view_" + query_name +
-			          " where timestamp < (current_time - interval " + std::to_string(ttl) + " hours));");
-		}
-	} // all the other cases are not possible in our architecture
 }
 
 static void CreateViewFromCSV(string &view_name, string &csv_path, Connection &con) {
@@ -173,7 +62,7 @@ static void CreateViewFromCSV(string &view_name, string &csv_path, Connection &c
 	std::remove(csv_path.c_str());
 }
 
-static void GenerateQueryPlan(string &query, string &path, string &dbname) {
+static void SerializeQueryPlan(string &query, string &path, string &dbname) {
 
 	DuckDB db(path + dbname);
 	Connection con(db);
@@ -235,24 +124,24 @@ static void DeserializeQueryPlan(string &path, string &dbname) {
 
 static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t &timestamp) {
 
-	string table_name;
-	if (config["schema_name"] != "main") {
-		table_name = config["schema_name"] + ".clients";
-	} else {
-		table_name = "clients";
-	}
+	string table_name = "rdda_clients";
 	Appender appender(con, table_name);
 	appender.AppendRow(id, timestamp);
 }
 
 static void InitializeServer(Connection &con, string &config_path, unordered_map<string, string> &config) {
 
-	CreateSystemTables(config_path, config["db_path"], config["db_name"], config["schema_name"], con);
+	con.BeginTransaction();
+	CreateSystemTables(config_path, con);
 
 	for (auto &config_item : config) {
-		string string_insert = "insert into settings values (" + config_item.first + ", " + config_item.second + ");";
-		con.Query(string_insert);
+		string string_insert = "insert into rdda_settings values ('" + config_item.first + "', '" + config_item.second + "');";
+		auto r = con.Query(string_insert);
+		if (r->HasError()) {
+			throw ParserException("Error while inserting settings: " + r->GetError());
+		}
 	}
+	con.Commit();
 }
 
 static void ParseJSON(Connection &con, std::unordered_map<string, string> &config, int32_t connfd, hugeint_t client) {
@@ -280,18 +169,10 @@ static void ParseJSON(Connection &con, std::unordered_map<string, string> &confi
 static void LoadInternal(DatabaseInstance &instance) {
 
 	// todo:
-	// more statistics - volume of data?
-	// chunk cardinality?
+	// send statistics to the server
 
-	// todo for later:
-	// how do the clients know the server address?
-	// changes to sql
-	// aggregated execution
-	// compression
-	// encryption
-	// backups
-
-	// todo hardcoded
+	// todo fix the hardcoded path
+	// todo maybe add schema here?
 	string config_path = "/home/ila/Code/duckdb/extension/server/";
 	string config_file = "server.config";
 
@@ -301,18 +182,24 @@ static void LoadInternal(DatabaseInstance &instance) {
 	DuckDB db(instance);
 	Connection con(db);
 
-	auto client_info = con.TableInfo("test", "main", "clients");
-	if (!client_info) {
+	auto client_info = con.TableInfo("rdda_clients");
+	auto db_name = con.Query("select current_database();");
+	if (db_name->HasError()) {
+		throw ParserException("Error while getting database name: ", db_name->GetError());
+	}
+	auto db_name_str = db_name->GetValue(0, 0).ToString();
+	if (!client_info && db_name_str != "rdda_parser_internal") {
 		// table does not exist --> the database should be initialized
-		// fixme
-		std::cout << "Initializing server\n";
+		std::cout << "Initializing server!\n";
 		InitializeServer(con, config_path, config);
 	}
 
 	// add a parser extension
 	auto &db_config = DBConfig::GetConfig(instance);
 	auto rdda_parser = RDDAParserExtension();
+	auto rdda_rewrite_rule = CVRewriteRule();
 	db_config.parser_extensions.push_back(rdda_parser);
+	db_config.optimizer_extensions.push_back(rdda_rewrite_rule);
 
 	// initialize server sockets
 
@@ -525,7 +412,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 void ServerExtension::Load(DuckDB &db) {
 	LoadInternal(*db.instance);
 }
-std::string ServerExtension::Name() {
+string ServerExtension::Name() {
 	return "server";
 }
 

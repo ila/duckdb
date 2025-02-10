@@ -297,4 +297,9 @@ void CompilerExtension::ReplaceSum(string &query) {
 	query = std::regex_replace(query, pattern, "sum($2) as sum_$2");
 }
 
+// remove all the redundant whitespaces from the query
+void CompilerExtension::RemoveRedundantWhitespaces(string &query) {
+	query = std::regex_replace(query, std::regex("\\s+"), " ");
+}
+
 } // namespace duckdb

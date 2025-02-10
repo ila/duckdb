@@ -37,26 +37,19 @@ unordered_map<string, string> ParseConfig(string &path, string &config_name) {
 	return config;
 }
 
-void CreateSystemTables(string &path, string &db_path, string &db_name, string &schema_name, Connection &con) {
+void CreateSystemTables(string &path, Connection &con) {
 
 	// there is currently no way to execute SQL statements in files through the C++ API
 	// so here we go again...
 	std::ifstream input_file(path + "tables.sql");
 	string query;
 
-	if (schema_name != "main") {
-		// try to recreate the schema
-		con.Query("create schema if not exists " + schema_name);
-	}
-
 	while (getline(input_file, query)) {
 		std::istringstream config_line(query);
-		if (schema_name != "main") {
-			query = std::regex_replace(query, std::regex("create table "), "create table " + schema_name + ".");
-		}
-		con.BeginTransaction();
 		auto result = con.Query(query);
-		con.Commit();
+		if (result->HasError()) {
+			throw ParserException("Error while creating system tables: " + result->GetError());
+		}
 	}
 }
 

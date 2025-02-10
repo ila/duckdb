@@ -2,13 +2,14 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/serializer/binary_deserializer.hpp"
+#include "centralized_view_optimizer_rule.hpp"
 
 namespace duckdb {
 
 class ServerExtension : public Extension {
 public:
 	void Load(DuckDB &db) override;
-	std::string Name() override;
+	string Name() override;
 };
 
 } // namespace duckdb

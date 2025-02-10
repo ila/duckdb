@@ -1,7 +1,5 @@
 #include "include/logical_plan_to_string.hpp"
-
-#include "../postgres_scanner/include/postgres_scanner.hpp"
-
+// #include "../postgres_scanner/include/postgres_scanner.hpp"
 #include <duckdb/planner/operator/logical_any_join.hpp>
 
 namespace duckdb {
@@ -247,7 +245,8 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			if (!catalog_value.IsNull() && !schema_value.IsNull()) {
 				catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
 			}
-			ql_get_exp->table_name = catalog_schema + dynamic_cast<PostgresBindData *>(node->bind_data.get())->table_name;
+			// fixme
+			// ql_get_exp->table_name = catalog_schema + dynamic_cast<PostgresBindData *>(node->bind_data.get())->table_name;
 		}
 		ql_get_exp->all_columns = true;
 
@@ -261,7 +260,8 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		if (node->GetTable().get()) {
 			scan_column_names = node->GetTable()->GetColumns().GetColumnNames();
 		} else {
-			scan_column_names = dynamic_cast<PostgresBindData *>(node->bind_data.get())->names;
+			// fixme
+			// scan_column_names = dynamic_cast<PostgresBindData *>(node->bind_data.get())->names;
 		}
 		/* 2024-11-03 Not used.
 		auto current_table_index = node->GetTableIndex()[0];
@@ -270,8 +270,9 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 
 		for (size_t i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];
-			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
-			    scan_column_names[column_ids[i]];
+			// fixme
+			// cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
+			//     scan_column_names[column_ids[i]];
 		}
 
 		// Checking for aliases with context to the current table only

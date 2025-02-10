@@ -27,6 +27,7 @@ public:
 	static string SQLToLowercase(const string &sql);
 	static void ReplaceCount(string &query);
 	static void ReplaceSum(string &query);
+	static void RemoveRedundantWhitespaces(string &query);
 	static string GenerateDeltaTable(string &query);
 };
 

@@ -90,7 +90,11 @@ unordered_map<string, constraints> ParseCreateTable(std::string &query) {
 			}
 
 			StringUtil::Trim(split);
-			constraints_table.insert(make_pair(column_name, constraints_column));
+			// we only add the column if it has constraints
+			if (constraints_column.randomized || constraints_column.minimum_aggregation > 0 ||
+			    constraints_column.sensitive) {
+				constraints_table.insert(make_pair(column_name, constraints_column));
+			}
 		}
 
 		// remove keywords from the query string

@@ -11,7 +11,8 @@ add_library(
   server_extension.cpp common.cpp rdda_parser.cpp
   ../compiler/rdda/rdda_parse_table.cpp ../compiler/rdda/rdda_parse_view.cpp
   ../compiler/rdda/rdda_parse_select.cpp
-        rdda_parser_helper.cpp)
+  rdda_parser_helper.cpp
+  centralized_view_optimizer_rule.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(
@@ -23,7 +24,8 @@ build_loadable_extension(
   ../compiler/rdda/rdda_parse_select.cpp
   ../compiler/rdda/rdda_parse_table.cpp
   rdda_parser.cpp
-  rdda_parser_helper.cpp)
+  rdda_parser_helper.cpp
+  centralized_view_optimizer_rule.cpp)
 
 # find_package(OpenSSL REQUIRED) target_link_libraries(httpfs_loadable_extension
 # ${OPENSSL_LIBRARIES})
