@@ -36,22 +36,10 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <duckdb/parser/parsed_data/create_table_function_info.hpp>
 
 namespace duckdb {
 
-/*
-int32_t ResponseRatio() {
-    // every insertion also triggers an update of the last update timestamp
-}
-
-int32_t MinimumResponse() {
-    // every insertion also triggers an update of the last update timestamp
-} */
-
-static void Flush(Connection &con, string &query_name) {
-
-
-}
 
 static void CreateViewFromCSV(string &view_name, string &csv_path, Connection &con) {
 
@@ -166,6 +154,64 @@ static void ParseJSON(Connection &con, std::unordered_map<string, string> &confi
 	appender.EndRow();
 }
 
+unique_ptr<GlobalTableFunctionState> FlushInit(ClientContext &context, TableFunctionInitInput &input) {
+	auto result = make_uniq<FlushData>();
+	return std::move(result);
+}
+
+static unique_ptr<TableRef> Flush(ClientContext &context, TableFunctionBindInput &input) {
+	return nullptr;
+}
+
+static void FlushFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	const auto &data = dynamic_cast<FlushData &>(*data_p.global_state);
+	if (data.offset >= 1) {
+		// finished returning values
+		return;
+	}
+	return;
+}
+
+static unique_ptr<FunctionData> FlushBind(ClientContext &context, TableFunctionBindInput &input,
+												  vector<LogicalType> &return_types, vector<string> &names) {
+	// called when the pragma is executed
+	// specifies the output format of the query (columns)
+	// display the outputs (do not remove)
+	string view_name = StringValue::Get(input.inputs[0]);
+
+	input.named_parameters["view_name"] = view_name;
+
+	// obtain the bindings for view_name
+	Connection con(*context.db);
+	// auto v = con.Query("select query from rdda_tables where name = '" + view_name + "' and is_view;");
+	// if (v->HasError()) {
+	// 	throw InternalException("Error while querying view definition: " + v->GetError());
+	// }
+	// string view_query = v->GetValue(0, 0).ToString();
+	// if (view_query.empty()) {
+	// 	throw InternalException("View query is empty");
+	// }
+
+	auto view_query = "select * from " + view_name;
+	// generate column bindings for the view definition
+	// we could try and avoid this, but we need to know the column names
+	// this is the plan of the view which will be fed to the optimizer
+	Parser parser;
+	parser.ParseQuery(view_query);
+	auto statement = parser.statements[0].get();
+	Planner planner(context);
+	planner.CreatePlan(statement->Copy());
+
+	// create result set using column bindings returned by the planner
+	auto result = make_uniq<FlushFunctionData>();
+	for (size_t i = 0; i < planner.names.size(); i++) {
+		return_types.emplace_back(planner.types[i]);
+		names.emplace_back(planner.names[i]);
+	}
+
+	return std::move(result);
+}
+
 static void LoadInternal(DatabaseInstance &instance) {
 
 	// todo:
@@ -200,6 +246,20 @@ static void LoadInternal(DatabaseInstance &instance) {
 	auto rdda_rewrite_rule = CVRewriteRule();
 	db_config.parser_extensions.push_back(rdda_parser);
 	db_config.optimizer_extensions.push_back(rdda_rewrite_rule);
+
+	TableFunction flush_func("Flush", {LogicalType::VARCHAR}, FlushFunction,
+					   FlushBind, FlushInit);
+
+	con.BeginTransaction();
+	auto &catalog = Catalog::GetSystemCatalog(*con.context);
+	flush_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(Flush);
+	flush_func.name = "flush";
+	flush_func.named_parameters["view_catalog_name"];
+	flush_func.named_parameters["view_schema_name"];
+	flush_func.named_parameters["view_name"];
+	CreateTableFunctionInfo flush_func_info(flush_func);
+	catalog.CreateTableFunction(*con.context, &flush_func_info);
+	con.Commit();
 
 	// initialize server sockets
 

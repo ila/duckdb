@@ -1,4 +1,5 @@
 #include "duckdb.hpp"
+#include "rdda/rdda_helpers.hpp"
 
 #ifndef DUCKDB_RDDA_PARSER_HPP
 #define DUCKDB_RDDA_PARSER_HPP
@@ -8,21 +9,21 @@ namespace duckdb {
 //===--------------------------------------------------------------------===//
 // Parser extension
 //===--------------------------------------------------------------------===//
+
 struct RDDAParseData : ParserExtensionParseData {
 
 	string query;
+	TableScope scope;
 
 	unique_ptr<ParserExtensionParseData> Copy() const override {
-		// we pass "false" here because if we get here, we already parsed the query
-		// DuckDB copies the function data, but we don't need to execute the planner function
-		return make_uniq_base<ParserExtensionParseData, RDDAParseData>(query);
+		return make_uniq_base<ParserExtensionParseData, RDDAParseData>(query, scope);
 	}
 
 	string ToString() const override {
 		return query;
 	}
 
-	explicit RDDAParseData(string query) : query(query) {
+	explicit RDDAParseData(const string &query, const TableScope &scope) : query(query), scope(scope) {
 	}
 };
 

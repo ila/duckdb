@@ -28,3 +28,8 @@ CREATE CENTRALIZED TABLE contracts (
     start_date     DATE,
     end_date       DATE
 );
+
+CREATE CENTRALIZED MATERIALIZED VIEW hospital_contracts AS
+SELECT hospital_id, COUNT(*) as contracts
+FROM contracts
+GROUP BY hospital_id;

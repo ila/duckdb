@@ -10,12 +10,12 @@
 
 namespace duckdb {
 
-struct DoIVMFunctionData : public TableFunctionData {
+struct DoIVMFunctionData : TableFunctionData {
 	DoIVMFunctionData() {
 	}
 };
 
-struct DoIVMBenchmarkFunctionData : public TableFunctionData {
+struct DoIVMBenchmarkFunctionData : TableFunctionData {
 	DoIVMBenchmarkFunctionData() {
 	}
 };
@@ -112,7 +112,7 @@ public:
 		idx_t offset;
 	};
 
-	static duckdb::unique_ptr<FunctionData> IVMBind(ClientContext &context, TableFunctionBindInput &input,
+	static unique_ptr<FunctionData> IVMBind(ClientContext &context, TableFunctionBindInput &input,
 	                                                vector<LogicalType> &return_types, vector<string> &names) {
 
 
@@ -125,7 +125,7 @@ public:
 		return make_uniq<IVMBindData>(result);
 	}
 
-	static duckdb::unique_ptr<GlobalTableFunctionState> IVMInit(ClientContext &context, TableFunctionInitInput &input) {
+	static unique_ptr<GlobalTableFunctionState> IVMInit(ClientContext &context, TableFunctionInitInput &input) {
 		return make_uniq<IVMGlobalData>();
 	}
 

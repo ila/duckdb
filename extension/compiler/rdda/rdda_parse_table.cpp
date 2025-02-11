@@ -8,8 +8,8 @@
 namespace duckdb {
 
 TableScope ParseScope(std::string &query) {
-	std::regex scope_regex("\\b(create)\\s+(\\bcentralized\\b|\\bdecentralized\\b|\\breplicated\\b)\\s+(table|"
-	                       "materialized\\s+view)\\s+(.*)");
+	std::regex scope_regex(
+	    "\\b(create)\\s+(centralized|decentralized|replicated)\\s+(table|materialized\\s+view)\\s+(.*)");
 	std::smatch scope_match;
 	TableScope scope = TableScope::null;
 
@@ -19,28 +19,26 @@ TableScope ParseScope(std::string &query) {
 		throw ParserException("Views should be materialized!");
 	}
 
-	if (std::regex_search(query, scope_match, scope_regex)) {
-		if (scope_match.size() == 5) {
-			if ((scope_match[2].str() == "centralized" &&
-			     (scope_match[3].str() == "decentralized" || scope_match[3].str() == "replicated")) ||
-			    (scope_match[2].str() == "decentralized" &&
-			     (scope_match[3].str() == "centralized" || scope_match[3].str() == "replicated")) ||
-			    (scope_match[2].str() == "replicated" &&
-			     (scope_match[3].str() == "decentralized" || scope_match[3].str() == "centralized"))) {
-				throw ParserException("Cannot specify multiple table scopes");
-			}
-			if (scope_match[2].str() == "centralized") {
-				scope = TableScope::centralized;
-			} else if (scope_match[2].str() == "decentralized") {
-				scope = TableScope::decentralized;
-			} else { // replicated
-				scope = TableScope::replicated;
-			}
-			query = scope_match[1].str() + " " + scope_match[3].str() + " " + scope_match[4].str();
+	std::regex_search(query, scope_match, scope_regex);
+	if (scope_match.size() == 5) {
+		if ((scope_match[2].str() == "centralized" &&
+			 (scope_match[3].str() == "decentralized" || scope_match[3].str() == "replicated")) ||
+			(scope_match[2].str() == "decentralized" &&
+			 (scope_match[3].str() == "centralized" || scope_match[3].str() == "replicated")) ||
+			(scope_match[2].str() == "replicated" &&
+			 (scope_match[3].str() == "decentralized" || scope_match[3].str() == "centralized"))) {
+			throw ParserException("Cannot specify multiple table scopes");
+			 }
+		if (scope_match[2].str() == "centralized") {
+			scope = TableScope::centralized;
+		} else if (scope_match[2].str() == "decentralized") {
+			scope = TableScope::decentralized;
+		} else { // replicated
+			scope = TableScope::replicated;
 		}
-	} else {
-		throw ParserException("Object should be centralized, decentralized or replicated!");
+		query = scope_match[1].str() + " " + scope_match[3].str() + " " + scope_match[4].str();
 	}
+
 	return scope;
 }
 

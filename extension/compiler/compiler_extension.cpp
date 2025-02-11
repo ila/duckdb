@@ -180,13 +180,13 @@ void CompilerExtension::ReplaceMaterializedView(string &query) {
 }
 
 string CompilerExtension::ExtractViewQuery(string &query) {
-	std::regex rgx_create_view(R"(create\s+table\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)\s+as\s+(.*))");
+	std::regex rgx_create_view(R"(create\s+(table|materialized view)\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)\s+as\s+(.*))");
 
 	std::smatch match;
 	string query_string;
 
 	if (std::regex_search(query, match, rgx_create_view)) {
-		return match[2].str();
+		return match[3].str();
 	}
 
 	return "";

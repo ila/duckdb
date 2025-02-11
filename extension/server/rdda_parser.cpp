@@ -1,5 +1,6 @@
 #include "rdda_parser.hpp"
 
+#include "../../tools/shell/include/shell_state.hpp"
 #include "../compiler/include/compiler_extension.hpp"
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
@@ -11,6 +12,7 @@
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
 
+#include <data_representation.hpp>
 #include <iostream>
 #include <rdda/rdda_helpers.hpp>
 #include <rdda/rdda_parse_table.hpp>
@@ -23,26 +25,112 @@ namespace duckdb {
 string RDDAParserExtension::path;
 string RDDAParserExtension::db;
 
+string GetCurrentDatabaseName(Connection &con) {
+	auto db_name = con.Query("select current_database();");
+	if (db_name->HasError()) {
+		throw ParserException("Error while getting database name: " + db_name->GetError());
+	}
+	return db_name->GetValue(0, 0).ToString();
+}
+
+void AttachParserDatabase(Connection &con) {
+	auto r = con.Query("attach if not exists 'rdda_parser_internal.db' as rdda_parser_internal;");
+	if (r->HasError()) {
+		throw ParserException("Error while attaching to rdda_parser_internal.db: " + r->GetError());
+	}
+	r = con.Query("use rdda_parser_internal");
+	if (r->HasError()) {
+		throw ParserException("Error while switching to rdda_parser_internal.db: " + r->GetError());
+	}
+}
+
+void SwitchBackToDatabase(Connection &con, const string &db_name) {
+	auto r = con.Query("use " + db_name);
+	if (r->HasError()) {
+		throw ParserException("Error while switching back to the original database: " + r->GetError());
+	}
+}
+
+void DetachParserDatabase(Connection &con) {
+	auto r = con.Query("detach rdda_parser_internal");
+	if (r->HasError()) {
+		throw ParserException("Error while detaching from parser db: " + r->GetError());
+	}
+}
+
+void ExecuteAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
+	if (!queries.empty()) {
+		CompilerExtension::WriteFile(file_path, append, queries);
+		auto r = con.Query(queries);
+		if (r->HasError()) {
+			throw ParserException("Error while executing compiled queries: " + r->GetError());
+		}
+	}
+}
+
+void WriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
+	if (!queries.empty()) {
+		CompilerExtension::WriteFile(file_path, append, queries);
+	}
+}
+
+void ParseExecuteQuery(Connection &con, const string &query) {
+	auto r = con.Query(query);
+	if (r->HasError()) {
+		throw ParserException("Error while executing parser queries: " + r->GetError());
+	}
+}
+
+string ConstructTable(Connection &con, string view_name, bool view) {
+	// we make the respective centralized view
+	auto table_info = con.TableInfo(view_name);
+	if (view) {
+		view_name = "rdda_centralized_view_" + view_name;
+	} else {
+		view_name = "rdda_centralized_table_" + view_name;
+	}
+	string centralized_table_definition = "create table " + view_name + " (";
+	for (auto &column : table_info->columns) {
+		centralized_table_definition += column.GetName() + " " + StringUtil::Lower(column.GetType().ToString()) + ", ";
+	}
+	if (view) {
+		centralized_table_definition += "generation timestamp, arrival timestamp, rdda_window int, client_id int, action bool);\n";
+	} else {
+		// remove the last comma and space
+		centralized_table_definition = centralized_table_definition.substr(0, centralized_table_definition.size() - 2) + ");\n";
+	}
+	return centralized_table_definition;
+}
+
 ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensionInfo *info, const string &query) {
 	// very rudimentary parser trying to find RDDA statements
 	// the query is parsed twice, so we expect that any SQL mistakes are caught in the second iteration
 	// firstly, we try to understand whether this is a SELECT/ALTER/CREATE/DROP/... expression
+	auto query_lower = StringUtil::Lower(StringUtil::Replace(query, "\n", " "));
+	StringUtil::Trim(query_lower);
+	CompilerExtension::RemoveRedundantWhitespaces(query_lower);
+	if (query_lower.back() != ';' && query_lower.substr(query_lower.size() - 2) != " ;") {
+		query_lower += ";";
+	}
+	query_lower += "\n";
+	auto scope = ParseScope(query_lower);
 
-	return ParserExtensionParseResult(
-		make_uniq_base<ParserExtensionParseData, RDDAParseData>(query));
+	if (query_lower.substr(0, 6) == "create") {
+		if (scope != TableScope::null) {
+			return ParserExtensionParseResult(
+		make_uniq_base<ParserExtensionParseData, RDDAParseData>(query_lower, scope));
+		}
+	}
+	return ParserExtensionParseResult();
+
 }
 
 ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionInfo *info, ClientContext &context,
 															  unique_ptr<ParserExtensionParseData> parse_data) {
 
-	// todo - monday: for some reason "Contracts" is not created in test.db
-	// and the metadata tables are created also in rdda_parser_internal.db
-	// fix this + refactor
-
 	auto query = dynamic_cast<RDDAParseData*>(parse_data.get())->query;
+	auto scope = dynamic_cast<RDDAParseData*>(parse_data.get())->scope;
 	// after the parser, the query string reaches this point
-	auto query_lower = StringUtil::Lower(StringUtil::Replace(query, "\n", " "));
-	StringUtil::Trim(query_lower);
 
 	// each instruction set gets saved to a file, for portability
 	string centralized_queries = "";
@@ -54,47 +142,33 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	// creating a separate schema such that we can check for syntax errors
 	Connection con(*context.db);
 	// we get the database name
-	auto db_name = con.Query("select current_database();");
-	if (db_name->HasError()) {
-		throw ParserException("Error while getting database name: ", db_name->GetError());
-	}
-	auto db_name_str = db_name->GetValue(0, 0).ToString();
+	auto db_name = GetCurrentDatabaseName(con);
 	// we attach to the parser database
-	auto r = con.Query("attach if not exists 'rdda_parser_internal.db' as rdda_parser_internal;");
-	if (r->HasError()) {
-		throw ParserException("Error while attaching to rdda_parser_internal.db: ", r->GetError());
-	}
-	con.Query("use rdda_parser_internal");
+	AttachParserDatabase(con);
 
-	if (query_lower.substr(0, 6) == "create") {
+	if (query.substr(0, 6) == "create") {
 		// this is a CREATE statement
 		// splitting the statement to extract column names and constraints
 		// the table name is the last string that happens before the first parenthesis
-		auto scope = ParseScope(query_lower);
-		CompilerExtension::RemoveRedundantWhitespaces(query_lower);
-		query_lower += ";\n";
 
 		// check if this is a CREATE table or view
-		if (query_lower.substr(0, 12) == "create table") {
+		if (query.substr(0, 12) == "create table") {
 			// remove RDDA constraints from the string
 			// we assume that constraints can also be empty
 			unordered_map<string, constraints> constraints;
 			if (scope == TableScope::decentralized) {
-				constraints = ParseCreateTable(query_lower);
+				constraints = ParseCreateTable(query);
 			}
 
 			// query is clean now, let's try and feed it back to the parser
-			auto result = con.Query(query_lower);
-			if (result->HasError()) {
-				throw ParserException("Error while parsing query: " + result->GetError());
-			}
+			ParseExecuteQuery(con, query);
 
-			auto table_name = CompilerExtension::ExtractTableName(query_lower);
+			auto table_name = CompilerExtension::ExtractTableName(query);
 
 			if (scope == TableScope::decentralized) {
 				con.BeginTransaction();
 				Parser parser;
-				parser.ParseQuery(query_lower);
+				parser.ParseQuery(query);
 				auto statement = parser.statements[0].get();
 				Planner planner(*con.context);
 				planner.CreatePlan(statement->Copy());
@@ -103,127 +177,113 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 
 				// now we add the table in our RDDA catalog (name, scope, query, is_view)
 				auto table_string = "insert into rdda_tables values('" + table_name + "', " +
-									std::to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
+									to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
 				centralized_queries += table_string;
 
-				decentralized_queries += query_lower;
+				decentralized_queries += query;
 				for (auto &constraint : constraints) {
 					auto constraint_string = "insert into rdda_table_constraints values ('" + table_name + "', '" +
-					                         constraint.first + "', " + std::to_string(constraint.second.randomized) +
-					                         ", " + std::to_string(constraint.second.sensitive) + ", " +
-					                         std::to_string(constraint.second.minimum_aggregation) + ");\n";
+					                         constraint.first + "', " + to_string(constraint.second.randomized) +
+					                         ", " + to_string(constraint.second.sensitive) + ", " +
+					                         to_string(constraint.second.minimum_aggregation) + ");\n";
 					centralized_queries += constraint_string;
 				}
 				con.Rollback();
 			} else {
 				if (scope == TableScope::replicated) {
-					centralized_queries += query_lower;
-					decentralized_queries += query_lower;
+					centralized_queries += query;
+					decentralized_queries += query;
 					// now we add the table in our RDDA catalog (name, scope, query, is_view)
 					auto table_string = "insert into rdda_tables values('" + table_name + "', " +
-										std::to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
+										to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
 					centralized_queries += table_string;
 				} else {
 					// centralized table
-					centralized_queries += query_lower;
+					centralized_queries += query;
 					// now we add the table in our RDDA catalog (name, scope, query, is_view)
 					auto table_string = "insert into rdda_tables values('" + table_name + "', " +
-										std::to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
+										to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
 					centralized_queries += table_string;
 				}
 			}
 
-		} else if (query_lower.substr(0, 24) == "create materialized view") {
+		} else if (query.substr(0, 24) == "create materialized view") {
 
-			auto result = con.Query(query_lower);
-			if (result->HasError()) {
-				throw ParserException("Error while parsing query: " + result->GetError());
+			if (scope == TableScope::centralized || scope == TableScope::replicated) {
+				// if the table is decentralized, we need to check the constraints before parsing
+				ParseExecuteQuery(con, query);
 			}
 			// adding the view to the system tables
-			auto view_name = CompilerExtension::ExtractTableName(query_lower);
-			auto view_query = CompilerExtension::ExtractViewQuery(query_lower);
+			auto view_name = CompilerExtension::ExtractViewName(query);
+			auto view_query = CompilerExtension::ExtractViewQuery(query);
 			// rdda_centralized_view_ is a reserved name
 			if (view_name.substr(0, 23) == "rdda_centralized_view_") {
 				throw ParserException("Centralized views cannot start with rdda_centralized_view_");
 			}
-			auto view_string = "insert into rdda_tables values(" + view_name + ", " + view_query + ", 1);\n";
-			auto query_string = "insert into rdda_queries values(" + view_name + ", " + view_query + ");\n";
 
 			if (scope == TableScope::centralized) {
-				centralized_queries += query_lower;
+				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
+				centralized_queries += query;
 				centralized_queries += view_string;
-				centralized_queries += query_string;
 			} else if (scope == TableScope::decentralized) {
-				auto view_constraints = ParseCreateView(query_lower);
-				auto view_constraint_string = "insert into rdda_view_constraints values(" + view_name + ", " +
-				                              std::to_string(view_constraints.window) + ", " +
-				                              std::to_string(view_constraints.ttl) + ", " +
-				                              std::to_string(view_constraints.refresh) + ");\n";
-				decentralized_queries += query_lower;
+				// here the query should call the openivm parser to parse "materialized view" statements
+				// however our schema does not exist, so the parser will emit error
+				// to circumvent this, we parse the create table statement
+				auto view_constraints = ParseCreateView(query);
+				view_query = CompilerExtension::ExtractViewQuery(query); // reinitializing because of constraints
+				auto create_table_query = "create table " + view_name + " as " + view_query;
+				ParseExecuteQuery(con, create_table_query);
+				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
+				                              to_string(view_constraints.window) + ", " +
+				                              to_string(view_constraints.ttl) + ", " +
+				                              to_string(view_constraints.refresh) + ");\n";
+				decentralized_queries += query;
+				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
 				centralized_queries += view_string;
-				centralized_queries += query_string;
-				// now we also make the respective centralized view
-				string centralized_table_name = "rdda_centralized_view_" + view_name;
-				secure_queries += "create table " + centralized_table_name + " as " + view_query + ";\n";
-				// alter table: we add generation timestamp, collection timestamp, window and client id
-				secure_queries += "alter table " + centralized_table_name +
-				                       " add column generation timestamp, add column arrival timestamp, add column window int, add column client_id int;\n";
+				secure_queries += ConstructTable(con, view_name, true);
+				view_string = "insert into rdda_tables values('rdda_centralized_view_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 1);\n";
+				centralized_queries += view_string;
+				// we also need to create the respective centralized view
+				centralized_queries += ConstructTable(con, view_name, false);
+				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
+				centralized_queries += view_string;
+
 			} else {
 				// replicated
+				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
 				centralized_queries += view_string;
-				centralized_queries += query_string;
-				centralized_queries += query_lower;
-				decentralized_queries += query_lower;
+				centralized_queries += query;
+				decentralized_queries += query;
 			}
 		}
-	} else if (query_lower.substr(0, 7) == "select") {
+	} else if (query.substr(0, 7) == "select") {
 		// this is a SELECT statement
-		// auto option = ParseSelectQuery(query_lower);
+		// auto option = ParseSelectQuery(query);
 		// todo
-	} else if (query_lower.substr(0, 7) == "insert") {
+	} else if (query.substr(0, 7) == "insert") {
 		// this is a INSERT statement
 		// todo
-	} else if (query_lower.substr(0, 7) == "update") {
+	} else if (query.substr(0, 7) == "update") {
 		// this is an UPDATE statement
 		// todo
-	} else if (query_lower.substr(0, 7) == "delete") {
+	} else if (query.substr(0, 7) == "delete") {
 		// this is a DELETE statement
 		// todo
-	} else if (query_lower.substr(0, 5) == "drop") {
+	} else if (query.substr(0, 5) == "drop") {
 		// this is a DROP statement
 		// todo
-	} else if (query_lower.substr(0, 11) == "alter table") {
+	} else if (query.substr(0, 11) == "alter table") {
 		// this is an ALTER statement
 		// todo
 	}
 
-	r = con.Query("use " + db_name_str);
-	if (r->HasError()) {
-		throw ParserException("Error while switching back to the original database: " + r->GetError());
-	}
-	r = con.Query("detach rdda_parser_internal");
-	if (r->HasError()) {
-		throw ParserException("Error while detaching from parser db: " + r->GetError());
-	}
+	SwitchBackToDatabase(con, db_name);
+	DetachParserDatabase(con);
 
-	string path_centralized = path + "centralized_queries.sql";
-	string path_decentralized = path + "decentralized_queries.sql";
-	string path_secure = path + "secure_queries.sql";
-
-	// writing the newly parsed SQL commands
-	if (!centralized_queries.empty()) {
-		CompilerExtension::WriteFile(path_centralized, false, centralized_queries);
-		r = con.Query(centralized_queries);
-		if (r->HasError()) {
-			throw ParserException("Error while executing centralized queries: " + r->GetError());
-		}
-	}
-	if (!decentralized_queries.empty()) {
-		CompilerExtension::WriteFile(path_decentralized, false, decentralized_queries);
-	}
-	if (!secure_queries.empty()) {
-		CompilerExtension::WriteFile(path_secure, false, secure_queries);
-	}
+	ExecuteAndWriteQueries(con, centralized_queries, path + "centralized_queries.sql", false);
+	WriteQueries(con, decentralized_queries, path + "decentralized_queries.sql", true);
+	// todo make the location of secure queries dynamic
+	ExecuteAndWriteQueries(con, secure_queries, path + "secure_queries.sql", false);
 
 	ParserExtensionPlanResult result;// register a function with a string as parameter and pass it here (in place of true)
 	result.function = RDDAFunction();
