@@ -14,6 +14,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 	std::unordered_map<old_idx, new_idx> table_reassign;
 	// Initialise the bindings with the ColumnBindings of the current operator.
 	std::vector<ColumnBinding> current_bindings = plan->GetColumnBindings();
+	std::vector<unique_ptr<LogicalOperator>> rec_children;
 	for (auto& child: plan->children) {
 		RenumberWrapper child_wrap = renumber_table_indices(std::move(child), binder);
 		table_reassign.insert(child_wrap.idx_map.cbegin(), child_wrap.idx_map.cend());
@@ -21,6 +22,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		current_bindings.insert(
 			current_bindings.end(), child_wrap.column_bindings.cbegin(), child_wrap.column_bindings.cend()
         );
+		rec_children.emplace_back(std::move(child_wrap.op));
 	}
 
 	switch (plan->type) {
@@ -52,6 +54,8 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 				table_reassign[old_gs_idx] = new_gs_idx;
 			}
 		}
+		// Move back new children.
+		agg_ptr->children = std::move(rec_children);
 		return {std::move(agg_ptr), table_reassign, current_bindings};
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
@@ -61,6 +65,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		const idx_t new_idx = binder.GenerateTableIndex();
 		get_ptr->table_index = new_idx;
 		table_reassign[current_idx] = new_idx;  // Current map is probably empty at this stage.
+		// Logical GET should not have children, so nothing to move.
 		return {std::move(get_ptr), table_reassign, current_bindings};
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
@@ -70,6 +75,8 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		const idx_t new_idx = binder.GenerateTableIndex();
 		proj_ptr->table_index = new_idx;
 		table_reassign[current_idx] = new_idx;
+		// Return projection, but add children first.
+		proj_ptr->children = std::move(rec_children);
 		return {std::move(proj_ptr), table_reassign, current_bindings};
 	}
 	/*
@@ -87,6 +94,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 	}
 	}
 	// Default return value (when switch doesn't change anything) is current_map.
+	plan->children = std::move(rec_children);
 	return {std::move(plan), table_reassign, current_bindings};
 }
 
