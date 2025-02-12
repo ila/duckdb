@@ -11,21 +11,22 @@ namespace duckdb {
 RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder &binder) {
 
 	// First, traverse the children, and collect their maps into a singular map.
-	std::unordered_map<old_idx, new_idx> current_map;
+	std::unordered_map<old_idx, new_idx> table_reassign;
 	// Initialise the bindings with the ColumnBindings of the current operator.
 	std::vector<ColumnBinding> current_bindings = plan->GetColumnBindings();
 	for (auto& child: plan->children) {
 		RenumberWrapper child_wrap = renumber_table_indices(std::move(child), binder);
-		current_map.insert(child_wrap.idx_map.cbegin(), child_wrap.idx_map.cend());
+		table_reassign.insert(child_wrap.idx_map.cbegin(), child_wrap.idx_map.cend());
 		// Add the bindings of the children as well.
-		current_bindings.insert(current_bindings.end(), child_wrap.column_bindings.cbegin(), child_wrap.column_bindings.cend());
+		current_bindings.insert(
+			current_bindings.end(), child_wrap.column_bindings.cbegin(), child_wrap.column_bindings.cend()
+        );
 	}
 
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		// Breaking operator and in general a weird case; only operator with 2 or 3 indices in GetTableIndex.
 		unique_ptr<LogicalAggregate> agg_ptr = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(plan));
-		auto agg_reassign_map = std::unordered_map<idx_t, idx_t>();
         // Assuming that assignments are currently valid, reassign the values.
 		// Cannot be done in a loop without using pointers, which may be a bit too messy just for this.
 		// Group index.
@@ -33,14 +34,14 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 			const idx_t old_gr_idx = agg_ptr->group_index;
 			const idx_t new_gr_idx = binder.GenerateTableIndex();
 			agg_ptr->group_index = new_gr_idx;
-			agg_reassign_map[old_gr_idx] = new_gr_idx;
+			table_reassign[old_gr_idx] = new_gr_idx;
 		}
 		// Aggregate index.
 		{
 			const idx_t old_ag_idx = agg_ptr->group_index;
 			const idx_t new_ag_idx = binder.GenerateTableIndex();
 			agg_ptr->group_index = new_ag_idx;
-			agg_reassign_map[old_ag_idx] = new_ag_idx;
+			table_reassign[old_ag_idx] = new_ag_idx;
 		}
 		// Groupings index (if defined).
 		{
@@ -48,10 +49,10 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 			if (old_gs_idx != DConstants::INVALID_INDEX) {
 				const idx_t new_gs_idx = binder.GenerateTableIndex();
 				agg_ptr->group_index = new_gs_idx;
-				agg_reassign_map[old_gs_idx] = new_gs_idx;
+				table_reassign[old_gs_idx] = new_gs_idx;
 			}
 		}
-		return {std::move(agg_ptr), agg_reassign_map, current_bindings};
+		return {std::move(agg_ptr), table_reassign, current_bindings};
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		// Breaking operator; return only new table index.
@@ -59,19 +60,17 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		const idx_t current_idx = get_ptr->table_index;
 		const idx_t new_idx = binder.GenerateTableIndex();
 		get_ptr->table_index = new_idx;
-		auto ret_map = std::unordered_map<idx_t, idx_t>();
-		ret_map[current_idx] = new_idx;
-		return {std::move(get_ptr), ret_map, current_bindings};
+		table_reassign[current_idx] = new_idx;  // Current map is probably empty at this stage.
+		return {std::move(get_ptr), table_reassign, current_bindings};
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		// Breaking operator; return only new table index.
-		unique_ptr<LogicalProjection> get_ptr = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(plan));
-		const idx_t current_idx = get_ptr->table_index;
+		unique_ptr<LogicalProjection> proj_ptr = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(plan));
+		const idx_t current_idx = proj_ptr->table_index;
 		const idx_t new_idx = binder.GenerateTableIndex();
-		get_ptr->table_index = new_idx;
-		auto ret_map = std::unordered_map<idx_t, idx_t>();
-		ret_map[current_idx] = new_idx;
-		return {std::move(get_ptr), ret_map, current_bindings};
+		proj_ptr->table_index = new_idx;
+		table_reassign[current_idx] = new_idx;
+		return {std::move(proj_ptr), table_reassign, current_bindings};
 	}
 	/*
 	// Logical Filter has no GetTableIndex.
@@ -88,10 +87,12 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 	}
 	}
 	// Default return value (when switch doesn't change anything) is current_map.
-	return {std::move(plan), current_map, current_bindings};
+	return {std::move(plan), table_reassign, current_bindings};
 }
 
-ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx> table_mapping) {
+ColumnBindingReplacer vec_to_replacer(
+	const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx>& table_mapping
+) {
 	std::unordered_map<old_idx, std::unordered_set<col_idx>> to_replace;
 	// We only need to include those bindings whose tables are in the table mapping.
 	for (const ColumnBinding col_binding : bindings) {
@@ -104,11 +105,11 @@ ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding>& bindings
 	// Now that all bindings are checked, let's create a ColumnBindingReplacer!
 	ColumnBindingReplacer replacer;
 	for (const auto& pair : to_replace) {
-		old_idx old_t = pair.first;
-		new_idx new_t = table_mapping.at(old_t);
+		const old_idx old_t = pair.first;
+		const new_idx new_t = table_mapping.at(old_t);
 		for (const col_idx col : pair.second) {
-			ColumnBinding old_binding = ColumnBinding(old_t, col);
-			ColumnBinding new_binding = ColumnBinding(new_t, col);
+			const auto old_binding = ColumnBinding(old_t, col);
+			const auto new_binding = ColumnBinding(new_t, col);
 			replacer.replacement_bindings.emplace_back(old_binding, new_binding);
 		}
 	}

@@ -32,7 +32,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder&
 /// Create a ColumnBindingReplacer using a vector of ColumnBindings, and a mapping of old->new table indices.
 /// The bindings in the vector do not need to be unique or sorted.
 /// This function will take care of only using distinct bindings.
-ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx> table_mapping);
+ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx>& table_mapping);
 
 
 } // namespace duckdb
