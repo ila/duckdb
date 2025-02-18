@@ -204,10 +204,19 @@ static unique_ptr<FunctionData> FlushBind(ClientContext &context, TableFunctionB
 
 	// create result set using column bindings returned by the planner
 	auto result = make_uniq<FlushFunctionData>();
-	for (size_t i = 0; i < planner.names.size(); i++) {
-		return_types.emplace_back(planner.types[i]);
-		names.emplace_back(planner.names[i]);
-	}
+	return_types.push_back(LogicalType::VARCHAR);
+	return_types.push_back(LogicalType::INTEGER);
+	return_types.push_back(LogicalType::BIGINT);
+	names.push_back("c3");
+	names.push_back("win");
+	names.push_back("client_id");
+	// for (size_t i = 0; i < planner.names.size(); i++) {
+	// 	// todo change column names
+	// 	if (planner.names[i] == "client_id" || planner.names[i] == "c3" || planner.names[i] == "win") {
+	// 		return_types.emplace_back(planner.types[i]);
+	// 		names.emplace_back(planner.names[i]);
+	// 	}
+	// }
 
 	return std::move(result);
 }

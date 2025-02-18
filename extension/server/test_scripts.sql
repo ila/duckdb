@@ -33,3 +33,28 @@ CREATE CENTRALIZED MATERIALIZED VIEW hospital_contracts AS
 SELECT hospital_id, COUNT(*) as contracts
 FROM contracts
 GROUP BY hospital_id;
+
+CREATE TABLE mv_test (
+    c1 STRING,
+    c2 STRING,
+    c3 STRING,
+    sum_steps INT,
+    win int,
+    action bool,
+    client_id STRING
+);
+
+insert into mv_test values ('a', 'b', 'c', 1, 1, true, 'client1');
+insert into mv_test values ('a', 'b', 'c', 2, 1, true, 'client2');
+insert into mv_test values ('a', 'b', 'b', 3, 1, true, 'client3');
+
+select c1, c2, c3, sum_steps
+from mv_test
+where c3 in (
+    select c3 from (
+        select c3, win, count(distinct client_id) as clients
+        from mv_test
+        group by c3, win
+        )
+    where clients > 1
+    );
