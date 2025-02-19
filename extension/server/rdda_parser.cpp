@@ -161,7 +161,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 			}
 
 			// query is clean now, let's try and feed it back to the parser
-			ParseExecuteQuery(con, query);
+			ParseExecuteQuery(con, query); // todo rollback if error
 
 			auto table_name = CompilerExtension::ExtractTableName(query);
 
@@ -247,7 +247,8 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				centralized_queries += ConstructTable(con, view_name, false);
 				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
 				centralized_queries += view_string;
-
+				auto window_string = "insert into rdda_current_window values('rdda_centralized_table_" + view_name + "', 0);\n";
+				centralized_queries += window_string;
 			} else {
 				// replicated
 				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";

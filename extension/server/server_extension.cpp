@@ -36,7 +36,10 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
+#include <duckdb/function/table/table_scan.hpp>
 #include <duckdb/parser/parsed_data/create_table_function_info.hpp>
+#include <duckdb/planner/operator/logical_get.hpp>
 
 namespace duckdb {
 
@@ -154,6 +157,41 @@ static void ParseJSON(Connection &con, std::unordered_map<string, string> &confi
 	appender.EndRow();
 }
 
+static vector<string> ExtractTables(string &query) {
+	vector<string> tables;
+
+	DuckDB parser_db("rdda_parser_internal.db");
+	Connection con(parser_db);
+	con.BeginTransaction();
+	Parser parser;
+	Planner planner(*con.context);
+
+	parser.ParseQuery(query);
+	auto statement = parser.statements[0].get();
+	planner.CreatePlan(statement->Copy());
+
+	// DFS
+	std::stack<LogicalOperator*> node_stack;
+	node_stack.push(planner.plan.get());
+	while (!node_stack.empty()) {
+		auto node = node_stack.top();
+		node_stack.pop();
+		if (node->type == LogicalOperatorType::LOGICAL_GET) {
+			auto scan = dynamic_cast<LogicalGet*>(node);
+			auto table_data = dynamic_cast<TableScanBindData*>(scan->bind_data.get());
+			tables.push_back(table_data->table.name);
+
+		}
+		for (auto &child : node->children) {
+			node_stack.push(child.get());
+		}
+	}
+
+	con.Rollback();
+
+	return tables;
+}
+
 unique_ptr<GlobalTableFunctionState> FlushInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto result = make_uniq<FlushData>();
 	return std::move(result);
@@ -177,46 +215,46 @@ static unique_ptr<FunctionData> FlushBind(ClientContext &context, TableFunctionB
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
-	string view_name = StringValue::Get(input.inputs[0]);
+	Connection con(*context.db);
 
+	string view_name = StringValue::Get(input.inputs[0]);
 	input.named_parameters["view_name"] = view_name;
 
-	// obtain the bindings for view_name
-	Connection con(*context.db);
-	// auto v = con.Query("select query from rdda_tables where name = '" + view_name + "' and is_view;");
-	// if (v->HasError()) {
-	// 	throw InternalException("Error while querying view definition: " + v->GetError());
-	// }
-	// string view_query = v->GetValue(0, 0).ToString();
-	// if (view_query.empty()) {
-	// 	throw InternalException("View query is empty");
-	// }
+	// trim "rdda_centralized_view_" from the view name
+	auto decentralized_view_name = view_name.substr(22);
 
-	auto view_query = "select * from " + view_name;
-	// generate column bindings for the view definition
-	// we could try and avoid this, but we need to know the column names
-	// this is the plan of the view which will be fed to the optimizer
-	Parser parser;
-	parser.ParseQuery(view_query);
-	auto statement = parser.statements[0].get();
-	Planner planner(context);
-	planner.CreatePlan(statement->Copy());
+	// extract the tables
+	string view_query = "select query from rdda_tables where name = '" + decentralized_view_name + "';";
+	auto r = con.Query(view_query);
+	if (r->HasError()) {
+		throw ParserException("Error while querying tables metadata: " + r->GetError());
+	}
+	view_query = r->GetValue(0, 0).ToString();
+	if (view_query == "NULL") {
+		throw ParserException("Error while querying tables metadata: view query is NULL");
+	}
+	vector<string> tables = ExtractTables(view_query);
+
+	// query the metadata tables for the minimum aggregation column
+	string min_agg_query = "select column_name, max(rdda_minimum_aggregation) as max_agg from rdda_table_constraints where table_name = ";
+	for (auto &table : tables) {
+		min_agg_query += "'" + table + "' or table_name = ";
+	}
+	min_agg_query = min_agg_query.substr(0, min_agg_query.size() - 16) + " group by column_name order by max_agg desc limit 1;";
+	r = con.Query(min_agg_query);
+	if (r->HasError()) {
+		throw ParserException("Error while querying columns metadata: " + r->GetError());
+	}
+	input.named_parameters["min_agg_col_name"] = r->GetValue(0, 0);
+	input.named_parameters["min_agg_value"] = r->GetValue(1, 0);
 
 	// create result set using column bindings returned by the planner
 	auto result = make_uniq<FlushFunctionData>();
+	return_types.push_back(LogicalType::DATE);
+	names.push_back("Date");
 	return_types.push_back(LogicalType::VARCHAR);
-	return_types.push_back(LogicalType::INTEGER);
-	return_types.push_back(LogicalType::BIGINT);
-	names.push_back("c3");
-	names.push_back("win");
-	names.push_back("client_id");
-	// for (size_t i = 0; i < planner.names.size(); i++) {
-	// 	// todo change column names
-	// 	if (planner.names[i] == "client_id" || planner.names[i] == "c3" || planner.names[i] == "win") {
-	// 		return_types.emplace_back(planner.types[i]);
-	// 		names.emplace_back(planner.names[i]);
-	// 	}
-	// }
+	names.push_back("City");
+
 
 	return std::move(result);
 }

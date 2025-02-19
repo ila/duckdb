@@ -16,6 +16,9 @@ struct FlushData : GlobalTableFunctionState {
 	}
 	idx_t offset;
 	string view_name;
+	string min_agg_col_name;
+	int min_agg_value = 0;
+	LogicalType min_agg_type;
 };
 
 class ServerExtension : public Extension {
