@@ -18,6 +18,8 @@ RDDAViewConstraint ParseCreateView(string &query) {
 			throw ParserException("Invalid value for WINDOW, must be greater than zero!");
 		}
 		query = regex_replace(query, window_regex, "");
+	} else {
+		throw ParserException("WINDOW is a required field!");
 	}
 
 	std::regex ttl_regex("\\bttl\\s+(\\d+)\\b");
@@ -27,7 +29,36 @@ RDDAViewConstraint ParseCreateView(string &query) {
 		if (constraint.ttl <= 0) {
 			throw ParserException("Invalid value for TTL, must be greater than zero!");
 		}
+		if (constraint.ttl < constraint.window) {
+            throw ParserException("TTL must be greater than or equal to WINDOW!");
+        }
 		query = regex_replace(query, ttl_regex, "");
+	} else {
+		throw ParserException("TTL is a required field!");
+	}
+
+	std::regex refresh_regex("\\brefresh\\s+(\\d+)\\b");
+	std::smatch refresh_match;
+	if (regex_search(query, refresh_match, refresh_regex)) {
+		constraint.refresh = std::stoi(refresh_match[1].str());
+		if (constraint.refresh <= 0) {
+			throw ParserException("Invalid value for REFRESH, must be greater than zero!");
+		}
+		query = regex_replace(query, refresh_regex, "");
+	} else {
+		throw ParserException("REFRESH is a required field!");
+	}
+
+	std::regex min_agg_regex("\\bminimum aggregation\\s+(\\d+)\\b");
+	std::smatch min_agg_match;
+	if (regex_search(query, min_agg_match, min_agg_regex)) {
+		constraint.min_agg = std::stoi(min_agg_match[1].str());
+		if (constraint.min_agg <= 0) {
+			throw ParserException("Invalid value for MINIMUM AGGREGATION, must be greater than zero!");
+		}
+		query = regex_replace(query, min_agg_regex, "");
+	} else {
+		throw ParserException("MINIMUM AGGREGATION is a required field!");
 	}
 
 	return constraint;

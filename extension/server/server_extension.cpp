@@ -220,33 +220,21 @@ static unique_ptr<FunctionData> FlushBind(ClientContext &context, TableFunctionB
 	string view_name = StringValue::Get(input.inputs[0]);
 	input.named_parameters["view_name"] = view_name;
 
-	// trim "rdda_centralized_view_" from the view name
-	auto decentralized_view_name = view_name.substr(22);
-
-	// extract the tables
-	string view_query = "select query from rdda_tables where name = '" + decentralized_view_name + "';";
-	auto r = con.Query(view_query);
-	if (r->HasError()) {
-		throw ParserException("Error while querying tables metadata: " + r->GetError());
-	}
-	view_query = r->GetValue(0, 0).ToString();
-	if (view_query == "NULL") {
-		throw ParserException("Error while querying tables metadata: view query is NULL");
-	}
-	vector<string> tables = ExtractTables(view_query);
-
-	// query the metadata tables for the minimum aggregation column
-	string min_agg_query = "select column_name, max(rdda_minimum_aggregation) as max_agg from rdda_table_constraints where table_name = ";
-	for (auto &table : tables) {
-		min_agg_query += "'" + table + "' or table_name = ";
-	}
-	min_agg_query = min_agg_query.substr(0, min_agg_query.size() - 16) + " group by column_name order by max_agg desc limit 1;";
-	r = con.Query(min_agg_query);
+	string min_agg_query = "select rdda_window, rdda_ttl, rdda_min_agg from rdda_view_constraints where view_name = '" + view_name + "';";
+	auto r = con.Query(min_agg_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying columns metadata: " + r->GetError());
 	}
-	input.named_parameters["min_agg_col_name"] = r->GetValue(0, 0);
-	input.named_parameters["min_agg_value"] = r->GetValue(1, 0);
+	input.named_parameters["min_agg"] = r->GetValue(0, 0);
+	input.named_parameters["window"] = r->GetValue(1, 0);
+	input.named_parameters["ttl"] = r->GetValue(2, 0);
+
+	string current_window_query = "select rdda_window from rdda_current_window where view_name = '" + view_name + "';";
+	r = con.Query(min_agg_query);
+	if (r->HasError()) {
+		throw ParserException("Error while querying window metadata: " + r->GetError());
+	}
+	input.named_parameters["current_window"] = r->GetValue(0, 0);
 
 	// create result set using column bindings returned by the planner
 	auto result = make_uniq<FlushFunctionData>();

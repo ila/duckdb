@@ -2,7 +2,7 @@ CREATE DECENTRALIZED TABLE diagnoses (
     patient_id INTEGER RANDOMIZED,
     diagnosis_date DATE,
     diagnosis VARCHAR,
-    patient_city VARCHAR MINIMUM AGGREGATION 3,
+    patient_city VARCHAR,
     doctor_id INTEGER SENSITIVE
 );
 
@@ -11,15 +11,9 @@ CREATE DECENTRALIZED MATERIALIZED VIEW city_daily_covid_diagnoses AS
     FROM diagnoses
     WHERE diagnosis = 'COVID-19'
     WINDOW 24
-    TTL 48;
-
-select t1.diagnosis_date, t1.patient_city
-from rdda_centralized_view_city_daily_covid_diagnoses t1
-inner join
-(select patient_city, rdda_window, count(distinct client_id) as clients
-from rdda_centralized_view_city_daily_covid_diagnoses group by patient_city, rdda_window
-having clients >= 3) t2
-on t1.patient_city = t2.patient_city and t1.rdda_window = t2.rdda_window;
+    TTL 48
+    MINIMUM AGGREGATION 3
+    REFRESH 12;
 
 INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Berlin', now(), now(), 1, 1, 1);
 INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Berlin', now(), now(), 1, 2, 1);

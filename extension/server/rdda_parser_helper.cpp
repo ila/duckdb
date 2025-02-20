@@ -20,47 +20,7 @@ void CheckConstraints(LogicalOperator &plan, unordered_map<string, constraints> 
 	// 3. if a column has minimum aggregation, there must be another sensitive column in the same table
 	// 4. minimum aggregation columns must be used in a query with a group by
 
-	// first we do some pre-validation
-	bool sensitive_found = false;
-	bool minimum_aggregation_found = false;
-	for (auto constraint : constraints) {
-		if (constraint.second.sensitive) {
-			sensitive_found = true;
-		}
-		if (constraint.second.minimum_aggregation > 0) {
-			minimum_aggregation_found = true;
-		}
-		if (sensitive_found && minimum_aggregation_found) {
-			break;
-		}
-	}
-
-	if (!sensitive_found && minimum_aggregation_found) {
-		throw ParserException("A table with minimum aggregation must have a sensitive attribute!");
-	}
-
-	// DFS
-	std::stack<LogicalOperator*> node_stack;
-	node_stack.push(&plan);
-	while (!node_stack.empty()) {
-		auto node = node_stack.top();
-		node_stack.pop();
-		if (node->type == LogicalOperatorType::LOGICAL_PROJECTION) {
-			auto projection = (LogicalProjection *)node;
-			for (auto &expr : projection->expressions) {
-				// todo check here
-				// todo traverse the whole plan
-				// todo add checks for functions too
-			}
-		}
-		for (auto &child : node->children) {
-			node_stack.push(child.get());
-		}
-	}
-
-
-
-
+	// todo - implement this
 
 }
 

@@ -94,10 +94,10 @@ string ConstructTable(Connection &con, string view_name, bool view) {
 		centralized_table_definition += column.GetName() + " " + StringUtil::Lower(column.GetType().ToString()) + ", ";
 	}
 	if (view) {
-		centralized_table_definition += "generation timestamp, arrival timestamp, rdda_window int, client_id int, action bool);\n";
+		centralized_table_definition += "generation timestamptz, arrival timestamptz, rdda_window int, client_id int, action tinyint);\n";
 	} else {
 		// remove the last comma and space
-		centralized_table_definition = centralized_table_definition.substr(0, centralized_table_definition.size() - 2) + ");\n";
+		centralized_table_definition += "rdda_window int, client_id int);\n";
 	}
 	return centralized_table_definition;
 }
@@ -184,8 +184,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				for (auto &constraint : constraints) {
 					auto constraint_string = "insert into rdda_table_constraints values ('" + table_name + "', '" +
 					                         constraint.first + "', " + to_string(constraint.second.randomized) +
-					                         ", " + to_string(constraint.second.sensitive) + ", " +
-					                         to_string(constraint.second.minimum_aggregation) + ");\n";
+					                         ", " + to_string(constraint.second.sensitive) + ");\n";
 					centralized_queries += constraint_string;
 				}
 				con.Rollback();
@@ -236,7 +235,8 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
 				                              to_string(view_constraints.window) + ", " +
 				                              to_string(view_constraints.ttl) + ", " +
-				                              to_string(view_constraints.refresh) + ");\n";
+				                              to_string(view_constraints.refresh) + ", " +
+				                              to_string(view_constraints.min_agg) + ");\n";
 				decentralized_queries += query;
 				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
 				centralized_queries += view_string;
@@ -247,6 +247,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				centralized_queries += ConstructTable(con, view_name, false);
 				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
 				centralized_queries += view_string;
+				centralized_queries += view_constraint_string;
 				auto window_string = "insert into rdda_current_window values('rdda_centralized_table_" + view_name + "', 0);\n";
 				centralized_queries += window_string;
 			} else {

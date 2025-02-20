@@ -73,31 +73,18 @@ unordered_map<string, constraints> ParseCreateTable(std::string &query) {
 				constraints_column.randomized = true;
 			}
 
-			// checking for minimum aggregation
-			if (regex_search(split, std::regex("\\bminimum aggregation\\b"))) {
-				int minimum_aggregation_value =
-				    stoi(regex_replace(split, std::regex("^.*\\bminimum aggregation\\b\\s+(\\d+).*$"), "$1"));
-				if (minimum_aggregation_value <= 0) {
-					throw ParserException("Invalid minimum aggregation value, must be greater than zero.");
-				}
-				constraints_column.minimum_aggregation = minimum_aggregation_value;
-			}
-
 			if (regex_search(split, std::regex("\\bsensitive\\b"))) {
 				constraints_column.sensitive = true;
 			}
 
 			StringUtil::Trim(split);
 			// we only add the column if it has constraints
-			if (constraints_column.randomized || constraints_column.minimum_aggregation > 0 ||
-			    constraints_column.sensitive) {
+			if (constraints_column.randomized || constraints_column.sensitive) {
 				constraints_table.insert(make_pair(column_name, constraints_column));
 			}
 		}
 
-		// remove keywords from the query string
-		query =
-		    regex_replace(query, std::regex("\\bsensitive\\b|\\brandomized\\b|\\bminimum aggregation\\s+\\d+\\b"), "");
+		query = regex_replace(query, std::regex("\\b(sensitive|randomized)\\b"), "");
 	}
 
 	return constraints_table;

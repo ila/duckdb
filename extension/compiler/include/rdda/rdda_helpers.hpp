@@ -15,7 +15,6 @@ enum class TableScope { null = 0, centralized = 1, decentralized = 2, replicated
 // unordered_map<string, constraints> RDDAConstraints;
 struct constraints {
 	bool randomized = false;
-	int minimum_aggregation = -1;
 	bool sensitive = false;
 };
 
@@ -23,6 +22,7 @@ struct RDDAViewConstraint {
 	uint8_t window = 0;
 	uint8_t ttl = 0;
 	uint8_t refresh = 0;
+	uint8_t min_agg = 0;
 };
 
 struct RDDASelectOption {
