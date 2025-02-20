@@ -126,9 +126,7 @@ void CVRewriteRule::CVRewriteRuleFunction(OptimizerExtensionInput &input, unique
 	update_query_2 += "update " + centralized_view_name + " x \n";
 	update_query_2 += "set action = 2 \n";
 	update_query_2 += "from x, y \n";
-	update_query_2 += "where " + join_names + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + "\n\t";
-	update_query_2 += "(select rdda_min_agg from rdda_view_constraints where view_name = '" + view_name + "');\n";
-
+	update_query_2 += "where " + join_names + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n";
 	// lastly we remove stale tuples
 	string delete_query_2 = "delete from " + centralized_view_name + " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n";
 

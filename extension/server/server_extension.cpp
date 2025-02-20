@@ -220,7 +220,7 @@ static unique_ptr<FunctionData> FlushBind(ClientContext &context, TableFunctionB
 	string view_name = StringValue::Get(input.inputs[0]);
 	input.named_parameters["view_name"] = view_name;
 
-	string min_agg_query = "select rdda_window, rdda_ttl, rdda_min_agg from rdda_view_constraints where view_name = '" + view_name + "';";
+	string min_agg_query = "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
 	auto r = con.Query(min_agg_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying columns metadata: " + r->GetError());
