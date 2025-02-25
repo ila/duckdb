@@ -135,10 +135,9 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	switch (pw.plan->type) {
 	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 	{
-		// Store the table indices of the left and right child for usage in column binding replacer much later.
-		// Needed here, because the left and right child will eventually be `std::move`d.
-		vector<ColumnBinding> lc_binds = left_child->GetColumnBindings();
-		vector<ColumnBinding> rc_binds = right_child->GetColumnBindings();
+		// Store the table indices of the original join for usage in column binding replacer much later.
+		// Needed here, because the bindings of all joins will eventually change.
+		vector<ColumnBinding> og_join_bindings = pw.plan->GetColumnBindings();
 		/* Ensure that the resulting types of each join is consistent.
 		 * To help with that, create a copy of the `types` of pw.plan (which is a vec of logicaltype).
 		 * This should be equivalent to the types of `L.*, R.*`
@@ -161,7 +160,6 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		if (join_dl_dr->join_type != JoinType::INNER) {
 			throw Exception(ExceptionType::OPTIMIZER, JoinTypeToString(join_dl_dr->join_type) + " type not yet supported in OpenIVM");
 		}
-		auto og_join_bindings = join_dl_dr->GetColumnBindings();
 		/* Suppose the query tree (below this join) as an L-side (left child) and an R side (right child).
 		 * Before any modification, the query simply joins "current" L with "current" R.
 		 * However, now, this query should act as an *update* to the original view.
@@ -340,15 +338,11 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			ColumnBindingReplacer replacer;
 			vector<ReplacementBinding>& replacement_bindings = replacer.replacement_bindings;
 			const auto bindings = pw.plan->GetColumnBindings();
-			// Old bindings get rebound to the union's columns, where everything goes from left to right.
-			// To form the old bindings, use the original left child and right child of the original join.
-			vector<ColumnBinding> old_bindings = lc_binds;
-			old_bindings.insert(old_bindings.end(), rc_binds.begin(), rc_binds.end());
 			// `-1`, because multiplicity column is not part of the ColumnBindingReplacer (but handled right after).
 			idx_t mul_col_idx = bindings.size() - 1;
 			for (idx_t col_idx = 0; col_idx < mul_col_idx ; col_idx++) {
-				// Old binding should be 0.0 or 1.0 something.
-				const auto &old_binding = old_bindings[col_idx];
+				// Old binding should be 0.0 or 1.0 something. Taken from the initial state of pw.plan.
+				const auto &old_binding = og_join_bindings[col_idx];
 				const auto &new_binding = ColumnBinding(upper_u_table_index, col_idx);
 				replacement_bindings.emplace_back(old_binding, new_binding);
 			}
