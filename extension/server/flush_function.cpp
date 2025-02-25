@@ -1,33 +1,20 @@
-#include "include/centralized_view_optimizer_rule.hpp"
+#include "include/flush_function.hpp"
 
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/common/printer.hpp>
 #include <duckdb/parser/parser.hpp>
 #include <duckdb/planner/planner.hpp>
-#include <duckdb/planner/operator/logical_get.hpp>
 #include "duckdb/planner/binder.hpp"
 
 #include <compiler_extension.hpp>
 #include <logical_plan_to_string.hpp>
 #include <regex>
-#include <duckdb/function/aggregate/distributive_function_utils.hpp>
 #include <duckdb/function/aggregate/distributive_functions.hpp>
-#include <duckdb/main/client_context.hpp>
-#include <duckdb/main/connection.hpp>
 #include <duckdb/main/database.hpp>
-#include <duckdb/optimizer/optimizer.hpp>
-#include <duckdb/planner/expression/bound_aggregate_expression.hpp>
-#include <duckdb/planner/operator/logical_aggregate.hpp>
-#include <duckdb/planner/operator/logical_projection.hpp>
-#include <duckdb/planner/operator/logical_filter.hpp>
-#include <duckdb/planner/operator/logical_comparison_join.hpp>
-#include <duckdb/planner/expression/bound_comparison_expression.hpp>
-#include <fmt/format.h>
 
 namespace duckdb {
 
-void CVRewriteRule::CVRewriteRuleFunction(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
-	// the plan variable contains the plan for "SELECT * FROM flush('view_name');"
+void FlushFunction(ClientContext &context, const FunctionParameters &parameters) {
 
 	// for flush, we need to:
 	// 1. insert into the centralized table the columns meeting min agg
@@ -46,26 +33,27 @@ void CVRewriteRule::CVRewriteRuleFunction(OptimizerExtensionInput &input, unique
 	 * where x.c1 = y.c1 and x.c2 = y.c2 and x.c3 = y.c3 and x.win = y.win;
 	 */
 
-	if (plan->children.empty()) {
-		return;
-	}
+	auto &catalog = Catalog::GetSystemCatalog(context);
+	QueryErrorContext error_context = QueryErrorContext();
 
-	// check if plan contains table function 'flush'
-	auto child = plan.get();
-	while (!child->children.empty()) {
-		child = child->children[0].get();
-	}
-	if (child->GetName().substr(0, 5) != "FLUSH") {
-		return;
-	}
+	Connection con(*context.db);
+	auto view_name = StringValue::Get(parameters.values[0]);
 
-	auto child_get = dynamic_cast<LogicalGet *>(child);
+	string min_agg_query = "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
+	auto r = con.Query(min_agg_query);
+	if (r->HasError()) {
+		throw ParserException("Error while querying columns metadata: " + r->GetError());
+	}
+	auto minimum_aggregation = std::stoi(r->GetValue(0, 0).ToString());
+	auto window = std::stoi(r->GetValue(1, 0).ToString());
+	auto ttl = std::stoi(r->GetValue(2, 0).ToString());
 
-	auto view_name = child_get->named_parameters["view_name"].ToString();
-	auto minimum_aggregation = std::stoi(child_get->named_parameters["min_agg"].ToString());
-	auto window = std::stoi(child_get->named_parameters["window"].ToString());
-	auto current_window = std::stoi(child_get->named_parameters["current_window"].ToString());
-	auto ttl = std::stoi(child_get->named_parameters["ttl"].ToString());
+	string current_window_query = "select rdda_window from rdda_current_window where view_name = '" + view_name + "';";
+	r = con.Query(min_agg_query);
+	if (r->HasError()) {
+		throw ParserException("Error while querying window metadata: " + r->GetError());
+	}
+	auto current_window = std::stoi(r->GetValue(0, 0).ToString());
 	int ttl_windows = ttl / window;
 
 	auto centralized_view_name = "rdda_centralized_view_" + view_name;
@@ -73,7 +61,7 @@ void CVRewriteRule::CVRewriteRuleFunction(OptimizerExtensionInput &input, unique
 
 	string file_name = centralized_view_name + "_flush.sql";
 
-	auto centralized_view_catalog_entry = Catalog::GetEntry(input.context, CatalogType::TABLE_ENTRY, "test", "main", centralized_view_name,
+	auto centralized_view_catalog_entry = Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, "test", "main", centralized_view_name,
 										 OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 
 	if (!centralized_view_catalog_entry) {
@@ -137,9 +125,6 @@ void CVRewriteRule::CVRewriteRuleFunction(OptimizerExtensionInput &input, unique
 	CompilerExtension::WriteFile(file_name, true, insert_query);
 	CompilerExtension::WriteFile(file_name, true, delete_query_1);
 	CompilerExtension::WriteFile(file_name, true, delete_query_2);
-
-
-
 
 }
 } // namespace duckdb

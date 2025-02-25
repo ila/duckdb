@@ -6,7 +6,8 @@ add_extension_definitions()
 
 include_directories(include ../server/include)
 
-add_library(client_extension STATIC client_extension.cpp ../server/common.cpp)
+add_library(client_extension STATIC client_extension.cpp ../server/common.cpp
+        client_functions.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(client ${PARAMETERS} client_extension.cpp

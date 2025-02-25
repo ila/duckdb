@@ -17,7 +17,11 @@ namespace duckdb {
 unordered_map<string, string> ParseConfig(string &path, string &config_name) {
 
 	unordered_map<string, string> config;
+	// if file does not exist, throw exception
 	std::ifstream config_file(path + config_name);
+	if (!config_file) {
+		throw ParserException("Config file not found!");
+	}
 	string line;
 
 	while (getline(config_file, line)) {

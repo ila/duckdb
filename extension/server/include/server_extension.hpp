@@ -2,20 +2,9 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/serializer/binary_deserializer.hpp"
-#include "centralized_view_optimizer_rule.hpp"
+#include "flush_function.hpp"
 
 namespace duckdb {
-
-struct FlushFunctionData : TableFunctionData {
-	FlushFunctionData() {
-	}
-};
-
-struct FlushData : GlobalTableFunctionState {
-	FlushData() : offset(0) {
-	}
-	idx_t offset;
-};
 
 class ServerExtension : public Extension {
 public:

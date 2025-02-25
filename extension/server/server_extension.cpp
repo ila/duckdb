@@ -4,121 +4,35 @@
 
 #include "duckdb/common/serializer/buffered_file_reader.hpp"
 #include "duckdb/common/unordered_map.hpp"
-#include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/main/appender.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parallel/thread_context.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/parser/parser_extension.hpp"
-#include "duckdb/parser/statement/logical_plan_statement.hpp"
 #include "duckdb/planner/planner.hpp"
-
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <regex>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-
-// TODO cleanup unused libraries
-#include <arpa/inet.h>
 #include <common.hpp>
+#include <flush_function.hpp>
+#include <run_server.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
-#include <map>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <rdda_parser.hpp>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/mman.h>
-#include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/function/table/table_scan.hpp>
+#include <duckdb/main/extension_util.hpp>
 #include <duckdb/parser/parsed_data/create_table_function_info.hpp>
 #include <duckdb/planner/operator/logical_get.hpp>
 
 namespace duckdb {
-
-
-static void CreateViewFromCSV(string &view_name, string &csv_path, Connection &con) {
-
-	// we write the chunks to a csv and use the auto-detect function to create the view
-	string query_string = "create table " + view_name + " as select * from read_csv_auto('" + csv_path + "');";
-	con.Query(query_string);
-
-	std::remove(csv_path.c_str());
-}
-
-static void SerializeQueryPlan(string &query, string &path, string &dbname) {
-
-	DuckDB db(path + dbname);
-	Connection con(db);
-
-	db.GetFileSystem();
-
-	// overwriting the same file
-	BufferedFileWriter target(db.GetFileSystem(), path + "rdda_serialized_plan.binary");
-	// serializer.SetVersion(PLAN_SERIALIZATION_VERSION);
-	// serializer.Write(serializer.GetVersion());
-
-	con.BeginTransaction();
-	Parser p;
-	p.ParseQuery(query);
-
-	Planner planner(*con.context);
-
-	planner.CreatePlan(move(p.statements[0]));
-	auto plan = move(planner.plan);
-
-	Optimizer optimizer(*planner.binder, *con.context);
-	plan = optimizer.Optimize(move(plan));
-
-	BinarySerializer serializer(target);
-	serializer.Begin();
-	plan->Serialize(serializer);
-	serializer.End();
-
-	con.Rollback();
-
-	target.Sync();
-}
-
-static void DeserializeQueryPlan(string &path, string &dbname) {
-
-	string file_path = path + "rdda_serialized_plan.binary";
-
-	DuckDB db(path + dbname);
-	Connection con(db);
-
-	BufferedFileReader file_source(db.GetFileSystem(), file_path.c_str());
-
-	con.Query("PRAGMA enable_profiling=json");
-	con.Query("PRAGMA profile_output='profile_output.json'");
-
-	BinaryDeserializer deserializer(file_source);
-	deserializer.Set<ClientContext &>(*con.context);
-	deserializer.Begin();
-	auto plan = LogicalOperator::Deserialize(deserializer);
-	deserializer.End();
-
-	plan->Print();
-	plan->ResolveOperatorTypes();
-
-	auto statement = make_uniq<LogicalPlanStatement>(move(plan));
-	auto result = con.Query(move(statement));
-	result->Print();
-}
-
-static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t &timestamp) {
-
-	string table_name = "rdda_clients";
-	Appender appender(con, table_name);
-	appender.AppendRow(id, timestamp);
-}
 
 static void InitializeServer(Connection &con, string &config_path, unordered_map<string, string> &config) {
 
@@ -135,7 +49,7 @@ static void InitializeServer(Connection &con, string &config_path, unordered_map
 	con.Commit();
 }
 
-static void ParseJSON(Connection &con, std::unordered_map<string, string> &config, int32_t connfd, hugeint_t client) {
+void ParseJSON(Connection &con, std::unordered_map<string, string> &config, int32_t connfd, hugeint_t client) {
 
 	int32_t size_json;
 	auto s = read(connfd, &size_json, sizeof(int32_t));
@@ -192,69 +106,13 @@ static vector<string> ExtractTables(string &query) {
 	return tables;
 }
 
-unique_ptr<GlobalTableFunctionState> FlushInit(ClientContext &context, TableFunctionInitInput &input) {
-	auto result = make_uniq<FlushData>();
-	return std::move(result);
-}
-
-static unique_ptr<TableRef> Flush(ClientContext &context, TableFunctionBindInput &input) {
-	return nullptr;
-}
-
-static void FlushFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-	const auto &data = dynamic_cast<FlushData &>(*data_p.global_state);
-	if (data.offset >= 1) {
-		// finished returning values
-		return;
-	}
-	return;
-}
-
-static unique_ptr<FunctionData> FlushBind(ClientContext &context, TableFunctionBindInput &input,
-												  vector<LogicalType> &return_types, vector<string> &names) {
-	// called when the pragma is executed
-	// specifies the output format of the query (columns)
-	// display the outputs (do not remove)
-	Connection con(*context.db);
-
-	string view_name = StringValue::Get(input.inputs[0]);
-	input.named_parameters["view_name"] = view_name;
-
-	string min_agg_query = "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
-	auto r = con.Query(min_agg_query);
-	if (r->HasError()) {
-		throw ParserException("Error while querying columns metadata: " + r->GetError());
-	}
-	input.named_parameters["min_agg"] = r->GetValue(0, 0);
-	input.named_parameters["window"] = r->GetValue(1, 0);
-	input.named_parameters["ttl"] = r->GetValue(2, 0);
-
-	string current_window_query = "select rdda_window from rdda_current_window where view_name = '" + view_name + "';";
-	r = con.Query(min_agg_query);
-	if (r->HasError()) {
-		throw ParserException("Error while querying window metadata: " + r->GetError());
-	}
-	input.named_parameters["current_window"] = r->GetValue(0, 0);
-
-	// create result set using column bindings returned by the planner
-	auto result = make_uniq<FlushFunctionData>();
-	return_types.push_back(LogicalType::DATE);
-	names.push_back("Date");
-	return_types.push_back(LogicalType::VARCHAR);
-	names.push_back("City");
-
-
-	return std::move(result);
-}
-
 static void LoadInternal(DatabaseInstance &instance) {
-
 	// todo:
 	// send statistics to the server
 
 	// todo fix the hardcoded path
 	// todo maybe add schema here?
-	string config_path = "/home/ila/Code/duckdb/extension/server/";
+	string config_path = "../extension/server/";
 	string config_file = "server.config";
 
 	// reading config args
@@ -278,230 +136,13 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// add a parser extension
 	auto &db_config = DBConfig::GetConfig(instance);
 	auto rdda_parser = RDDAParserExtension();
-	auto rdda_rewrite_rule = CVRewriteRule();
 	db_config.parser_extensions.push_back(rdda_parser);
-	db_config.optimizer_extensions.push_back(rdda_rewrite_rule);
 
-	TableFunction flush_func("Flush", {LogicalType::VARCHAR}, FlushFunction,
-					   FlushBind, FlushInit);
+	auto flush = PragmaFunction::PragmaCall("flush", FlushFunction, {LogicalType::VARCHAR});
+	ExtensionUtil::RegisterFunction(instance, flush);
 
-	con.BeginTransaction();
-	auto &catalog = Catalog::GetSystemCatalog(*con.context);
-	flush_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(Flush);
-	flush_func.name = "flush";
-	flush_func.named_parameters["view_catalog_name"];
-	flush_func.named_parameters["view_schema_name"];
-	flush_func.named_parameters["view_name"];
-	CreateTableFunctionInfo flush_func_info(flush_func);
-	catalog.CreateTableFunction(*con.context, &flush_func_info);
-	con.Commit();
-
-	// initialize server sockets
-
-	/*
-	struct sockaddr_in servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-
-	int32_t max_clients = stoi(config["max_clients"]);
-	uint32_t activity, connfd, sockfd, max_sockfd, socket_descriptor, opt;
-	std::vector<uint32_t> client_socket(max_clients);
-
-	// socket descriptors
-	fd_set readfds;
-	sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
-	for (int i = 0; i < max_clients; i++) {
-	    client_socket[i] = 0;
-	}
-
-	if (sockfd == -1) {
-	    std::cout << "Socket creation not successful\n";
-	}
-
-	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
-	    perror("setsockopt");
-	    exit(EXIT_FAILURE);
-	}
-
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = INADDR_ANY;
-	servaddr.sin_port = htons(stoi(config["server_port"]));
-
-	if (::bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) {
-	    std::cout << "Bind not successful\n";
-	}
-	if ((listen(sockfd, 10)) != 0) {
-	    std::cout << "Listen not successful\n";
-	};
-
-	std::cout << "Ready to accept connections\n";
-	socklen_t l = sizeof(servaddr);
-
-	while (true) {
-	    // clear the socket set during startup
-	    FD_ZERO(&readfds);
-
-	    // add master socket to set
-	    FD_SET(sockfd, &readfds);
-	    max_sockfd = sockfd;
-
-	    // add child sockets to set
-	    for (int i = 0; i < max_clients; i++) {
-	        // create socket descriptor and add it to the read list
-	        socket_descriptor = client_socket[i];
-	        if (socket_descriptor > 0) {
-	            FD_SET(socket_descriptor, &readfds);
-	        }
-
-	        if (socket_descriptor > max_sockfd) {
-	            max_sockfd = socket_descriptor;
-	        }
-	    }
-
-	    // wait indefinitely for an activity on one of the sockets
-	    activity = select(max_sockfd + 1, &readfds, NULL, NULL, NULL);
-
-	    if ((activity < 0) && (errno != EINTR)) {
-	        printf("Select error");
-	    }
-
-	    // incoming connection
-	    if (FD_ISSET(sockfd, &readfds)) {
-	        std::cout << "Hello!\n";
-	        connfd = accept(sockfd, (struct sockaddr *)&servaddr, &l);
-	        if (connfd < 0) {
-	            std::cout << "Connection error!\n";
-	        };
-
-	        // inform user of socket number - used in send and receive commands
-	        printf("New connection, connfd is %d, IP is %s, port %d\n", connfd, inet_ntoa(servaddr.sin_addr),
-	               ntohs(servaddr.sin_port));
-	    }
-
-	    // add new socket to array of sockets
-	    for (int i = 0; i < max_clients; i++) {
-	        // if position is empty
-	        if (client_socket[i] == 0) {
-	            client_socket[i] = connfd;
-	            printf("Adding to list of sockets as %d, connfd %d\n", i, connfd);
-	            break;
-	        }
-	    }
-
-	    // I/O operation on some other socket
-	    for (int i = 0; i < max_clients; i++) {
-
-	        connfd = client_socket[i];
-	        std::cout << "Connfd " << connfd << "\n";
-
-	        if (FD_ISSET(connfd, &readfds)) {
-	            std::cout << "File descriptor set " << connfd << "\n";
-	            // read the connection code sent by the client
-	            client_messages message;
-	            read(connfd, &message, sizeof(int32_t));
-	            std::cout << "Read message: " << message << "\n";
-
-	            // check if it exists or the connection is being closed
-	            switch (message) {
-
-	            case (close_connection): {
-	                // somebody disconnected, get details and print
-	                getpeername(connfd, (struct sockaddr *)&servaddr, (socklen_t *)&l);
-	                printf("Host disconnected, ip %s, port %d \n", inet_ntoa(servaddr.sin_addr),
-	                       ntohs(servaddr.sin_port));
-
-	                // close the socket and mark as 0 in list for reuse
-	                close(connfd);
-	                client_socket[i] = 0;
-	            } break;
-
-	            case (new_client): {
-	                // receive the information and store it in the master table
-	                // we assume we know the lengths of fields here (uint64_t and timestamp with 23 chars)
-	                uint64_t id;
-	                string timestamp;
-	                read(connfd, &id, sizeof(uint64_t));
-	                read(connfd, &timestamp, 23);
-
-	                InsertClient(con, config, id, timestamp);
-	            } break;
-
-	            case (new_result): {
-
-	                // receiving client id, query id and timestamp
-	                Value id;
-	                read(connfd, &id, sizeof(uint64_t));
-
-	                size_t query_id_size;
-	                read(connfd, &query_id_size, sizeof(size_t));
-	                std::vector<char> query_id(query_id_size);
-	                read(connfd, query_id.data(), query_id_size);
-
-	                int64_t timestamp;
-	                read(connfd, &timestamp, sizeof(int64_t));
-
-	                idx_t n_chunks;
-	                read(connfd, &n_chunks, sizeof(idx_t));
-	                std::cout << "Reading chunks: " << n_chunks << "\n" << std::flush;
-
-	                string query_id_string = string(query_id.begin(), query_id.end());
-	                string centralized_view_name;
-	                if (config["schema_name"] != "main") {
-	                    centralized_view_name = centralized_view_name + config["schema_name"] + ".";
-	                }
-	                centralized_view_name = centralized_view_name + "rdda_centralized_view_" + query_id_string;
-	                auto view_info = con.TableInfo(centralized_view_name);
-	                Appender appender(con, centralized_view_name); // todo what happens here if the view doesn't exist?
-	                auto csv_path = config_path + query_id_string + ".csv";
-
-	                for (idx_t j = 0; j < n_chunks; j++) {
-
-	                    ssize_t chunk_len;
-	                    read(connfd, &chunk_len, sizeof(ssize_t));
-	                    std::cout << "Reading chunk len " << chunk_len << "\n";
-
-	                    std::vector<char> buffer(chunk_len);
-	                    read(connfd, buffer.data(), chunk_len);
-	                    std::cout << "Reading chunk\n";
-
-	                    BufferedDeserializer deserializer((data_ptr_t)buffer.data(), chunk_len);
-	                    DataChunk chunk;
-	                    std::cout << "Deserializing chunk\n";
-	                    chunk.Deserialize(deserializer);
-
-	                    if (view_info) {
-	                        // the view exists, just append
-
-	                        for (idx_t row_idx = 0; row_idx < chunk.size(); row_idx++) {
-	                            // access values in each column for the current row
-	                            appender.BeginRow();
-	                            for (idx_t col_idx = 0; col_idx < chunk.ColumnCount(); col_idx++) {
-	                                Value value = chunk.GetValue(col_idx, row_idx);
-	                                appender.Append(value);
-	                            }
-	                            // also append client id and timestamp
-	                            appender.Append(id);
-	                            appender.Append(timestamp);
-	                            appender.EndRow();
-	                        }
-
-	                    } else {
-	                        // throw an error todo
-	                    }
-	                }
-	            } break;
-
-	            case (new_statistics): {
-	                // receive json statistics
-	                // todo
-
-	            } break;
-	            }
-	        }
-	    }
-	} */
-
-	// check if the window has elapsed
+	auto run_server = PragmaFunction::PragmaCall("run_server", RunServer, {});
+	ExtensionUtil::RegisterFunction(instance, run_server);
 }
 
 void ServerExtension::Load(DuckDB &db) {
