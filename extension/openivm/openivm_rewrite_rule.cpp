@@ -20,89 +20,49 @@ using duckdb::ColumnBinding;
 using duckdb::Expression;
 using duckdb::BoundColumnRefExpression;
 using duckdb::LogicalType;
+using duckdb::LogicalComparisonJoin;
 using duckdb::unique_ptr;
 using duckdb::make_uniq;
 using duckdb::JoinCondition;
 
-/// Adjust the column order for a join between Delta-L and R.
+/// Add the multiplicity column to a projection map if a projection map is defined.
+void ensure_mul_binding(
+	vector<idx_t>& projection_map,
+	const vector<ColumnBinding> &child_bindings,
+	const ColumnBinding& mul_binding) {
+    if (!projection_map.empty()) {
+        for (idx_t i = 0; i < child_bindings.size(); ++i) {
+            if (child_bindings[i] == mul_binding) {
+                projection_map.emplace_back(i);
+                break;
+            }
+        }
+    } /* else: do nothing! */
+}
+
+/// Adjust the column order, such that the multiplicity column is at the end.
 /// This vector of Expressions is meant to be used in conjunction with a LogicalProjection.
-vector<unique_ptr<Expression>> project_dl_r_join(
-    const vector<ColumnBinding>& dl_bindings, const vector<LogicalType>& dl_types,
-    const vector<ColumnBinding>& r_bindings, const vector<LogicalType>& r_types
+vector<unique_ptr<Expression>> project_multiplicity_to_end(
+    const vector<ColumnBinding>& bindings, const vector<LogicalType>& types, const ColumnBinding& mul_binding
 ) {
-	// Contains the column IDs of within the LEFT side of the projection.
-	// From there, we want everything but the last element to stay in order.
-	const size_t dl_col_count = dl_bindings.size();
-	const size_t r_col_count = r_bindings.size();
-	assert(dl_col_count == dl_types.size());
-	assert(r_col_count == r_types.size());
-
-	const size_t projection_col_count = dl_col_count + r_col_count;
+	assert(bindings.size() == types.size());
+	const size_t col_count = bindings.size();
 	// Note: slots are already made here, only need to be "populated".
-	auto projection_col_refs = vector<unique_ptr<Expression>>(projection_col_count);
-	// TODO: Do we need to do anything with the `left/right_projection_map`?
-	/*
-		 * What is done here:
-		 * For all except of the last element of L's column bindings,
-		 *  the respective ColumnBinding is added to the projection.
-		 * The last element of L's bindings (the multiplicity column) is specially kept to insert last.
-	 */
-	// Mind the `-1`: the last element does not get added yet but only at the very end.
-	const idx_t last_dl_col_idx = dl_col_count - 1;
-	for (idx_t i = 0; i < last_dl_col_idx; ++i ) {
-		projection_col_refs[i] = make_uniq<BoundColumnRefExpression>(dl_types[i], dl_bindings[i]);
-	}
-	// Insert the multiplicity column at the end.
-	projection_col_refs[projection_col_count - 1] = make_uniq<BoundColumnRefExpression>(
-	    dl_types[last_dl_col_idx], dl_bindings[last_dl_col_idx]
-	);
-	// Now insert everything of R. Here, everything is inserted, so no special increment cutoff.
-	for (idx_t i = 0; i < r_col_count; ++i) {
-		// First index here should be where dL left off.
-		// Omitting the mul column, that is therefore `last_dl_col_idx` (which is unoccupied).
-		// Note that `i = 0`, and thus `last_dl_col_idx + i` = `last_dl_col_idx` (which is intended).
-		projection_col_refs[last_dl_col_idx + i] = make_uniq<BoundColumnRefExpression>(r_types[i], r_bindings[i]);
+	auto projection_col_refs = vector<unique_ptr<Expression>>(col_count);
+
+	bool mul_is_seen = false;
+	for (idx_t i = 0; i < col_count; ++i) {
+		auto binding = bindings[i];
+		unique_ptr<BoundColumnRefExpression> bound_col_ref = make_uniq<BoundColumnRefExpression>(types[i], binding);
+		if (binding == mul_binding) {
+			mul_is_seen = true;
+			projection_col_refs[col_count - 1] = std::move(bound_col_ref);
+		} else {
+			const size_t insert_at = mul_is_seen ? i - 1 : i;
+			projection_col_refs[insert_at] = std::move(bound_col_ref);
+		}
 	}
 	return projection_col_refs;
-}
-
-/// Project out the multiplicity column of the `dl` table.
-vector<unique_ptr<Expression>> project_dl_dr_join(
-    const vector<ColumnBinding>& dl_bindings, const vector<LogicalType>& dl_types,
-    const vector<ColumnBinding>& dr_bindings, const vector<LogicalType>& dr_types
-) {
-	const size_t dl_col_count = dl_bindings.size();
-	const size_t dr_col_count = dr_bindings.size();
-	assert(dl_col_count == dl_types.size());
-	assert(dr_col_count == dr_types.size());
-
-	// Create the vec and reserve the amount of elements (but don't create them yet).
-	auto projection_col_refs = vector<unique_ptr<Expression>>();
-	projection_col_refs.reserve(dl_col_count + dr_col_count - 1); // -1, since left mul removed.
-	// Insert the columns of dL. Mind the `-1`: the last element is omitted.
-	for (idx_t i = 0; i < dl_col_count - 1; ++i ) {
-		projection_col_refs.emplace_back(make_uniq<BoundColumnRefExpression>(dl_types[i], dl_bindings[i]));
-	}
-	// Insert all columns of dR.
-	for (idx_t i = 0; i < dr_col_count; ++i) {
-		projection_col_refs.emplace_back(make_uniq<BoundColumnRefExpression>(dr_types[i], dr_bindings[i]));
-	}
-	return projection_col_refs;
-}
-
-/// Create an extra join condition for dL JOIN dR on the multiplicity column.
-JoinCondition create_mul_join_condition(
-    const vector<ColumnBinding>& dl_bindings, const vector<LogicalType>& dl_types,
-    const vector<ColumnBinding>& dr_bindings, const vector<LogicalType>& dr_types
-) {
-	auto dl_tail = dl_bindings.size() - 1;
-	auto dr_tail = dr_bindings.size() - 1;
-	// Create the join condition.
-	JoinCondition eq_condition;
-	eq_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", dl_types[dl_tail], dl_bindings[dl_tail], 0);
-	eq_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", dr_types[dr_tail], dr_bindings[dr_tail], 0);
-	eq_condition.comparison = duckdb::ExpressionType::COMPARE_EQUAL;
-	return eq_condition;
 }
 } // namespace
 
@@ -238,8 +198,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		const ColumnBinding og_dr_mul = child_mul_bindings[1];
 
 		// Renumber the table indices of each DELTA left/right child, and make projections where necessary.
-		// (1) dLdR: renumber both, and ensure only dR's multiplicity column is in the projection.
-		unique_ptr<LogicalProjection> projection_dl_dr;
+		// dLdR: renumber both, and ensure only dR's multiplicity column is in the projection.
+		unique_ptr<LogicalOperator> upper_u_rhs;  // Most likely join, but can be projection.
 		{
 			auto res_l = renumber_table_indices(std::move(join_dl_dr->children[0]), pw.input.optimizer.binder);
 			auto res_r = renumber_table_indices(std::move(join_dl_dr->children[1]), pw.input.optimizer.binder);
@@ -254,79 +214,101 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			dr_replacer.VisitOperator(*join_dl_dr);
 
 			// Project out dL-mul.
-			// First, add an additional join condition (dL.mul = dR.mul).
-			{
-				ColumnBinding dl_mul = ColumnBinding(res_l.idx_map[og_dl_mul.table_index], og_dl_mul.column_index);
-				ColumnBinding dr_mul = ColumnBinding(res_r.idx_map[og_dr_mul.table_index], og_dr_mul.column_index);
-				// Join condition
-				{
-					JoinCondition eq_condition;
-					eq_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul, 0);
-					eq_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul, 0);
-					eq_condition.comparison = duckdb::ExpressionType::COMPARE_EQUAL;
-					join_dl_dr->conditions.emplace_back(std::move(eq_condition));
-				}
-
-				join_dl_dr->ResolveOperatorTypes();
-				vector<ColumnBinding> join_bindings = join_dl_dr->GetColumnBindings();
-				vector<LogicalType> join_types = join_dl_dr->types;
-				// Get the vectors and their length.
-				vector<ColumnBinding> dl_bindings = join_dl_dr->children[0]->GetColumnBindings();
-				vector<LogicalType> dl_types = join_dl_dr->children[0]->types;
-				vector<ColumnBinding> dr_bindings = join_dl_dr->children[1]->GetColumnBindings();
-				vector<LogicalType> dr_types = join_dl_dr->children[1]->types;
-				// Get rid of dL's column using a projection.
-				vector<unique_ptr<Expression>> dl_dr_projection_bindings =
-				    project_dl_dr_join(dl_bindings, dl_types, dr_bindings, dr_types);
-				projection_dl_dr = make_uniq<LogicalProjection>(
-				    pw.input.optimizer.binder.GenerateTableIndex(),
-				    std::move(dl_dr_projection_bindings));
-			}
+			// First, add another join condition (dL.mul = dR.mul).
+            const auto dl_mul = ColumnBinding(res_l.idx_map[og_dl_mul.table_index], og_dl_mul.column_index);
+            const auto dr_mul = ColumnBinding(res_r.idx_map[og_dr_mul.table_index], og_dr_mul.column_index);
+            {  // Handle the join condition.
+                JoinCondition eq_condition;
+                eq_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul, 0);
+                eq_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul, 0);
+                eq_condition.comparison = ExpressionType::COMPARE_EQUAL;
+                join_dl_dr->conditions.emplace_back(std::move(eq_condition));
+            }
+            // Then, handle the projections.
+            join_dl_dr->ResolveOperatorTypes();
+            /* Ensure that the multiplicity column of dL is omitted, and the one of dR is present.
+             * Because of the projection maps, four different cases may exist:
+             * (1) dL and dR both have projections: add the multiplicity column of dR.
+             * (2) only dL has a projection: do nothing (dR should be passed through)
+             * (3) only dR has a projection: ensure that dL gets moved.
+             * (4) neither has a projection (can this happen)?
+             */
+            if (!join_dl_dr->left_projection_map.empty()) { // Left projections...
+                // If right side is empty, then all good. Otherwise, add mul column to projection.
+                if (!join_dl_dr->right_projection_map.empty()) {
+                    // (case 1) Add dR's binding as a projection.
+                    const auto dr_bindings = join_dl_dr->children[1]->GetColumnBindings();
+                    ensure_mul_binding(join_dl_dr->right_projection_map, dr_bindings, dr_mul);
+                	join_dl_dr->ResolveOperatorTypes();
+                } // else: (case 2) Nothing to be done
+            	// Assign join_dl_dr to upper_union_rhs.
+            	upper_u_rhs = std::move(join_dl_dr);
+            } else { // Left projection map is empty (so multiplicity column is present).
+                if (!join_dl_dr->right_projection_map.empty()) {
+                    // (case 3) Right projection map is NOT empty, therefore we just move the left projection to the end.
+                    vector<ColumnBinding> join_bindings = join_dl_dr->GetColumnBindings();
+                    vector<LogicalType> join_types = join_dl_dr->types;
+                	vector<unique_ptr<Expression>> dl_dr_projection_bindings = project_multiplicity_to_end(join_bindings, join_types, dl_mul);
+					upper_u_rhs = make_uniq<LogicalProjection>(
+				        pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_dr_projection_bindings)
+				    );
+                	// Make join_dl_dr a child of the projection.
+                	upper_u_rhs->children.emplace_back(std::move(join_dl_dr));
+                } else {
+                    // (case 4) no projections (probably super rare), so 2 multiplicity columns. Project out the left one.
+                    throw NotImplementedException("This logic is not implemented as it is unlikely to occur");
+                }
+            } /* DO NOT USE join_dl_dr PAST THIS POINT! */
 		}
-		// (2) dLR: Renumber dL, and project dL's multiplicity column to the end.
 		unique_ptr<LogicalProjection> projection_dl_r;
-		{
+		{ // (2) dLR: Renumber dL, and project dL's multiplicity column to the end.
 			auto res = renumber_table_indices(std::move(join_dl_r->children[0]), pw.input.optimizer.binder);
 			join_dl_r->children[0] = std::move(res.op);
 			// Run a ColumnBindingReplacer after moving the operator, such that the join itself also gets replacements.
 			ColumnBindingReplacer replacer = vec_to_replacer(res.column_bindings, res.idx_map);
 			replacer.VisitOperator(*join_dl_r);
+            const auto dl_mul = ColumnBinding(res.idx_map[og_dl_mul.table_index], og_dl_mul.column_index);
+            // Resolve the operator types, so that it clear what types the columns in the join have.
+            join_dl_r->ResolveOperatorTypes();
 			{
-				// Resolve the operator types, so that it clear what types the columns in the join have.
-				join_dl_r->ResolveOperatorTypes();
-				// FIXME: Remove this (it's for debugging purposes).
-				auto join_bindings = join_dl_r->GetColumnBindings();
+				vector<ColumnBinding> join_bindings = join_dl_r->GetColumnBindings();
+				vector<LogicalType> join_types = join_dl_r->types;
 				/*
 				 * We now have dL R, and we need to move the multiplicity column to the end of the column bindings.
-				 * We know the multiplicity binding of dL, since it is the first column in child_mul_bindings.
-				 * All that we need to do is to "capture" that binding and hold it for the end.
+				 * We know the multiplicity binding of dL, as it is passed through by the recursion.
+				 * All that we need to do is to convert the binding using the idx_map (to use the correct table index),
+				 * And then move the column binding to the end of the vector.
 				 */
-				vector<ColumnBinding> dl_bindings = join_dl_r->children[0]->GetColumnBindings();
-				vector<LogicalType> dl_types = join_dl_r->children[0]->types;
-				vector<ColumnBinding> r_bindings = join_dl_r->children[1]->GetColumnBindings();
-				vector<LogicalType> r_types = join_dl_r->children[1]->types;
-				vector<unique_ptr<Expression>> dl_r_projection_bindings =
-				    project_dl_r_join(dl_bindings, dl_types, r_bindings, r_types);
-				// Now, the vector with bindings should be complete. Let's put it in a Projection node!
-				projection_dl_r = make_uniq<LogicalProjection>(
-				    pw.input.optimizer.binder.GenerateTableIndex(),
-				    std::move(dl_r_projection_bindings)
-				);
+				const vector<ColumnBinding> dl_child_bindings = join_dl_r->children[0]->GetColumnBindings();
+				ensure_mul_binding(join_dl_r->left_projection_map, dl_child_bindings, dl_mul);
 			}
+			// Important! Now that the bindings are changed, the operator types need to be resolved once again.
+			// Similarly, the join types are different.
+            join_dl_r->ResolveOperatorTypes();
+            vector<ColumnBinding> join_bindings = join_dl_r->GetColumnBindings();
+            vector<LogicalType> join_types = join_dl_r->types;
+            vector<unique_ptr<Expression>> dl_r_projection_bindings = project_multiplicity_to_end(join_bindings, join_types, dl_mul);
+            // Now, the vector with bindings should be complete. Let's put it in a Projection node!
+            projection_dl_r = make_uniq<LogicalProjection>(
+                pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_r_projection_bindings)
+            );
+            projection_dl_r->children.emplace_back(std::move(join_dl_r));
+			/* DO NOT USE join_dl_r PAST THIS POINT! */
 		}
-		// (3) LdR: renumber dR, but don't do anything with projections.
-		{
+		{ // (3) LdR: renumber dR, but don't do anything with projections.
 			auto res = renumber_table_indices(std::move(join_l_dr->children[1]), pw.input.optimizer.binder);
 			join_l_dr->children[1] = std::move(res.op);
 			// Run a ColumnBindingReplacer after moving the operator, such that the join itself also gets replacements.
 			ColumnBindingReplacer replacer = vec_to_replacer(res.column_bindings, res.idx_map);
 			replacer.VisitOperator(*join_l_dr);
 
-			// LdR projection -> keep as-is.
-			/* Don't do anything here */
+			// LdR projection -> keep as-is. Only check whether a right-hand projection is present.
+			// If so, it likely omits the multiplicity column meaning that it should be added.
+            const auto dr_mul = ColumnBinding(res.idx_map[og_dr_mul.table_index], og_dr_mul.column_index);
+            const vector<ColumnBinding> dr_child_bindings = join_l_dr->children[1]->GetColumnBindings();
+			ensure_mul_binding(join_l_dr->right_projection_map, dr_child_bindings, dr_mul);
+			join_l_dr->ResolveOperatorTypes();
 		}
-		projection_dl_r->children.emplace_back(std::move(join_dl_r));
-		projection_dl_dr->children.emplace_back(std::move(join_dl_dr));
 
 		// Now that all joins have the same columns, create a Union!
 		auto copy_union = make_uniq<LogicalSetOperation>(
@@ -343,7 +325,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		    upper_u_table_index,
 		    types.size(),
 		    std::move(copy_union),
-		    std::move(projection_dl_dr),
+		    std::move(upper_u_rhs),
 		    LogicalOperatorType::LOGICAL_UNION,
 		    true
 		);
