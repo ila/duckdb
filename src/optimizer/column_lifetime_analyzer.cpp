@@ -169,8 +169,9 @@ void ColumnLifetimeAnalyzer::VisitOperator(LogicalOperator &op) {
 	StandardVisitOperator(op);
 }
 
+// FIXME: 2025-02 Temporary for work on OpenIVM.
 void ColumnLifetimeAnalyzer::Verify(LogicalOperator &op) {
-#ifdef DEBUG
+#ifdef DEBUG2
 	if (everything_referenced) {
 		return;
 	}
