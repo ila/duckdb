@@ -166,8 +166,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	for (auto &&child : pw.plan->children) {
 		auto rec_pw = PlanWrapper(pw.input, child, pw.view, pw.root);
 		ModifiedPlan child_plan = ModifyPlan(rec_pw);
-		// No need to do anything with child_plan.op, as this should already be modified in pw.plan->children).
-		// FIXME: Verify comment above.
+		child = std::move(child_plan.op);
 		child_mul_bindings.emplace_back(child_plan.mul_binding);
 	}
 	QueryErrorContext error_context = QueryErrorContext();
@@ -259,19 +258,23 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			{
 				ColumnBinding dl_mul = ColumnBinding(res_l.idx_map[og_dl_mul.table_index], og_dl_mul.column_index);
 				ColumnBinding dr_mul = ColumnBinding(res_r.idx_map[og_dr_mul.table_index], og_dr_mul.column_index);
+				// Join condition
+				{
+					JoinCondition eq_condition;
+					eq_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul, 0);
+					eq_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul, 0);
+					eq_condition.comparison = duckdb::ExpressionType::COMPARE_EQUAL;
+					join_dl_dr->conditions.emplace_back(std::move(eq_condition));
+				}
 
 				join_dl_dr->ResolveOperatorTypes();
-				auto join_bindings = join_dl_dr->GetColumnBindings();
-				auto join_types = join_dl_dr->types;
-				// Note: in its own block, to avoid potential conflicts with join_dl_r ones.
+				vector<ColumnBinding> join_bindings = join_dl_dr->GetColumnBindings();
+				vector<LogicalType> join_types = join_dl_dr->types;
 				// Get the vectors and their length.
 				vector<ColumnBinding> dl_bindings = join_dl_dr->children[0]->GetColumnBindings();
 				vector<LogicalType> dl_types = join_dl_dr->children[0]->types;
 				vector<ColumnBinding> dr_bindings = join_dl_dr->children[1]->GetColumnBindings();
 				vector<LogicalType> dr_types = join_dl_dr->children[1]->types;
-				// Create the join condition.
-				join_dl_dr->conditions.emplace_back(
-				    create_mul_join_condition(dl_bindings, dl_types, dr_bindings, dr_types));
 				// Get rid of dL's column using a projection.
 				vector<unique_ptr<Expression>> dl_dr_projection_bindings =
 				    project_dl_dr_join(dl_bindings, dl_types, dr_bindings, dr_types);
