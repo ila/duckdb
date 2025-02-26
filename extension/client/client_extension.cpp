@@ -24,13 +24,22 @@
 
 namespace duckdb {
 
+static void CloseConnection(int32_t sock) {
+	// close the connection
+	auto message = close_connection;
+	send(sock, &message, sizeof(int32_t), 0);
+	close(sock);
+	shutdown(sock, SHUT_RDWR);
+}
+
 static void Refresh(ClientContext &context, const FunctionParameters &parameters) {
 	string config_path = "../extension/client/";
 	auto view_name = StringValue::Get(parameters.values[0]);
 	auto con = Connection(*context.db);
 	auto timestamp = RefreshMaterializedView(view_name, con);
 	// we need to send this timestamp to the server (event time)
-	SendResults(view_name, timestamp, con, config_path);
+	auto sock = SendResults(view_name, timestamp, con, config_path);
+	CloseConnection(sock);
 }
 
 
@@ -49,7 +58,7 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 	}
 }
 
-static void GenerateClientInformation(Connection &con, unordered_map<string, string> &config) {
+static int32_t GenerateClientInformation(Connection &con, unordered_map<string, string> &config) {
 
 	// id, creation, last_update
 	const auto id = UUID::GenerateRandomUUID();
@@ -74,16 +83,20 @@ static void GenerateClientInformation(Connection &con, unordered_map<string, str
 	read(sock, &size, sizeof(size_t));
 	char *buffer = new char[size];
 	read(sock, buffer, size);
-	auto r = con.Query(buffer);
+	string queries(buffer, size);
+	auto r = con.Query(queries);
+	// we cannot wrap this into a commit/rollback block because the materialized view depends on the previous table
 	if (r->HasError()) {
-		throw ParserException("Error while executing queries: " + r->GetError());
+		Printer::Print("Error while executing queries: " + r->GetError());
+		Printer::Print("Attempting to continue execution...");
 	}
 	// now update the last_update
-	auto update = "update client_information set last_update = '" + timestamp_string + "' where client_id = " + std::to_string(id.lower) + ";";
+	auto update = "update client_information set last_update = '" + timestamp_string + "' where id = " + std::to_string(id.lower) + ";";
 	r = con.Query(update);
 	if (r->HasError()) {
 		throw ParserException("Error while updating client information: " + r->GetError());
 	}
+	return sock;
 }
 
 void InitializeClient(ClientContext &context, const FunctionParameters &parameters) {
@@ -95,7 +108,9 @@ void InitializeClient(ClientContext &context, const FunctionParameters &paramete
 	Connection con(db);
 
 	CreateSystemTables(config_path, con);
-	GenerateClientInformation(con, config);
+	auto sock = GenerateClientInformation(con, config);
+	CloseConnection(sock);
+
 }
 
 static void InsertChunks(const std::unique_ptr<MaterializedQueryResult> &result,
