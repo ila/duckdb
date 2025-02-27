@@ -24,19 +24,12 @@
 
 namespace duckdb {
 
-static void CloseConnection(int32_t sock) {
-	// close the connection
-	auto message = close_connection;
-	send(sock, &message, sizeof(int32_t), 0);
-	close(sock);
-	shutdown(sock, SHUT_RDWR);
-}
-
 static void Refresh(ClientContext &context, const FunctionParameters &parameters) {
 	string config_path = "../extension/client/";
 	auto view_name = StringValue::Get(parameters.values[0]);
 	auto con = Connection(*context.db);
-	auto timestamp = RefreshMaterializedView(view_name, con);
+	//auto timestamp = RefreshMaterializedView(view_name, con); todo test this
+	auto timestamp = Timestamp::GetCurrentTimestamp();
 	// we need to send this timestamp to the server (event time)
 	auto sock = SendResults(view_name, timestamp, con, config_path);
 	CloseConnection(sock);
@@ -45,6 +38,14 @@ static void Refresh(ClientContext &context, const FunctionParameters &parameters
 
 static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t timestamp) {
 
+	// checking that there is only one client
+	// a double insertion *should not* happen, but just in case
+	string clients = "select * from client_information;";
+	auto r = con.Query(clients);
+	if (r->RowCount() > 0) {
+		throw ParserException("Client already exists!");
+	}
+
 	string table_name;
 	if (config["schema_name"] != "main") {
 		table_name = config["schema_name"] + ".client_information";
@@ -52,7 +53,7 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 		table_name = "client_information";
 	}
 	string query = "insert or ignore into " + table_name + " values (" + std::to_string(id) + ", '" + timestamp.GetString() + "', NULL);";
-	auto r = con.Query(query);
+	r = con.Query(query);
 	if (r->HasError()) {
 		throw ParserException("Error while inserting client information: " + r->GetError());
 	}
@@ -61,11 +62,12 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 static int32_t GenerateClientInformation(Connection &con, unordered_map<string, string> &config) {
 
 	// id, creation, last_update
-	const auto id = UUID::GenerateRandomUUID();
+	RandomEngine engine;
+	const auto id = engine.NextRandomInteger64();
 	const auto timestamp = Timestamp::GetCurrentTimestamp();
 	const auto timestamp_string = Timestamp::ToString(timestamp);
 
-	InsertClient(con, config, id.lower, timestamp_string);
+	InsertClient(con, config, id, timestamp_string);
 
 	// todo exception handling
 	int32_t sock = ConnectClient(config);
@@ -74,7 +76,7 @@ static int32_t GenerateClientInformation(Connection &con, unordered_map<string, 
 	auto timestamp_size = timestamp_string.size();
 
 	send(sock, &message, sizeof(int32_t), 0);
-	send(sock, &id.lower, sizeof(uint64_t), 0);
+	send(sock, &id, sizeof(uint64_t), 0);
 	send(sock, &timestamp_size, sizeof(size_t), 0);
 	send(sock, timestamp_string.c_str(), timestamp_string.size(), 0);
 
@@ -91,7 +93,7 @@ static int32_t GenerateClientInformation(Connection &con, unordered_map<string, 
 		Printer::Print("Attempting to continue execution...");
 	}
 	// now update the last_update
-	auto update = "update client_information set last_update = '" + timestamp_string + "' where id = " + std::to_string(id.lower) + ";";
+	auto update = "update client_information set last_update = '" + timestamp_string + "' where id = " + std::to_string(id) + ";";
 	r = con.Query(update);
 	if (r->HasError()) {
 		throw ParserException("Error while updating client information: " + r->GetError());

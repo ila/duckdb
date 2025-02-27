@@ -8,10 +8,11 @@
 #include <duckdb.hpp>
 
 namespace duckdb {
-  int32_t ConnectClient(unordered_map<string, string> &config);
-  void SendChunks(std::unique_ptr<MaterializedQueryResult> &result, int32_t sock);
-  timestamp_t RefreshMaterializedView(string &view_name, Connection &con);
-  int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, string &path);
-}
+void CloseConnection(int32_t sock);
+int32_t ConnectClient(unordered_map<string, string> &config);
+void SendChunks(std::unique_ptr<MaterializedQueryResult> &result, int32_t sock);
+timestamp_t RefreshMaterializedView(string &view_name, Connection &con);
+int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, string &path);
+} // namespace duckdb
 
-#endif //CLIENT_FUNCTIONS_HPP
+#endif // CLIENT_FUNCTIONS_HPP

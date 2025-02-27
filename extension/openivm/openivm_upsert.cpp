@@ -68,6 +68,12 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	                     view_name + "_ivm_index", OnEntryNotFound::RETURN_NULL, error_context);
 
 	auto view_query_entry = con.Query("select * from _duckdb_ivm_views where view_name = '" + view_name + "';");
+	if (view_query_entry->HasError()) {
+		throw ParserException("Error while querying view definition");
+	}
+	if (view_query_entry->RowCount() == 0) {
+		throw ParserException("View not found! Please call IVM with a materialized view.");
+	}
 	auto view_query_type_data = view_query_entry->GetValue(2, 0);
 	IVMType view_query_type = static_cast<IVMType>(view_query_type_data.GetValue<int8_t>());
 
@@ -114,11 +120,13 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	// ivm_query = "insert into delta_" + view_name + " ";
 	string do_ivm = "select * from DoIVM('" + view_catalog_name + "','" + view_schema_name + "','" + view_name + "');";
 
+	// we need to check if the view is in fact a MV
 	con.BeginTransaction();
 	// we need the table names since we need to update the metadata tables
 	auto tables = con.Query("select table_name from _duckdb_ivm_delta_tables where view_name = '" + view_name + "';");
+
 	if (tables->HasError()) {
-		throw InternalException("Error while querying _duckdb_ivm_delta_tables");
+		throw ParserException("Error while querying _duckdb_ivm_delta_tables");
 	}
 
 	// now we can plan the query

@@ -94,7 +94,7 @@ string ConstructTable(Connection &con, string view_name, bool view) {
 		centralized_table_definition += column.GetName() + " " + StringUtil::Lower(column.GetType().ToString()) + ", ";
 	}
 	if (view) {
-		centralized_table_definition += "generation timestamptz, arrival timestamptz, rdda_window int, client_id int, action tinyint);\n";
+		centralized_table_definition += "generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);\n";
 	} else {
 		// remove the last comma and space
 		centralized_table_definition += "rdda_window int, client_id int);\n";
@@ -248,7 +248,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
 				centralized_queries += view_string;
 				centralized_queries += view_constraint_string;
-				auto window_string = "insert into rdda_current_window values('rdda_centralized_table_" + view_name + "', 0);\n";
+				auto window_string = "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0);\n";
 				centralized_queries += window_string;
 			} else {
 				// replicated

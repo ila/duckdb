@@ -15,6 +15,14 @@
 
 namespace duckdb {
 
+void CloseConnection(int32_t sock) {
+	// close the connection
+	auto message = close_connection;
+	send(sock, &message, sizeof(int32_t), 0);
+	close(sock);
+	shutdown(sock, SHUT_RDWR);
+}
+
 int32_t ConnectClient(unordered_map<string, string> &config) {
 
 	sockaddr_in serv_addr;
@@ -60,7 +68,6 @@ void SendChunks(std::unique_ptr<MaterializedQueryResult> &result, int32_t sock) 
 		send(sock, &len, sizeof(ssize_t), 0);
 		send(sock, data, len, 0);
 	}
-	Printer::Print("Sent data to the server!");
 }
 
 timestamp_t RefreshMaterializedView(string &view_name, Connection &con) {
@@ -78,7 +85,13 @@ timestamp_t RefreshMaterializedView(string &view_name, Connection &con) {
 int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, string &path) {
 	string config_file = "client.config";
 	auto config = ParseConfig(path, config_file);
-	auto chunks = con.Query("select * from rdda_decentralized_view_" + view_name + ";");
+	auto chunks = con.Query("select * from " + view_name + ";");
+	if (chunks->HasError()) {
+		throw ParserException("Error while fetching chunks: " + chunks->GetError());
+	}
+	if (chunks->Collection().Count() == 0) {
+		throw ParserException("No data to send!");
+	}
 
 	int32_t sock = ConnectClient(config);
 
@@ -86,9 +99,17 @@ int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, s
 	send(sock, &message, sizeof(int32_t), 0);
 
 	// sending client id
-	auto client = con.Query("select client_id from client_information");
-	auto client_id = client->Fetch()->GetValue(0, 0);
+	auto client = con.Query("select id from client_information");
+	auto client_id = client->Fetch()->GetValue(0, 0).GetValue<uint64_t>();
 	send(sock, &client_id, sizeof(uint64_t), 0);
+
+	// receive "ok" or "error"
+	int32_t response;
+	read(sock, &response, sizeof(int32_t));
+	if (response != ok) {
+		CloseConnection(sock);
+		throw ParserException("Client not initialized!");
+	}
 
 	// send view name
 	auto size = view_name.size();
@@ -101,12 +122,15 @@ int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, s
 	}
 
 	// also send the timestamp (in case of network delays)
-	send(sock, &timestamp, sizeof(int64_t), 0);
+	string timestamp_string = Timestamp::ToString(timestamp);
+	auto timestamp_size = timestamp_string.size();
+	send(sock, &timestamp_size, sizeof(size_t), 0);
+	send(sock, timestamp_string.c_str(), timestamp_size, 0);
 
 	// sending (todo encrypted) data
 	SendChunks(chunks, sock);
 
-	Printer::Print("Sent data to the server!\n");
+	Printer::Print("Sent data to the server!");
 
 	// closing the connected socket
 	return sock;
