@@ -190,6 +190,9 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("`delta L` JOIN `R` child count: %zu\n", join_dl_r->children.size());
 		printf("`L` JOIN `delta R` child count: %zu\n", join_l_dr->children.size());
 		printf("`delta L` JOIN `delta R` child count: %zu\n", join_dl_dr->children.size());
+		auto dlr_binds = join_dl_r->GetColumnBindings();
+		auto ldr_binds = join_l_dr->GetColumnBindings();
+		auto dldr_binds = join_dl_dr->GetColumnBindings();
 #endif
 		// As we have a join, there should be EXACTLY two children of the plan, and thus two multiplicity columns.
 		const ColumnBinding og_dl_mul = child_mul_bindings[0];
@@ -253,8 +256,15 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
                 	// Make join_dl_dr a child of the projection.
                 	upper_u_rhs->children.emplace_back(std::move(join_dl_dr));
                 } else {
-                    // (case 4) no projections (probably super rare), so 2 multiplicity columns. Project out the left one.
-                    throw NotImplementedException("This logic is not implemented as it is unlikely to occur");
+                    // (case 4) no projections (probably super rare), so 2 multiplicity columns. Create a left projection map.
+                	const auto lc_bindings = join_dl_dr->children[0]->GetColumnBindings();
+                	for (size_t i = 0; i < lc_bindings.size(); ++i) {
+                		if (lc_bindings[i] != dl_mul) {
+                			join_dl_dr->left_projection_map.emplace_back(i);
+                		}
+                	}
+                	join_dl_dr->ResolveOperatorTypes();
+                	upper_u_rhs = std::move(join_dl_dr);
                 }
             } /* DO NOT USE join_dl_dr PAST THIS POINT! */
 		}
@@ -339,6 +349,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			vector<ReplacementBinding>& replacement_bindings = replacer.replacement_bindings;
 			const auto bindings = pw.plan->GetColumnBindings();
 			// `-1`, because multiplicity column is not part of the ColumnBindingReplacer (but handled right after).
+			/* FIXME: binding replacer broke with DuckDB V1.2 (and its projection maps).
+			 *  Likely has to do with the fact that not all children are passed through post-projection. This means:
+			 *  - og_bindings (join) has length 7 (excluding mul column),
+			 *  - bindings (union, pre-replacer) has length 6 (including mul column),
+			 *  - ColumnBindingReplacer should have 5 columns, where the multiplicity column should be handled manually.
+			 *  To fix: find out which 5 out of 7 og_bindings have to be rebound.
+			 */
 			idx_t mul_col_idx = bindings.size() - 1;
 			for (idx_t col_idx = 0; col_idx < mul_col_idx ; col_idx++) {
 				// Old binding should be 0.0 or 1.0 something. Taken from the initial state of pw.plan.
@@ -485,6 +502,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 #ifdef DEBUG
 		auto whatever = replacement_get_node->GetColumnBindings();
 #endif
+        replacement_get_node->Verify(pw.input.context);
 		return {std::move(replacement_get_node), new_mul_binding};
 	}
 	/*
@@ -532,6 +550,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("\n---end of modified plan (aggregate/group by)---\n");
 #endif
 		// Return plan, along with the modified multiplicity binding.
+        pw.plan->Verify(pw.input.context);
 		return {std::move(pw.plan), mod_mul_binding};
 	}
 	/*
@@ -539,29 +558,26 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	 */
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		// FIXME: Review logic, and heavily reduce complexity.
+		// Some printing
 		printf("\nIn logical projection case \n Add the multiplicity column to the second node...\n");
 		printf("Modified plan (projection, start):\n%s\nParameters:", pw.plan->ToString().c_str());
 		for (const auto& i_param : pw.plan->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 		printf("\n---end of modified plan (projection)---\n");
-		for (size_t i = 0; i < pw.plan->GetColumnBindings().size(); i++) {
-			printf("Top node CB before %zu %s\n", i, pw.plan->GetColumnBindings()[i].ToString().c_str());
+		const auto bindings = pw.plan->GetColumnBindings();
+		for (size_t i = 0; i < bindings.size(); i++) {
+			printf("Top node CB before %zu %s\n", i, bindings[i].ToString().c_str());
 		}
+		// Cast operator to logical projection, to then modify it.
+		auto projection_node =  unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(pw.plan));
 
-		auto projection_node = dynamic_cast<LogicalProjection *>(pw.plan.get());
-		printf("plan (of projection_node):\n%s\nParameters:", projection_node->ToString().c_str());
-		for (const auto& i_param : projection_node->ParamsToString()) {
-			printf("%s", i_param.second.c_str());
-		}
-		printf("\n---end of projection_node plan---\n");
-
-		// the table_idx used to create ColumnBinding will be that of the top node's child
-		// the column_idx used to create ColumnBinding for the multiplicity column will be stored using the context from the child
-		// node
-		auto e = make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", pw.mul_type, child_mul_bindings[0]);
-		printf("Add mult column to exp\n");
-		projection_node->expressions.emplace_back(std::move(e));
+		// Use the child's multiplicity column for the projection, by putting it at the end.
+		auto mul_expression = make_uniq<BoundColumnRefExpression>(
+		    "_duckdb_ivm_multiplicity", pw.mul_type, child_mul_bindings[0]
+		);
+		printf("Add multiplicity column to expression\n");
+		projection_node->expressions.emplace_back(std::move(mul_expression));
 
 		printf("Modified plan (of projection_node):\n%s\nParameters:", projection_node->ToString().c_str());
 		// Output ParameterToString.
@@ -569,10 +585,16 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("%s", i_param.second.c_str());
 		}
 		printf("\n---end of modified plan (of projection_node)---\n");
-		for (size_t i = 0; i < projection_node->GetColumnBindings().size(); i++) {
-			printf("Top node CB %zu %s\n", i, projection_node->GetColumnBindings()[i].ToString().c_str());
+		// Now that the multiplicity column is appended to the END of the projection,
+		// the last column binding should be the one of the multiplicity column.
+		// Therefore, take the last value from GetColumnBindings() to obtain the new multiplicity column.
+		const auto new_bindings = projection_node->GetColumnBindings();
+		for (size_t i = 0; i < new_bindings.size(); i++) {
+			printf("Top node CB %zu %s\n", i, new_bindings[i].ToString().c_str());
 		}
-		break;
+		auto new_mul_binding = new_bindings[new_bindings.size() - 1];
+        projection_node->Verify(pw.input.context);
+        return {std::move(projection_node), new_mul_binding};
 	}
 	/*
 	 * END OF CASE.
@@ -580,6 +602,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// If the filter does nothing, ignore it completely.
 		if (pw.plan->expressions.empty()) {
+			pw.plan->children[0]->Verify(pw.input.context);
 			return {std::move(pw.plan->children[0]), child_mul_bindings[0]};
 		}
 		// FIXME: If filter is NOT empty, the LOGICAL_FILTER should copy the bindings, projection map etc etc
@@ -590,6 +613,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		throw NotImplementedException("Operator type %s not supported", LogicalOperatorToString(pw.plan->type));
 	}
 	// Default: return the plan, along with the multiplicity column of the first (and hopefully only) child.
+    pw.plan->Verify(pw.input.context);
 	return {std::move(pw.plan), child_mul_bindings[0]};
 }
 
@@ -626,7 +650,7 @@ void IVMRewriteRule::IVMRewriteRuleFunction(OptimizerExtensionInput &input, duck
 
 	con.BeginTransaction();
 	// todo: maybe we want to disable more optimizers (internal_optimizer_types)
-	con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
+	con.Query("SET disabled_optimizers='compressed_materialization, column_lifetime, statistics_propagation, expression_rewriter, filter_pushdown';");
 	con.Commit();
 
 	auto v = con.Query("select sql_string from _duckdb_ivm_views where view_name = '" + view + "';");
