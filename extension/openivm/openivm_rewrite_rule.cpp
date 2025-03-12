@@ -276,7 +276,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("--- Column bindings of dL JOIN R after modifications (but before projection) ---\n");
 			print_column_bindings(dl_r);
 #endif
-			// TODO: Create projection (if needed, probably not).
+			// TODO: Create projection!
+
 		}
 		// LdR
 		unique_ptr<LogicalComparisonJoin> l_dr;
@@ -297,7 +298,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("--- Column bindings of L JOIN dR after modifications (but before projection) ---\n");
 			print_column_bindings(l_dr);
 #endif
-			// TODO: Create projection!
+			// TODO: Create projection (if needed, probably not).
 		}
 		// dLdR
 		unique_ptr<LogicalComparisonJoin> dl_dr;
@@ -321,8 +322,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				{
 					const ColumnBinding org_dl_mul = child_mul_bindings[0];
 					const ColumnBinding org_dr_mul = child_mul_bindings[1];
-					dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], dl_res.idx_map[org_dl_mul.column_index]};
-					dr_mul_binding = {dr_res.idx_map[org_dr_mul.table_index], dr_res.idx_map[org_dr_mul.column_index]};
+					dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
+					dr_mul_binding = {dr_res.idx_map[org_dr_mul.table_index], org_dr_mul.column_index};
 				}
 				JoinCondition mul_equal_condition;
 				mul_equal_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul_binding, 0);
