@@ -19,22 +19,79 @@ using duckdb::vector;
 using duckdb::ColumnBinding;
 using duckdb::Expression;
 using duckdb::BoundColumnRefExpression;
+using duckdb::LogicalOperator;
 using duckdb::LogicalType;
 using duckdb::LogicalComparisonJoin;
 using duckdb::unique_ptr;
 using duckdb::make_uniq;
 using duckdb::JoinCondition;
 
+/// Print the column bindings of a join, and each of its children, as well as the total count of bindings.
+#ifdef DEBUG
+void print_column_bindings(const unique_ptr<LogicalComparisonJoin>& join) {
+	const auto join_bindings = join->GetColumnBindings();
+	// lc/rc: left child and right child.
+	const auto lc_bindings = join->children[0]->GetColumnBindings();
+	const auto rc_bindings = join->children[1]->GetColumnBindings();
+	const size_t join_cb_count = join_bindings.size();
+	const size_t lc_cb_count = lc_bindings.size();
+	const size_t rc_cb_count = rc_bindings.size();
+
+	printf("Join CB count: %zu (left child: %zu, right child: %zu)", join_cb_count, lc_cb_count, rc_cb_count);
+	for (size_t i = 0; i < lc_cb_count; i++) {
+		printf("Left child CB after %zu %s\n", i, join_bindings[i].ToString().c_str());
+	}
+	for (size_t i = 0; i < rc_cb_count; i++) {
+		printf("Right child CB after %zu %s\n", i, join_bindings[i].ToString().c_str());
+	}
+	for (size_t i = 0; i < join_cb_count; i++) {
+		printf("Join CB after %zu %s\n", i, join_bindings[i].ToString().c_str());
+	}
+}
+#endif
 
 /// Create an empty join object from an existing comparison join, to work around the JoinRefType issue.
 unique_ptr<LogicalComparisonJoin> create_empty_join(
 	duckdb::ClientContext &context, const unique_ptr<LogicalComparisonJoin>& current_join
 ) {
-	auto copied_join = make_uniq<LogicalComparisonJoin>(current_join->Copy(context));
+	unique_ptr<LogicalComparisonJoin> copied_join =
+	    duckdb::unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(current_join->Copy(context));
 	current_join->children[0].reset(nullptr);
 	current_join->children[1].reset(nullptr);
 	current_join->expressions.clear();
-	return std::move(copied_join);
+	// TODO: Check if needed (probably yes).
+	current_join->left_projection_map.clear();
+	current_join->right_projection_map.clear();
+	return copied_join;
+}
+
+/// Rebind the column bindings in all expressions to a different table index (but same column index).
+/// Does not modify the official vector, but returns a new vector instead.
+vector<JoinCondition> rebind_join_conditions(
+    const vector<JoinCondition>& original_conditions, const std::unordered_map<idx_t, idx_t>& idx_map
+) {
+	auto return_vec = vector<JoinCondition>();
+	return_vec.reserve(original_conditions.size());
+	for (const JoinCondition& cond: original_conditions) {
+		unique_ptr<Expression> i_left = cond.left->Copy();
+		unique_ptr<Expression> i_right = cond.right->Copy();
+		if (cond.left->expression_class == duckdb::ExpressionClass::BOUND_COLUMN_REF) {
+			// Get expression with replaced column type.
+			// Code inspired by column_binding_replacer.cpp
+			auto &left_bcr = i_left->Cast<BoundColumnRefExpression>();
+			left_bcr.binding.table_index = idx_map[left_bcr.binding.table_index];
+		}
+		if (cond.right->expression_class == duckdb::ExpressionClass::BOUND_COLUMN_REF) {
+			auto &right_bcr = i_right->Cast<BoundColumnRefExpression>();
+			right_bcr.binding.table_index = idx_map[right_bcr.binding.table_index];
+		}
+		JoinCondition new_condition = JoinCondition();
+		new_condition.left = std::move(i_left);
+		new_condition.right = std::move(i_right);
+		new_condition.comparison = cond.comparison;
+		return_vec.emplace_back(std::move(new_condition));
+	}
+	return return_vec;
 }
 
 /// Add the multiplicity column to a projection map if a projection map is defined.
@@ -168,6 +225,17 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("plan left_child child count: %zu\n", left_child->children.size());
 		printf("plan right_child child count: %zu\n", right_child->children.size());
 #endif
+		/* Suppose the query tree (below this join) is an L-side (left child) and an R side (right child).
+		 * Before any modification, the query simply joins "current" L with "current" R.
+		 * However, now, this query should act as an *update* to the original view.
+		 * To this end, a comparison between `current L` and `current R` is not needed.
+		 * Rather, this query should yield the union of the following result sets:
+		 * 1. `delta L` joined with `current R` -> `join_dl_r`
+		 * 2. `current L` joined with `delta R` -> `join_l_dr`
+		 * 3. `delta L` joined with `delta R`, iff the multiplicity matches -> `join`
+		 *
+		 * The code below adapts the tree such that `current L` JOIN `current R` is modified to the 3 joins of interest.
+		 */
 		// FIXME: Completely rework logic.
 		/* Steps:
 		 * 1. Get delta children from modified plan, and store them in variables.
@@ -188,7 +256,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		const unique_ptr<LogicalOperator>& delta_left = plan_as_join->children[0];
 		const unique_ptr<LogicalOperator>& delta_right = plan_as_join->children[1];
 
-		// (2) New joins.
+		// (2) New joins. TODO: get rid of l/r/dl/dr variables (they are just there to make the code more readable).
+		unique_ptr<LogicalComparisonJoin> dl_r;
 		// dLR
 		{
 			// dL: copy, then renumber.
@@ -196,70 +265,85 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			unique_ptr<LogicalOperator> dl = std::move(res.op);
 			unique_ptr<LogicalOperator> r = right_child->Copy(context);
 
-			unique_ptr<LogicalComparisonJoin> dl_r = create_empty_join(context, plan_as_join);
-			// For the condition: check what the original join has as a condition, and adapt those to dl/r columns.
-			for (const JoinCondition cond: plan_as_join->conditions) {
-				unique_ptr<Expression> i_left = cond.left->Copy();
-				unique_ptr<Expression> i_right = cond.right->Copy();
-				if (cond.left->expression_class == ExpressionClass::BOUND_COLUMN_REF) {
-					// Get expression with replaced column type.
-					// Code inspired by column_binding_replacer.cpp
-                    auto &i_bcr = i_left->Cast<BoundColumnRefExpression>();
-					i_bcr.binding.table_index = res.idx_map[i_bcr.binding.table_index];
-				}
+			dl_r = create_empty_join(context, plan_as_join);
+			// For the conditions: check what the original join has as conditions, and adapt any L columns to dL's.
+			dl_r->conditions = rebind_join_conditions(plan_as_join->conditions, res.idx_map);
+			// For the children: use dL and R.
+			dl_r->children.emplace_back(std::move(dl));
+			dl_r->children.emplace_back(std::move(r));
+			dl_r->ResolveOperatorTypes();
+#ifdef DEBUG
+			printf("--- Column bindings of dL JOIN R after modifications (but before projection) ---\n");
+			print_column_bindings(dl_r);
+#endif
+			// TODO: Create projection (if needed, probably not).
+		}
+		// LdR
+		unique_ptr<LogicalComparisonJoin> l_dr;
+		{
+			unique_ptr<LogicalOperator> l = left_child->Copy(context);
+			// dR: copy, then renumber.
+			RenumberWrapper res = renumber_table_indices(delta_right->Copy(context), pw.input.optimizer.binder);
+			unique_ptr<LogicalOperator> dr = std::move(res.op);
 
-				if (cond.right->expression_class == ExpressionClass::BOUND_COLUMN_REF) {
+			l_dr = create_empty_join(context, plan_as_join);
+			// For the conditions: check what the original join has as conditions, and adapt any R columns to dR's.
+			l_dr->conditions = rebind_join_conditions(plan_as_join->conditions, res.idx_map);
+			// For the children: use L and dR.
+			l_dr->children.emplace_back(std::move(l));
+			l_dr->children.emplace_back(std::move(dr));
+			l_dr->ResolveOperatorTypes();
+#ifdef DEBUG
+			printf("--- Column bindings of L JOIN dR after modifications (but before projection) ---\n");
+			print_column_bindings(l_dr);
+#endif
+			// TODO: Create projection!
+		}
+		// dLdR
+		unique_ptr<LogicalComparisonJoin> dl_dr;
+		{
+			// Same as above, but for both dL and dR
+			RenumberWrapper dl_res = renumber_table_indices(delta_left->Copy(context), pw.input.optimizer.binder);
+			unique_ptr<LogicalOperator> dl = std::move(dl_res.op);
+			RenumberWrapper dr_res = renumber_table_indices(delta_right->Copy(context), pw.input.optimizer.binder);
+			unique_ptr<LogicalOperator> dr = std::move(dr_res.op);
+
+			// For the renumbering of the join conditions, we need the union of both operator's index maps.
+			vector<JoinCondition> new_conditions;
+			{
+				std::unordered_map<old_idx, new_idx> idx_map = dl_res.idx_map;
+				for (const auto& pair: dr_res.idx_map) {
+					idx_map.insert(pair);
 				}
-				JoinCondition new_condition = JoinCondition();
-				new_condition.left = std::move(i_left);
-				new_condition.right = std::move(i_right);
-				new_condition.comparison = cond.comparison;
+				new_conditions = rebind_join_conditions(plan_as_join->conditions, idx_map);
+				// Add a special join condition (dL.mul = dR.mul) for correctness.
+				ColumnBinding dl_mul_binding, dr_mul_binding;
+				{
+					const ColumnBinding org_dl_mul = child_mul_bindings[0];
+					const ColumnBinding org_dr_mul = child_mul_bindings[1];
+					dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], dl_res.idx_map[org_dl_mul.column_index]};
+					dr_mul_binding = {dr_res.idx_map[org_dr_mul.table_index], dr_res.idx_map[org_dr_mul.column_index]};
+				}
+				JoinCondition mul_equal_condition;
+				mul_equal_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul_binding, 0);
+				mul_equal_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul_binding, 0);
+				mul_equal_condition.comparison = ExpressionType::COMPARE_EQUAL;
+				new_conditions.emplace_back(std::move(mul_equal_condition));
 			}
-            JoinCondition temp;
-            temp.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul, 0);
-            temp.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul, 0);
-            temp.comparison = ExpressionType::COMPARE_EQUAL;
-			unique_ptr<Expression> dl_r_expression = make_uniq<Expression>(temp);
+			dl_dr = create_empty_join(context, plan_as_join);
+			dl_dr->conditions = new_conditions; // As defined above, including multiplicity condition.
+			// For the children: use dL and dR.
+			dl_dr->children.emplace_back(std::move(dl));
+			dl_dr->children.emplace_back(std::move(dr));
+			dl_dr->ResolveOperatorTypes();
+#ifdef DEBUG
+			printf("--- Column bindings of dL JOIN dR after modifications (but before projection) ---\n");
+			print_column_bindings(dl_dr);
+#endif
+			// TODO: Create projection!
 		}
 
-
-
-
-		// FIXME: Remove old logic, as defined below!
-		/* Suppose the query tree (below this join) as an L-side (left child) and an R side (right child).
-		 * Before any modification, the query simply joins "current" L with "current" R.
-		 * However, now, this query should act as an *update* to the original view.
-		 * To this end, a comparison between `current L` and `current R` is not needed.
-		 * Rather, this query should yield the union of the following result sets:
-		 * 1. `delta L` joined with `current R` -> `join_dl_r`
-		 * 2. `current L` joined with `delta R` -> `join_l_dr`
-		 * 3. `delta L` joined with `delta R`, iff the multiplicity matches -> `join`
-		 *
-		 * The code below adapts the tree such that `current L` JOIN `current R` is modified to the 3 joins of interest.
-		 */
-		// Make a copy of a join between deltas. This copy will eventually become `delta L` with `current R`.
-		unique_ptr<LogicalComparisonJoin> join_dl_r = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(join_dl_dr->Copy(context));
-		// Remove the deltas: join_dl_r temporarily has no children.
-		auto left_delta = std::move(join_dl_r->children[0]);
-		auto right_delta = std::move(join_dl_r->children[1]);
-		// Copy the (now child-less) join, to form the basis for `join_l_dr`.
-		unique_ptr<LogicalComparisonJoin> join_l_dr = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(join_dl_r->Copy(context));
-
-		// Give these two joins their appropriate children.
-		join_dl_r->children[0] = std::move(left_delta);
-		join_dl_r->children[1] = std::move(right_child);
-		join_dl_r->types = types;
-		join_l_dr->children[0] = std::move(left_child);
-		join_l_dr->children[1] = std::move(right_delta);
-		join_l_dr->types = types;
-#ifdef DEBUG
-		printf("`delta L` JOIN `R` child count: %zu\n", join_dl_r->children.size());
-		printf("`L` JOIN `delta R` child count: %zu\n", join_l_dr->children.size());
-		printf("`delta L` JOIN `delta R` child count: %zu\n", join_dl_dr->children.size());
-		auto dlr_binds = join_dl_r->GetColumnBindings();
-		auto ldr_binds = join_l_dr->GetColumnBindings();
-		auto dldr_binds = join_dl_dr->GetColumnBindings();
-#endif
+#ifdef DO_NOT_USE
 		// As we have a join, there should be EXACTLY two children of the plan, and thus two multiplicity columns.
 		const ColumnBinding og_dl_mul = child_mul_bindings[0];
 		const ColumnBinding og_dr_mul = child_mul_bindings[1];
@@ -383,7 +467,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			ensure_mul_binding(join_l_dr->right_projection_map, dr_child_bindings, dr_mul);
 			join_l_dr->ResolveOperatorTypes();
 		}
-
+#endif
 		// Now that all joins have the same columns, create a Union!
 		auto copy_union = make_uniq<LogicalSetOperation>(
 		    pw.input.optimizer.binder.GenerateTableIndex(),
