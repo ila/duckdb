@@ -133,6 +133,27 @@ vector<unique_ptr<Expression>> project_multiplicity_to_end(
 	}
 	return projection_col_refs;
 }
+
+/// Project out the multiplicity column of the dL side for dL JOIN dR, such that one multiplicity column remains.
+vector<unique_ptr<Expression>> project_out_duplicate_mul_column(
+    const vector<ColumnBinding>& bindings, const vector<LogicalType>& types, const ColumnBinding& redundant_mul_binding
+) {
+	const size_t col_count = bindings.size();
+	assert(col_count == types.size());
+
+	// Create the vec and reserve the amount of elements (but don't create them yet).
+	auto projection_col_refs = vector<unique_ptr<Expression>>();
+	projection_col_refs.reserve(col_count - 1); // -1, since left mul removed.
+	// Insert the columns. Mind the `-1`: the last element is omitted.
+	for (idx_t i = 0; i < col_count - 1; ++i ) {
+		const auto& binding = bindings[i];
+		if (binding != redundant_mul_binding) {
+			projection_col_refs.emplace_back(make_uniq<BoundColumnRefExpression>(types[i], binding));
+		}
+	}
+	return projection_col_refs;
+}
+
 } // namespace
 
 
@@ -255,9 +276,12 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// Define dL and dR references, for easier copies later.
 		const unique_ptr<LogicalOperator>& delta_left = plan_as_join->children[0];
 		const unique_ptr<LogicalOperator>& delta_right = plan_as_join->children[1];
+		// Define the original column bindings for the multiplicity column of dL and dR.
+		const ColumnBinding org_dl_mul = child_mul_bindings[0];
+		const ColumnBinding org_dr_mul = child_mul_bindings[1];
 
 		// (2) New joins. TODO: get rid of l/r/dl/dr variables (they are just there to make the code more readable).
-		unique_ptr<LogicalComparisonJoin> dl_r;
+		unique_ptr<LogicalProjection> dl_r_projected;
 		// dLR
 		{
 			// dL: copy, then renumber.
@@ -265,7 +289,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			unique_ptr<LogicalOperator> dl = std::move(res.op);
 			unique_ptr<LogicalOperator> r = right_child->Copy(context);
 
-			dl_r = create_empty_join(context, plan_as_join);
+			unique_ptr<LogicalComparisonJoin> dl_r = create_empty_join(context, plan_as_join);
 			// For the conditions: check what the original join has as conditions, and adapt any L columns to dL's.
 			dl_r->conditions = rebind_join_conditions(plan_as_join->conditions, res.idx_map);
 			// For the children: use dL and R.
@@ -277,17 +301,34 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			print_column_bindings(dl_r);
 #endif
 			// TODO: Create projection!
-
+			const vector<ColumnBinding> join_bindings = dl_r->GetColumnBindings();
+			{
+				const vector<LogicalType> join_types = dl_r->types;
+				const ColumnBinding dl_mul_binding = {res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
+				vector<unique_ptr<Expression>> dl_r_projection_bindings = project_multiplicity_to_end(
+					join_bindings, join_types, dl_mul_binding
+				);
+				// Now, the vector with bindings should be complete. Let's put it in a Projection node!
+				dl_r_projected = make_uniq<LogicalProjection>(
+					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_r_projection_bindings)
+				);
+			}
+			dl_r_projected->children.emplace_back(std::move(dl_r));
+#ifdef DEBUG
+			auto projection_debug_bindings = dl_r_projected->GetColumnBindings();
+			printf("dl-R projection CB count: %zu\n", projection_debug_bindings.size());
+			printf("Expectation (join bindings - 1): %zu - 1 = %zu\n", join_bindings.size(), join_bindings.size() - 1);
+#endif
 		}
 		// LdR
-		unique_ptr<LogicalComparisonJoin> l_dr;
+		unique_ptr<LogicalProjection> l_dr_projected;
 		{
 			unique_ptr<LogicalOperator> l = left_child->Copy(context);
 			// dR: copy, then renumber.
 			RenumberWrapper res = renumber_table_indices(delta_right->Copy(context), pw.input.optimizer.binder);
 			unique_ptr<LogicalOperator> dr = std::move(res.op);
 
-			l_dr = create_empty_join(context, plan_as_join);
+			unique_ptr<LogicalComparisonJoin> l_dr = create_empty_join(context, plan_as_join);
 			// For the conditions: check what the original join has as conditions, and adapt any R columns to dR's.
 			l_dr->conditions = rebind_join_conditions(plan_as_join->conditions, res.idx_map);
 			// For the children: use L and dR.
@@ -298,10 +339,11 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("--- Column bindings of L JOIN dR after modifications (but before projection) ---\n");
 			print_column_bindings(l_dr);
 #endif
+			// Make a projection. Although not necessary, it harmonises the shape of the query tree.
 			// TODO: Create projection (if needed, probably not).
 		}
 		// dLdR
-		unique_ptr<LogicalComparisonJoin> dl_dr;
+		unique_ptr<LogicalProjection> dl_dr_projected;
 		{
 			// Same as above, but for both dL and dR
 			RenumberWrapper dl_res = renumber_table_indices(delta_left->Copy(context), pw.input.optimizer.binder);
@@ -318,20 +360,15 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				}
 				new_conditions = rebind_join_conditions(plan_as_join->conditions, idx_map);
 				// Add a special join condition (dL.mul = dR.mul) for correctness.
-				ColumnBinding dl_mul_binding, dr_mul_binding;
-				{
-					const ColumnBinding org_dl_mul = child_mul_bindings[0];
-					const ColumnBinding org_dr_mul = child_mul_bindings[1];
-					dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
-					dr_mul_binding = {dr_res.idx_map[org_dr_mul.table_index], org_dr_mul.column_index};
-				}
+				ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
+				ColumnBinding dr_mul_binding = {dr_res.idx_map[org_dr_mul.table_index], org_dr_mul.column_index};
 				JoinCondition mul_equal_condition;
 				mul_equal_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul_binding, 0);
 				mul_equal_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul_binding, 0);
 				mul_equal_condition.comparison = ExpressionType::COMPARE_EQUAL;
 				new_conditions.emplace_back(std::move(mul_equal_condition));
 			}
-			dl_dr = create_empty_join(context, plan_as_join);
+			unique_ptr<LogicalComparisonJoin> dl_dr = create_empty_join(context, plan_as_join);
 			dl_dr->conditions = new_conditions; // As defined above, including multiplicity condition.
 			// For the children: use dL and dR.
 			dl_dr->children.emplace_back(std::move(dl));
@@ -341,7 +378,23 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("--- Column bindings of dL JOIN dR after modifications (but before projection) ---\n");
 			print_column_bindings(dl_dr);
 #endif
-			// TODO: Create projection!
+			// Create projection, such that the multiplicity column of dL goes out.
+			// As a result, the projection should have one column binding less than the join.
+			const vector<ColumnBinding> join_bindings = dl_dr->GetColumnBindings();
+			{
+				const vector<LogicalType> join_types = dl_dr->types;
+				const ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
+				auto dl_dr_projection_bindings = project_out_duplicate_mul_column(join_bindings, join_types, dl_mul_binding);
+				dl_dr_projected = make_uniq<LogicalProjection>(
+					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_dr_projection_bindings)
+				);
+			}
+			dl_dr_projected->children.emplace_back(std::move(dl_dr));
+#ifdef DEBUG
+			auto projection_debug_bindings = dl_dr_projected->GetColumnBindings();
+			printf("dl-R projection CB count: %zu\n", projection_debug_bindings.size());
+			printf("Expectation (join bindings - 1): %zu - 1 = %zu\n", join_bindings.size(), join_bindings.size() - 1);
+#endif
 		}
 
 #ifdef DO_NOT_USE
