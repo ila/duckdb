@@ -66,7 +66,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		get_ptr->table_index = new_idx;
 		table_reassign[current_idx] = new_idx;  // Current map is probably empty at this stage.
 #ifdef DEBUG
-		printf("Index regen LOGICAL_GET: Change %llu -> %llu\n", current_idx, new_idx);
+		printf("Index regen LOGICAL_GET: Change %zu -> %zu\n", current_idx, new_idx);
 #endif
 		// Logical GET should not have children, so nothing to move.
 		return {std::move(get_ptr), table_reassign, current_bindings};
@@ -76,6 +76,9 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		unique_ptr<LogicalProjection> proj_ptr = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(plan));
 		const idx_t current_idx = proj_ptr->table_index;
 		const idx_t new_idx = binder.GenerateTableIndex();
+#ifdef DEBUG
+		printf("Index regen LOGICAL_PROJECTION: Change %zu -> %zu\n", current_idx, new_idx);
+#endif
 		proj_ptr->table_index = new_idx;
 		table_reassign[current_idx] = new_idx;
 		// Return projection, but add children first.
@@ -125,6 +128,13 @@ ColumnBindingReplacer vec_to_replacer(
 		}
 	}
 	return replacer;
+}
+
+RenumberWrapper renumber_and_rebind_subtree(unique_ptr<LogicalOperator> plan, Binder& binder) {
+	RenumberWrapper res = renumber_table_indices(std::move(plan), binder);
+	ColumnBindingReplacer replacer = vec_to_replacer(res.column_bindings, res.idx_map);
+	replacer.VisitOperator(*res.op);
+	return res;
 }
 
 } // namespace duckdb

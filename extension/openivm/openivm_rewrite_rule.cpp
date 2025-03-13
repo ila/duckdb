@@ -257,7 +257,6 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	switch (pw.plan->type) {
 	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
 	{
-
 		/* Please note!
 		 * These are the bindings AFTER ModifyPlan has made changes, meaning both sides have a multiplicity column.
 		 * As a consequence, they need to be filtered out later.
@@ -320,7 +319,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// dLR
 		{
 			// dL: copy, then renumber.
-			RenumberWrapper res = renumber_table_indices(delta_left->Copy(context), pw.input.optimizer.binder);
+			RenumberWrapper res = renumber_and_rebind_subtree(delta_left->Copy(context), pw.input.optimizer.binder);
 			unique_ptr<LogicalOperator> dl = std::move(res.op);
 			unique_ptr<LogicalOperator> r = right_child->Copy(context);
 
@@ -359,7 +358,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		{
 			unique_ptr<LogicalOperator> l = left_child->Copy(context);
 			// dR: copy, then renumber.
-			RenumberWrapper res = renumber_table_indices(delta_right->Copy(context), pw.input.optimizer.binder);
+			RenumberWrapper res = renumber_and_rebind_subtree(delta_right->Copy(context), pw.input.optimizer.binder);
 			unique_ptr<LogicalOperator> dr = std::move(res.op);
 
 			unique_ptr<LogicalComparisonJoin> l_dr = create_empty_join(context, plan_as_join);
@@ -392,9 +391,9 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		unique_ptr<LogicalProjection> dl_dr_projected;
 		{
 			// Same as above, but for both dL and dR
-			RenumberWrapper dl_res = renumber_table_indices(delta_left->Copy(context), pw.input.optimizer.binder);
+			RenumberWrapper dl_res = renumber_and_rebind_subtree(delta_left->Copy(context), pw.input.optimizer.binder);
 			unique_ptr<LogicalOperator> dl = std::move(dl_res.op);
-			RenumberWrapper dr_res = renumber_table_indices(delta_right->Copy(context), pw.input.optimizer.binder);
+			RenumberWrapper dr_res = renumber_and_rebind_subtree(delta_right->Copy(context), pw.input.optimizer.binder);
 			unique_ptr<LogicalOperator> dr = std::move(dr_res.op);
 			// For the renumbering of the join conditions, we need the union of both operator's index maps.
 			unique_ptr<LogicalComparisonJoin> dl_dr = create_empty_join(context, plan_as_join);
@@ -634,7 +633,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("aggregate node CB before %zu %s\n", i,
 			       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
 		}
-		printf("Aggregate index: %llu Group index: %llu\n", modified_node_logical_agg->aggregate_index,
+		printf("Aggregate index: %zu Group index: %zu\n", modified_node_logical_agg->aggregate_index,
 		       modified_node_logical_agg->group_index);
 #endif
 
@@ -768,8 +767,19 @@ void IVMRewriteRule::IVMRewriteRuleFunction(OptimizerExtensionInput &input, duck
 
 	con.BeginTransaction();
 	// todo: maybe we want to disable more optimizers (internal_optimizer_types)
-	con.Query("SET disabled_optimizers='compressed_materialization, column_lifetime, statistics_propagation, expression_rewriter, filter_pushdown';");
-	// con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
+	// If column_lifetime is enabled, then the existence of duplicate table indices etc etc is verified.
+	// However, it massively complicates the query tree which is not nice for further usage in OpenIVM.
+	// Therefore, it should be run for verification purposes once in a while (otherwise, turn it off).
+	const bool verify_column_lifetime = false;
+	if (verify_column_lifetime) {
+		// Really hacky fix to the table index reuse problem.
+		for (size_t i = 0; i < 30; ++i) {
+			input.optimizer.binder.GenerateTableIndex();
+		}
+		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
+	} else {
+		con.Query("SET disabled_optimizers='compressed_materialization, column_lifetime, statistics_propagation, expression_rewriter, filter_pushdown';");
+	}
 	con.Commit();
 
 	auto v = con.Query("select sql_string from _duckdb_ivm_views where view_name = '" + view + "';");

@@ -22,12 +22,16 @@ struct RenumberWrapper {
 	std::vector<ColumnBinding> column_bindings;
 };
 
-/// Renumber all table indices that appear in a subtree recursively.
+/// Renumber all table indices that appear in a subtree recursively, without replacing the bindings.
 /// A new table index is generated for each operator that usually generates one (GET, AGG, PROJECT, SET operations).
 /// Note that this function does not modify the tree.
 /// However, it does modify the binder, since the binder is responsible for generating table indices.
 /// Returns an unordered map with old_idx -> new_idx for each pair of modified table indices.
 RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder& binder);
+
+/// Renumber all table indices in the entire query subtree, and replace all ColumnBindings.
+/// Effectively a call to renumber_table_indices followed by a ColumnBindingReplacer.
+RenumberWrapper renumber_and_rebind_subtree(unique_ptr<LogicalOperator> plan, Binder& binder);
 
 /// Create a ColumnBindingReplacer using a vector of ColumnBindings, and a mapping of old->new table indices.
 /// The bindings in the vector do not need to be unique or sorted.
