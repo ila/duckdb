@@ -65,6 +65,9 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		const idx_t new_idx = binder.GenerateTableIndex();
 		get_ptr->table_index = new_idx;
 		table_reassign[current_idx] = new_idx;  // Current map is probably empty at this stage.
+#ifdef DEBUG
+		printf("Index regen LOGICAL_GET: Change %llu -> %llu\n", current_idx, new_idx);
+#endif
 		// Logical GET should not have children, so nothing to move.
 		return {std::move(get_ptr), table_reassign, current_bindings};
 	}
