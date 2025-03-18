@@ -19,6 +19,7 @@
 #include <rdda/rdda_parse_view.hpp>
 #include <rdda_parser_helper.hpp>
 #include <stack>
+#include <regex>
 
 namespace duckdb {
 
@@ -224,21 +225,38 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				centralized_queries += query;
 				decentralized_queries += query;
 			}
+			// here the query should call the openivm parser to parse "materialized view" statements
+			// however our schema does not exist, so the parser will emit error
+			// to circumvent this, we parse the create table statement
+			auto create_table_query = "create table " + view_name + " as " + view_query;
+			ParseExecuteQuery(con, create_table_query); // todo rollback if error
+
 			if (scope == TableScope::centralized) {
-				ParseExecuteQuery(con, query);
+				// centralized views can be defined on server-side tables or decentralized views
+				// if the case is the latter, the decentralized view does not exist server-side
+				// so we need to replace it with the corresponding centralized table
+				// to look for the tables, we switch to the database and check the table names
+				SwitchBackToDatabase(con, db_name);
+				con.BeginTransaction();
+				auto tables = con.GetTableNames(view_query);
+				for (auto &table : tables) {
+					auto table_info = con.TableInfo(table);
+					if (!table_info) {
+						// we replace the view name with "rdda_centralized_table_" + view_name
+						query = regex_replace(query, std::regex(table), "rdda_centralized_table_" + table);
+					}
+				}
+				con.Rollback();
+				AttachParserDatabase(con);
 				centralized_queries += query;
 				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
 									  to_string(view_constraints.window) + ", " +
 									  to_string(view_constraints.ttl) + ", " +
 									  to_string(view_constraints.refresh) + ", " +
 									  to_string(view_constraints.min_agg) + ");\n";
+				centralized_queries += view_constraint_string;
 			} else if (scope == TableScope::decentralized) {
 				// todo - check that this is defined over decentralized tables/views
-				// here the query should call the openivm parser to parse "materialized view" statements
-				// however our schema does not exist, so the parser will emit error
-				// to circumvent this, we parse the create table statement
-				auto create_table_query = "create table " + view_name + " as " + view_query;
-				ParseExecuteQuery(con, create_table_query);
 				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
 				                              to_string(view_constraints.window) + ", " +
 				                              to_string(view_constraints.ttl) + ", " +

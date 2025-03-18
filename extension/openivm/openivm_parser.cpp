@@ -69,7 +69,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 	auto &ivm_parse_data = dynamic_cast<IVMParseData &>(*parse_data);
 	auto statement = dynamic_cast<SQLStatement *>(ivm_parse_data.statement.get());
 
-	if (!done) {
+	if (!done) { // fixme - this can probably be removed
 
 		Connection con(*context.db.get());
 
@@ -125,12 +125,14 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 					} else if (group->type == ExpressionType::BOUND_FUNCTION) {
 						// we need the aggregate columns to create an index
 						// duckdb supports indexes on functions, so we just emplace the function + alias
-						// however, duckdb wraps the functions into double quotes/
-						// so we need to enclose this in single quotes
+						// however, duckdb wraps the functions into double quotes
+						// so we need to wrap the name into double quotes again, and duplicate the quotes
 						auto column = dynamic_cast<BoundFunctionExpression *>(group.get());
-						// auto function = "'" + column->GetName() + "'";
-						// fixme - bug here where there is no alias (cannot create index on columns without alias)
-						aggregate_columns.emplace_back(column->GetName());
+						// transform " into ""
+						auto function = column->GetName();
+						function = StringUtil::Replace(function, "\"", "\"\"");
+						function = "\"" + function + "\"";
+						aggregate_columns.emplace_back(function);
 					}
 				}
 			}

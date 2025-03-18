@@ -112,7 +112,7 @@ int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, s
 	read(sock, &response, sizeof(int32_t));
 	if (response != ok) {
 		CloseConnection(sock);
-		throw ParserException("Client not initialized!");
+		throw ParserException("Error: client not initialized!");
 	}
 
 	// send view name

@@ -39,11 +39,11 @@ static void Refresh(ClientContext &context, const FunctionParameters &parameters
 static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t timestamp) {
 
 	// checking that there is only one client
-	// a double insertion *should not* happen, but just in case
 	string clients = "select * from client_information;";
 	auto r = con.Query(clients);
 	if (r->RowCount() > 0) {
-		throw ParserException("Client already exists!");
+		// this can happen for example if a connection fails the first time
+		return;
 	}
 
 	string table_name;
@@ -141,13 +141,13 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	// todo path is still hardcoded, fix this
 	// todo error handling if the path is wrong
-	// note: this hangs with the new duckdb version
-	// note: also serializer might break (also in server)
+	// note: serializer might break (also in server)
 	DuckDB db(instance);
 	Connection con(db);
 	con.Query("PRAGMA enable_profiling=json");
 	con.Query("PRAGMA profile_output='profile_output.json'");
 
+	// todo - return "false" if error
 	auto initialize_client = PragmaFunction::PragmaCall("initialize_client", InitializeClient, {});
 	ExtensionUtil::RegisterFunction(instance, initialize_client);
 

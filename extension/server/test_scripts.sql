@@ -42,3 +42,5 @@ insert into daily_runs_city
 SELECT nickname, city, date, SUM(steps) AS total_steps
 FROM runs
 GROUP BY nickname, city, date;
+
+pragma refresh('daily_runs_city');
