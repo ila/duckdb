@@ -18,6 +18,7 @@
 
 #include <iostream>
 #include <stack>
+#include <duckdb/planner/expression/bound_function_expression.hpp>
 
 namespace duckdb {
 
@@ -118,8 +119,19 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 				// find the aggregation column(s) in order to create an index
 				auto node = dynamic_cast<LogicalAggregate *>(current);
 				for (auto &group : node->groups) {
-					auto column = dynamic_cast<BoundColumnRefExpression *>(group.get());
-					aggregate_columns.emplace_back(column->alias);
+					if (group->type == ExpressionType::BOUND_COLUMN_REF) {
+						auto column = dynamic_cast<BoundColumnRefExpression *>(group.get());
+						aggregate_columns.emplace_back(column->alias);
+					} else if (group->type == ExpressionType::BOUND_FUNCTION) {
+						// we need the aggregate columns to create an index
+						// duckdb supports indexes on functions, so we just emplace the function + alias
+						// however, duckdb wraps the functions into double quotes/
+						// so we need to enclose this in single quotes
+						auto column = dynamic_cast<BoundFunctionExpression *>(group.get());
+						// auto function = "'" + column->GetName() + "'";
+						// fixme - bug here where there is no alias (cannot create index on columns without alias)
+						aggregate_columns.emplace_back(column->GetName());
+					}
 				}
 			}
 

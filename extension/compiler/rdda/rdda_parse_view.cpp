@@ -6,9 +6,14 @@
 
 namespace duckdb {
 
-RDDAViewConstraint ParseCreateView(string &query) {
-
+RDDAViewConstraint ParseCreateView(string &query, TableScope scope) {
+	// refresh is implemented in both centralized and decentralized views
+	// the rest of the constraints are only for decentralized views
 	RDDAViewConstraint constraint;
+
+	if (scope == TableScope::replicated) {
+		return constraint; // no constraints for replicated views
+	}
 
 	std::regex window_regex("\\bwindow\\s+(\\d+)\\b");
 	std::smatch window_match;
@@ -18,7 +23,7 @@ RDDAViewConstraint ParseCreateView(string &query) {
 			throw ParserException("Invalid value for WINDOW, must be greater than zero!");
 		}
 		query = regex_replace(query, window_regex, "");
-	} else {
+	} else if (scope == TableScope::decentralized) {
 		throw ParserException("WINDOW is a required field!");
 	}
 
@@ -33,7 +38,7 @@ RDDAViewConstraint ParseCreateView(string &query) {
             throw ParserException("TTL must be greater than or equal to WINDOW!");
         }
 		query = regex_replace(query, ttl_regex, "");
-	} else {
+	} else if (scope == TableScope::decentralized) {
 		throw ParserException("TTL is a required field!");
 	}
 
@@ -57,7 +62,7 @@ RDDAViewConstraint ParseCreateView(string &query) {
 			throw ParserException("Invalid value for MINIMUM AGGREGATION, must be greater than zero!");
 		}
 		query = regex_replace(query, min_agg_regex, "");
-	} else {
+	} else if (scope == TableScope::decentralized) {
 		throw ParserException("MINIMUM AGGREGATION is a required field!");
 	}
 

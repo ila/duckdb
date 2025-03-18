@@ -5,7 +5,7 @@
 #define DUCKDB_RDDA_VIEW_H
 
 namespace duckdb {
-RDDAViewConstraint ParseCreateView(string &query);
+RDDAViewConstraint ParseCreateView(string &query, TableScope scope);
 string ParseViewTables(string &query);
 
 } // namespace duckdb

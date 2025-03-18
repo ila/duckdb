@@ -208,10 +208,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 
 		} else if (query.substr(0, 24) == "create materialized view") {
 
-			if (scope == TableScope::centralized || scope == TableScope::replicated) {
-				// if the table is decentralized, we need to check the constraints before parsing
-				ParseExecuteQuery(con, query);
-			}
+			auto view_constraints = ParseCreateView(query, scope);
 			// adding the view to the system tables
 			auto view_name = CompilerExtension::ExtractViewName(query);
 			auto view_query = CompilerExtension::ExtractViewQuery(query);
@@ -219,17 +216,27 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 			if (view_name.substr(0, 23) == "rdda_centralized_view_") {
 				throw ParserException("Centralized views cannot start with rdda_centralized_view_");
 			}
-
-			if (scope == TableScope::centralized) {
-				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
+			auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
+			centralized_queries += view_string;
+			if (scope == TableScope::replicated) {
+				// todo - do we need anything else here?
+				ParseExecuteQuery(con, query);
 				centralized_queries += query;
-				centralized_queries += view_string;
+				decentralized_queries += query;
+			}
+			if (scope == TableScope::centralized) {
+				ParseExecuteQuery(con, query);
+				centralized_queries += query;
+				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
+									  to_string(view_constraints.window) + ", " +
+									  to_string(view_constraints.ttl) + ", " +
+									  to_string(view_constraints.refresh) + ", " +
+									  to_string(view_constraints.min_agg) + ");\n";
 			} else if (scope == TableScope::decentralized) {
+				// todo - check that this is defined over decentralized tables/views
 				// here the query should call the openivm parser to parse "materialized view" statements
 				// however our schema does not exist, so the parser will emit error
 				// to circumvent this, we parse the create table statement
-				auto view_constraints = ParseCreateView(query);
-				view_query = CompilerExtension::ExtractViewQuery(query); // reinitializing because of constraints
 				auto create_table_query = "create table " + view_name + " as " + view_query;
 				ParseExecuteQuery(con, create_table_query);
 				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
@@ -238,8 +245,6 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				                              to_string(view_constraints.refresh) + ", " +
 				                              to_string(view_constraints.min_agg) + ");\n";
 				decentralized_queries += query;
-				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
-				centralized_queries += view_string;
 				secure_queries += ConstructTable(con, view_name, true);
 				view_string = "insert into rdda_tables values('rdda_centralized_view_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 1);\n";
 				centralized_queries += view_string;
@@ -250,12 +255,6 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				centralized_queries += view_constraint_string;
 				auto window_string = "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0);\n";
 				centralized_queries += window_string;
-			} else {
-				// replicated
-				auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
-				centralized_queries += view_string;
-				centralized_queries += query;
-				decentralized_queries += query;
 			}
 		}
 	} else if (query.substr(0, 7) == "select") {

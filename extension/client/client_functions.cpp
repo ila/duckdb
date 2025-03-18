@@ -78,6 +78,10 @@ timestamp_t RefreshMaterializedView(string &view_name, Connection &con) {
 	}
 
 	auto timestamp = Timestamp::GetCurrentTimestamp();
+	// todo - receive ack from server
+	// if the result transmission is ok, we can clear the MV
+	// todo - also find a way to persist refresh timestamps
+	// if the transmission is not ok, we need to know when a row was generated
 	return timestamp; // todo - timezone
 
 }

@@ -1,48 +1,44 @@
-CREATE DECENTRALIZED TABLE diagnoses (
-    patient_id INTEGER RANDOMIZED,
-    diagnosis_date DATE,
-    diagnosis VARCHAR,
-    patient_city VARCHAR,
-    doctor_id INTEGER SENSITIVE
+CREATE DECENTRALIZED TABLE runs (
+    nickname VARCHAR,
+    city VARCHAR,
+    date DATE,
+    start_time TIME,
+    end_time TIME,
+    steps INT,
+    heartbeat_rate INT SENSITIVE,
 );
 
-CREATE DECENTRALIZED MATERIALIZED VIEW city_daily_covid_diagnoses AS
-    SELECT diagnosis_date, patient_city
-    FROM diagnoses
-    WHERE diagnosis = 'COVID-19'
+CREATE DECENTRALIZED MATERIALIZED VIEW daily_runs_city AS
+    SELECT nickname, city, date, SUM(steps) AS total_steps
+    FROM runs
+    GROUP BY nickname, city, date
     WINDOW 24
     TTL 48
     MINIMUM AGGREGATION 3
-    REFRESH 12;
+    REFRESH 4;
 
-INSERT INTO diagnoses (patient_id, diagnosis_date, diagnosis, patient_city, doctor_id) VALUES
-(1, '2024-02-01', 'COVID-19', 'New York', 201),
-(2, '2024-02-01', 'Flu', 'New York', 202),
-(3, '2024-02-02', 'COVID-19', 'New York', 203),
-(4, '2024-02-02', 'Cold', 'New York', 204),
-(5, '2024-02-03', 'COVID-19', 'New York', 205),
-(6, '2024-02-03', 'Pneumonia', 'New York', 206),
-(7, '2024-02-04', 'COVID-19', 'New York', 207),
-(8, '2024-02-04', 'Asthma', 'New York', 208),
-(9, '2024-02-05', 'COVID-19', 'New York', 209),
-(10, '2024-02-05', 'Allergy', 'New York', 210);
+-- todo incrementalize this kind of query
+CREATE CENTRALIZED MATERIALIZED VIEW weekly_runs_city AS
+    SELECT nickname, city, week(date), SUM(total_steps) AS total_steps
+    FROM daily_runs_city
+    GROUP BY nickname, city, week(date)
+    REFRESH 24;
 
-insert into city_daily_covid_diagnoses
-SELECT diagnosis_date, patient_city
-FROM diagnoses
-WHERE diagnosis = 'COVID-19';
+INSERT INTO runs (nickname, city, date, start_time, end_time, steps, heartbeat_rate) VALUES
+-- Day 1
+('runner42', 'Berlin', '2025-02-22', '08:00:00', '09:00:00', 7520, 140),
+('runner42', 'Berlin', '2025-02-22', '17:00:00', '18:00:00', 6780, 137),
+-- Day 2
+('runner42', 'Berlin', '2025-02-23', '07:45:00', '08:45:00', 7890, 135),
+('runner42', 'Berlin', '2025-02-23', '18:15:00', '19:15:00', 7300, 136),
+-- Day 3
+('runner42', 'Berlin', '2025-02-24', '06:30:00', '07:30:00', 8040, 142),
+('runner42', 'Berlin', '2025-02-24', '19:00:00', '20:00:00', 7450, 139),
+-- Day 4
+('runner42', 'Berlin', '2025-02-25', '08:15:00', '09:15:00', 7680, 138),
+('runner42', 'Berlin', '2025-02-25', '17:30:00', '18:30:00', 7150, 134);
 
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Berlin', now(), now(), 1, 1, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Berlin', now(), now(), 1, 2, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Berlin', now(), now(), 1, 3, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Berlin', now(), now(), 1, 4, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Amsterdam', now(), now(), 1, 5, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Amsterdam', now(), now(), 1, 6, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Amsterdam', now(), now(), 1, 7, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Milan', now(), now(), 1, 8, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-17', 'Milan', now(), now(), 1, 9, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-18', 'Amsterdam', now(), now(), 2, 10, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-18', 'Amsterdam', now(), now(), 2, 11, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-18', 'Amsterdam', now(), now(), 2, 12, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-18', 'Berlin', now(), now(), 2, 13, 1);
-INSERT INTO rdda_centralized_view_city_daily_covid_diagnoses values ('2025-02-18', 'Berlin', now(), now(), 2, 14, 1);
+insert into daily_runs_city
+SELECT nickname, city, date, SUM(steps) AS total_steps
+FROM runs
+GROUP BY nickname, city, date;
