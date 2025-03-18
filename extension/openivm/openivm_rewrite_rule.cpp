@@ -510,117 +510,132 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	case LogicalOperatorType::LOGICAL_GET: {
 		// we are at the bottom of the tree
 		auto old_get = dynamic_cast<LogicalGet *>(pw.plan.get());
+
+
 		// FIXME: Should the types be set here?
 
 #ifdef DEBUG
 		printf("Create replacement get node \n");
 #endif
-		string delta_table;
-		string delta_table_schema;
-		string delta_table_catalog;
-		// checking if the table to be scanned exists in DuckDB
-		if (old_get->GetTable().get() == nullptr) {
-			// we are using PostgreSQL (the underlying table does not exist)
-			delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
-			delta_table_schema = "public";
-			delta_table_catalog = "p"; // todo
-		} else {
-			// DuckDB (default case)
-			delta_table = "delta_" + old_get->GetTable().get()->name;
-			delta_table_schema = old_get->GetTable().get()->schema.name;
-			delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
-		}
-		auto table_catalog_entry =
-		    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, delta_table_catalog, delta_table_schema,
-		                      delta_table, OnEntryNotFound::RETURN_NULL, error_context);
-		if (table_catalog_entry == nullptr) {
-			// if delta base table does not exist, return error
-			// this also means there are no deltas to compute
-			throw Exception(ExceptionType::BINDER, "Table " + delta_table + " does not exist, no deltas to compute!");
-		}
+		/* New logic */
+		unique_ptr<LogicalGet> delta_get_node;
+		ColumnBinding new_mul_binding, timestamp_binding;
+		string table_name;
+		{
+			// Get TableCatalogEntry using CatalogEntry. Check whether it is a nullptr first though.
+			// Although cast later, cannot be put into a scope because it is a reference.
+            optional_ptr<CatalogEntry> opt_catalog_entry;
+            {
+                string delta_table;
+                string delta_table_schema;
+                string delta_table_catalog;
+                // checking if the table to be scanned exists in DuckDB
+                if (old_get->GetTable().get() == nullptr) {
+                    // we are using PostgreSQL (the underlying table does not exist)
+                    delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
+                    delta_table_schema = "public";
+                    delta_table_catalog = "p"; // todo
+                } else {
+                    // DuckDB (default case)
+                    delta_table = "delta_" + old_get->GetTable().get()->name;
+                    delta_table_schema = old_get->GetTable().get()->schema.name;
+                    delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
+                }
+                opt_catalog_entry = Catalog::GetEntry(
+                    context,
+                    CatalogType::TABLE_ENTRY,
+                    delta_table_catalog,
+                    delta_table_schema,
+                    delta_table,
+                    OnEntryNotFound::RETURN_NULL,
+                    error_context
+                );
+                if (opt_catalog_entry == nullptr) {
+                    // if delta base table does not exist, return error. This also means there are no deltas to compute.
+                    throw Exception(ExceptionType::BINDER, "Table " + delta_table + " does not exist, no deltas to compute!");
+                }
+            }
+            TableCatalogEntry& table_entry = opt_catalog_entry->Cast<TableCatalogEntry>();
+			table_name = table_entry.name;
+            unique_ptr<FunctionData> bind_data;
+            auto scan_function = table_entry.GetScanFunction(context, bind_data);
 
-		// we are replacing the GET node with a new GET node that reads the delta table
-		// this logic is a bit wonky, the plan should not be executed after these changes
-		// however, this is fed to LPTS, which is good enough to generate the query string
-		// the previous implementation added a projection on top of the new scan, and scanned all the columns
-		// however, I find the code a bit complicated and harder to turn into a string
-		// so, now we go with this solution and pray it won't break
-
-		auto &table_entry = table_catalog_entry->Cast<TableCatalogEntry>();
-		unique_ptr<FunctionData> bind_data;
-		auto scan_function = table_entry.GetScanFunction(context, bind_data);
-		vector<LogicalType> return_types = {};
-		vector<string> return_names = {};
-		vector<ColumnIndex> column_ids = {};
-
-		// the delta table has the same columns and column names as the base table, in the same order
-		// therefore, we just need to add the columns that we need
-		// this is ugly, but needs to stay like this
-		// sometimes DuckDB likes to randomly invert columns, so we need to check all of them
-		// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
-		for (auto &id : old_get->GetColumnIds()) {
-			column_ids.push_back(id);
-			for (auto &col : table_entry.GetColumns().Logical()) {
-				if (col.Oid() == id.GetPrimaryIndex()) {
-					return_types.push_back(col.Type());
-					return_names.push_back(col.Name());
+			// Define the return names and types.
+			vector<LogicalType> return_types = {};
+			vector<string> return_names = {};
+			vector<ColumnIndex> column_ids = {};
+			/* Add the original GET column_ids using the logic as explained below.*/
+			// the delta table has the same columns and column names as the base table, in the same order
+			// therefore, we just need to add the columns that we need
+			// this is ugly, but needs to stay like this
+			// sometimes DuckDB likes to randomly invert columns, so we need to check all of them
+			// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
+			for (auto &id : old_get->GetColumnIds()) {
+				column_ids.push_back(id);
+				for (auto &col : table_entry.GetColumns().Logical()) {
+					if (col.Oid() == id.GetPrimaryIndex()) {
+						return_types.push_back(col.Type());
+						return_names.push_back(col.Name());
+					}
 				}
 			}
+			// The column_ids, return_types, and return_names are now identical to the original GET.
+			// For the delta GET, the multiplicity column and timestamp should be added,
+			// as in theory they "can be returned by the table function".
+			/* Multiplicity column */
+			return_types.push_back(pw.mul_type);
+			return_names.push_back("_duckdb_ivm_multiplicity");
+			// FIXME: Why -2? Should be -1 right?
+			const auto mul_col_idx = ColumnIndex(column_ids.size());
+			column_ids.push_back(mul_col_idx);
+			new_mul_binding = ColumnBinding(old_get->table_index, mul_col_idx.GetPrimaryIndex());
+
+            /* Timestamp column */
+            return_types.push_back(LogicalType::TIMESTAMP);
+            return_names.push_back("timestamp");
+            const auto timestamp_idx = ColumnIndex(column_ids.size());
+            column_ids.push_back(timestamp_idx);
+			timestamp_binding = ColumnBinding(old_get->table_index, timestamp_idx.GetPrimaryIndex());
+
+			// Finally, create the delta GET node.
+			delta_get_node = make_uniq<LogicalGet>(
+                old_get->table_index, // Will get renumbered later.
+                scan_function,
+                std::move(bind_data),
+                std::move(return_types),
+                std::move(return_names)
+            );
+            delta_get_node->SetColumnIds(std::move(column_ids));
 		}
-
-		// we also need to add the multiplicity column
-		return_types.push_back(pw.mul_type);
-		return_names.push_back("_duckdb_ivm_multiplicity");
-		auto idx = ColumnIndex(table_entry.GetColumns().GetColumnTypes().size() - 2);
-		column_ids.push_back(idx);
-
-		ColumnBinding new_mul_binding = ColumnBinding(old_get->table_index, column_ids.size() - 1);
-		// we also add the timestamp column
-		return_types.push_back(LogicalType::TIMESTAMP);
-		return_names.push_back("timestamp");
-		//column_ids.push_back(table_entry.GetColumns().GetColumnTypes().size() - 1);
-		idx = ColumnIndex(table_entry.GetColumns().GetColumnTypes().size() - 1);
-		column_ids.push_back(idx);
-
-		// the new get node that reads the delta table gets a new table index
-		unique_ptr<LogicalGet> replacement_get_node = make_uniq<LogicalGet>(
-		    // NOTE: "New table index" -> but inherits old one? so -> pw.input.optimizer.binder.GenerateTableIndex()
-		    old_get->table_index,
-		    scan_function,
-		    std::move(bind_data),
-		    std::move(return_types),
-		    std::move(return_names)
-		);
-		replacement_get_node->SetColumnIds(std::move(column_ids));
-		replacement_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
-
-		// FIXME: Why add the filter if there is no filter in the plan???
-		// we add the filter for the timestamp if there is no filter in the plan
+		delta_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
+		// Add a filter for the timestamp. The filtered column should not be passed through by the GET-node.
 		Connection con(*context.db);
 		con.SetAutoCommit(false);
 		// we add a table filter
-		auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + pw.view + "' and table_name = '" + table_entry.name + "';";
+		auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + pw.view + "' and table_name = '" + table_name + "';";
 		auto r = con.Query(timestamp_query);
 		if (r->HasError()) {
 			throw InternalException("Error while querying last_update");
 		}
-		auto timestamp_column = make_uniq<BoundColumnRefExpression>(
-		    "timestamp", LogicalType::TIMESTAMP,
-		    ColumnBinding(new_mul_binding.table_index, new_mul_binding.column_index + 1));
-
 		auto table_filter = make_uniq<ConstantFilter>(ExpressionType::COMPARE_GREATERTHANOREQUALTO, r->GetValue(0, 0));
-		replacement_get_node->table_filters.filters[new_mul_binding.column_index + 1] = std::move(table_filter);
+		delta_get_node->table_filters.filters[timestamp_binding.column_index] = std::move(table_filter);
 
-		replacement_get_node->projection_ids = old_get->projection_ids;
-		// Add the multiplicity column to the projection IDs.
-		// The size is "past the end" of the old get projection IDs, and thus the projection ID of the mul column,
-		replacement_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
-		replacement_get_node->ResolveOperatorTypes();
 #ifdef DEBUG
-		auto whatever = replacement_get_node->GetColumnBindings();
+		auto debug_bindings_1 = delta_get_node->GetColumnBindings();
 #endif
-        replacement_get_node->Verify(pw.input.context);
-		return {std::move(replacement_get_node), new_mul_binding};
+		delta_get_node->projection_ids = old_get->projection_ids;
+		// Add the multiplicity column to the projection IDs, if any projection IDs are defined.
+		// The size is "past the end" of the old get projection IDs, and thus the projection ID of the mul column.
+		if (!delta_get_node->projection_ids.empty()) {
+            delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
+		}
+        delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
+		delta_get_node->ResolveOperatorTypes();
+#ifdef DEBUG
+		auto debug_bindings_2 = delta_get_node->GetColumnBindings();
+#endif
+        delta_get_node->Verify(pw.input.context);
+		return {std::move(delta_get_node), new_mul_binding};
 	}
 	/*
 	 * END OF CASE.
@@ -722,9 +737,48 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			pw.plan->children[0]->Verify(pw.input.context);
 			return {std::move(pw.plan->children[0]), child_mul_bindings[0]};
 		}
-		// FIXME: If filter is NOT empty, the LOGICAL_FILTER should copy the bindings, projection map etc etc
-		//  from its only child (whatever that child may be).
-		break;
+
+		/* LogicalFilter gets its GetColumnBindings from its (only) child.
+		 * For a non-empty filter, all that needs to be done is to ensure that the multiplicity column is passed through.
+		 * If the filter has a projection map, the index of the multiplicity column should be appended to it.
+		 * This is done by checking the CBs of the child, and finding the index corresponding to the multiplicity's CB.
+		 * If the map is empty, all columns (including multiplicity) are taken from the child, so nothing needs to be done.
+		 */
+		unique_ptr<LogicalFilter> plan_as_filter = unique_ptr_cast<LogicalOperator, LogicalFilter>(std::move(pw.plan));
+		plan_as_filter->ResolveOperatorTypes(); // Might not be needed, but does not hurt.
+		if (!plan_as_filter->projection_map.empty()) {
+#ifdef DEBUG
+            auto filter_binds_before = plan_as_filter->GetColumnBindings();
+            printf("LOGICAL_FILTER projection_map size before adding mul CB: %zu\n", filter_binds_before.size());
+#endif
+            auto child_binds = plan_as_filter->children[0]->GetColumnBindings();
+            // Multiplicity column likely at the end, so use reverse for-loop.
+            // Watch out for off-by-one errors; code is written this way because i >= 0 is always true for size_t.
+            ColumnBinding mul_binding = child_mul_bindings[0];  // Only one child.
+            idx_t mul_index = child_binds.size();  // Gets decremented at start of while-loop.
+            bool mul_found = false;
+            while (mul_found == false && mul_index > 0) {
+                --mul_index;
+                if (child_binds[mul_index] == mul_binding) {
+                    mul_found = true;
+                };
+            }
+            if (!mul_found) {
+                throw InternalException("Filter's child does not have multiplicity column!");
+            }
+            // Multiplicity column is present and found; add it to the projection map.
+            plan_as_filter->projection_map.emplace_back(mul_index);
+#ifdef DEBUG
+            auto filter_binds_after = plan_as_filter->GetColumnBindings();
+            printf("LOGICAL_FILTER projection_map size after adding mul CB: %zu\n", filter_binds_after.size());
+#endif
+		}
+#ifdef DEBUG
+		else {
+			printf("LOGICAL_FILTER has no projection_map; do not modify anything.\n");
+		}
+#endif
+		return {std::move(plan_as_filter), child_mul_bindings[0]};
 	}
 	default:
 		throw NotImplementedException("Operator type %s not supported", LogicalOperatorToString(pw.plan->type));
