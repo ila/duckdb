@@ -9,6 +9,7 @@
 #include <compiler_extension.hpp>
 #include <logical_plan_to_string.hpp>
 #include <regex>
+#include <duckdb/common/local_file_system.hpp>
 #include <duckdb/function/aggregate/distributive_functions.hpp>
 #include <duckdb/main/database.hpp>
 
@@ -33,12 +34,20 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	 * where x.c1 = y.c1 and x.c2 = y.c2 and x.c3 = y.c3 and x.win = y.win;
 	 */
 
-	auto &catalog = Catalog::GetSystemCatalog(context);
-	QueryErrorContext error_context = QueryErrorContext();
+	// we do not want to recompile the file every time
+	auto view_name = StringValue::Get(parameters.values[0]);
+	auto centralized_view_name = "rdda_centralized_view_" + view_name;
+	auto centralized_table_name = "rdda_centralized_table_" + view_name;
 
 	Connection con(*context.db);
-	auto view_name = StringValue::Get(parameters.values[0]);
+	LocalFileSystem fs;
 
+	string file_name = centralized_view_name + "_flush.sql";
+	if (fs.FileExists(file_name)) {
+		auto queries = CompilerExtension::ReadFile(file_name);
+		con.Query(queries);
+		return;
+	}
 	string min_agg_query = "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
 	auto r = con.Query(min_agg_query);
 	if (r->HasError()) {
@@ -56,11 +65,6 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	auto current_window = std::stoi(r->GetValue(0, 0).ToString());
 	int ttl_windows = ttl / window;
 
-	auto centralized_view_name = "rdda_centralized_view_" + view_name;
-	auto centralized_table_name = "rdda_centralized_table_" + view_name;
-
-	string file_name = centralized_view_name + "_flush.sql";
-
 	auto centralized_view_catalog_entry = Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, "test", "main", centralized_view_name,
 										 OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 
@@ -72,6 +76,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string select_names = "";
 	string column_names = "";
 	string join_names = "";
+	string table_column_names = ""; // column names of the centralized table (without metadata)
 
 	auto &centralized_view_entry = centralized_view_catalog_entry->Cast<TableCatalogEntry>();
 	for (auto &column : centralized_view_entry.GetColumns().GetColumnNames()) {
@@ -80,19 +85,23 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 			select_names += "x." + column + ", ";
 			join_names += "x." + column + " = y." + column + " \nand ";
 		}
+		if (column != "action" && column != "generation" && column != "arrival") {
+			table_column_names += column + ", ";
+		}
 	}
 	// remove the last comma and space
 	column_names = column_names.substr(0, column_names.size() - 2);
+	table_column_names = table_column_names.substr(0, table_column_names.size() - 2);
 	
 	update_query_1 += column_names + ", "; // without the alias
 	update_query_1 += "count(distinct client_id)\n\t";
 	update_query_1 += "from " + centralized_view_name + " \n\t";
 	update_query_1 += "group by " + column_names + "\n\t";
 	update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation) + ") y \n";
-	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n";
+	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
 
-	auto insert_query = "insert into " + centralized_table_name + " \nselect * \nfrom " + centralized_view_name + " \nwhere action = 2;\n";
-	auto delete_query_1 = "delete from " + centralized_view_name + " \nwhere action = 2;\n";
+	auto insert_query = "insert into " + centralized_table_name + " \nselect " + table_column_names + " \nfrom " + centralized_view_name + " \nwhere action = 2;\n\n";
+	auto delete_query_1 = "delete from " + centralized_view_name + " \nwhere action = 2;\n\n";
 
 	// now in the centralized view we only have tuples not meeting the minimum aggregation
 	// three options:
@@ -108,23 +117,20 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string y_agg = "y as (\n\t";
 	y_agg += "select " + column_names + ", count(distinct client_id) as client_count \n\t";
 	y_agg += "from " + centralized_table_name + " \n\t";
-	y_agg += "where window >= " + to_string(current_window - ttl_windows) + " \n\t";
+	y_agg += "where rdda_window >= " + to_string(current_window - ttl_windows) + " \n\t";
 	y_agg += "group by " + column_names + ") \n";
 	string update_query_2 = x_agg + y_agg;
 	update_query_2 += "update " + centralized_view_name + " x \n";
 	update_query_2 += "set action = 2 \n";
 	update_query_2 += "from x, y \n";
-	update_query_2 += "where " + join_names + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n";
+	update_query_2 += "where " + join_names + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n\n";
 	// lastly we remove stale tuples
-	string delete_query_2 = "delete from " + centralized_view_name + " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n";
+	string delete_query_2 = "delete from " + centralized_view_name + " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n\n";
 
-	CompilerExtension::WriteFile(file_name, false, update_query_1);
-	CompilerExtension::WriteFile(file_name, true, insert_query);
-	CompilerExtension::WriteFile(file_name, true, delete_query_1);
-	CompilerExtension::WriteFile(file_name, true, update_query_2);
-	CompilerExtension::WriteFile(file_name, true, insert_query);
-	CompilerExtension::WriteFile(file_name, true, delete_query_1);
-	CompilerExtension::WriteFile(file_name, true, delete_query_2);
+	auto queries = update_query_1 + insert_query + delete_query_1 + update_query_2 + insert_query + delete_query_1 + delete_query_2;
+	ExecuteAndWriteQueries(con, queries, file_name, false);
+
+	// fixme - error with ambiguous table name in the cte
 
 }
 } // namespace duckdb

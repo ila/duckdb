@@ -6,6 +6,7 @@
 #define FLUSH_FUNCTION_HPP
 #include <duckdb/function/function.hpp>
 #include <duckdb/optimizer/optimizer_extension.hpp>
+#include <rdda_parser.hpp>
 
 namespace duckdb {
     void FlushFunction(ClientContext &context, const FunctionParameters &parameters);

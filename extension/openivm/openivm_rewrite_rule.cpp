@@ -585,14 +585,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			/* Multiplicity column */
 			return_types.push_back(pw.mul_type);
 			return_names.push_back("_duckdb_ivm_multiplicity");
-			// FIXME: Why -2? Should be -1 right?
 			const auto mul_col_idx = ColumnIndex(column_ids.size());
 			column_ids.push_back(mul_col_idx);
 			new_mul_binding = ColumnBinding(old_get->table_index, mul_col_idx.GetPrimaryIndex());
 
             /* Timestamp column */
             return_types.push_back(LogicalType::TIMESTAMP);
-            return_names.push_back("timestamp");
+            return_names.push_back("_duckdb_ivm_timestamp");
             const auto timestamp_idx = ColumnIndex(column_ids.size());
             column_ids.push_back(timestamp_idx);
 			timestamp_binding = ColumnBinding(old_get->table_index, timestamp_idx.GetPrimaryIndex());

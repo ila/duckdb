@@ -97,7 +97,13 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
 		// Extracting the condition in the filter
-		auto condition = node->ToString();
+		auto conditions = node->ParamsToString();
+		string condition;
+		for (auto &c : conditions) {
+			if (c.first == "Expressions") {
+				condition += c.second.c_str();
+			}
+		}
 		auto ql_filter_exp = new DuckASTFilter(condition);
 		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
 		auto opr = shared_ptr<DuckASTBaseOperator>(ql_filter_exp);
@@ -252,7 +258,9 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		ql_get_exp->all_columns = true;
 
 		if (!node->table_filters.filters.empty()) {
-			ql_get_exp->filter_condition = node->ToString().substr(0, node->ToString().find('\n'));
+			for (auto &filter : node->table_filters.filters) {
+				ql_get_exp->filter_condition = filter.second->ToString(node->names[filter.first]);;
+			}
 		}
 
 		auto bindings = node->GetColumnBindings();

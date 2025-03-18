@@ -252,10 +252,12 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix
 		vector<string> columns;
 		auto exp = dynamic_cast<DuckASTGet *>(node->opr.get());
 		string table_name = exp->table_name;
-		if (has_filter) {
+		if (!exp->filter_condition.empty() && has_filter) {
+			plan_string = " where " + plan_string + " and " + exp->filter_condition;
+		} else if (has_filter) {
 			plan_string = " where " + plan_string;
 		} else if (!exp->filter_condition.empty()) {
-			plan_string = " where " + exp->filter_condition + plan_string;
+			plan_string = " where " + exp->filter_condition;
 		}
 		if (exp->all_columns) {
 			plan_string = "select * from " + table_name + " " + plan_string;

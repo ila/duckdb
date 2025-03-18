@@ -28,7 +28,7 @@ CREATE MATERIALIZED VIEW product_sales AS SELECT product_name, SUM(amount) AS to
 ```
 
 ```SQL
-CREATE MATERIALIZED VIEW product_sales_1 AS SELECT * FROM sales WHERE product_name = 'a';
+CREATE MATERIALIZED VIEW product_sales AS SELECT * FROM sales WHERE product_name = 'a';
 ```
 ```SQL
 CREATE MATERIALIZED VIEW product_sales AS SELECT SUM(amount) AS total_amount FROM sales;
