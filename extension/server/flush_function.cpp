@@ -12,6 +12,7 @@
 #include <duckdb/common/local_file_system.hpp>
 #include <duckdb/function/aggregate/distributive_functions.hpp>
 #include <duckdb/main/database.hpp>
+#include <fmt/format.h>
 
 namespace duckdb {
 
@@ -56,7 +57,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		throw ParserException("Error while querying columns metadata: " + r->GetError());
 	}
 	if (r->RowCount() == 0) {
-        throw ParserException("View metadata not found");
+        throw ParserException("View metadata not found!");
     }
 	auto minimum_aggregation = std::stoi(r->GetValue(0, 0).ToString());
 	auto window = std::stoi(r->GetValue(1, 0).ToString());
@@ -68,7 +69,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		throw ParserException("Error while querying window metadata: " + r->GetError());
 	}
 	if (r->RowCount() == 0) {
-		throw ParserException("Window metadata not found");
+		throw ParserException("Window metadata not found!");
 	}
 	auto current_window = std::stoi(r->GetValue(0, 0).ToString());
 	int ttl_windows = ttl / window;
@@ -81,32 +82,57 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
     }
 	string update_query_1 = "update " + centralized_view_name + " x\nset action = 2 \nfrom (\n\tselect ";
 
-	string select_names = "";
-	string column_names = "";
+	string protected_column_names = "";
 	string join_names = "";
 	string join_names_cte = "";
 	string table_column_names = ""; // column names of the centralized table (without metadata)
 
+	// now we need to query the protected columns
+	string view_query = "select query from rdda_tables where name = '" + view_name + "';";
+	auto view_query_result = con.Query(view_query);
+	if (view_query_result->HasError()) {
+        throw ParserException("Error while querying view definition: " + view_query_result->GetError());
+    }
+	con.BeginTransaction();
+	auto table_names = con.GetTableNames(view_query_result->GetValue(0, 0).ToString());
+	con.Rollback();
+	// currently there is only one table name, but might be extended in the future
+	string in_table_names = "(";
+	for (auto &table : table_names) {
+        in_table_names += "'" + table + "', ";
+    }
+	in_table_names = in_table_names.substr(0, in_table_names.size() - 2) + ")";
+
+	auto protected_columns_query = "select column_name from rdda_table_constraints where rdda_protected = 1 and table_name in " + in_table_names + ";";
+	auto protected_columns = con.Query(protected_columns_query);
+	if (protected_columns->HasError()) {
+        throw ParserException("Error while querying protected columns: " + protected_columns->GetError());
+    }
+	for (size_t i = 0; i < protected_columns->RowCount(); i++) {
+		auto column = protected_columns->GetValue(0, i).ToString();
+        protected_column_names += column + ", ";
+		join_names += "x." + column + " = y." + column + " \nand ";
+		join_names_cte += "x." + column + " = z." + column + " \nand ";
+	}
+
+	// also adding the window
+	protected_column_names += "rdda_window";
+	join_names += "x.rdda_window = y.rdda_window \nand ";
+	join_names_cte += "x.rdda_window = z.rdda_window \nand ";
+
 	auto &centralized_view_entry = centralized_view_catalog_entry->Cast<TableCatalogEntry>();
 	for (auto &column : centralized_view_entry.GetColumns().GetColumnNames()) {
-		if (column != "action" && column != "client_id" && column != "generation" && column != "arrival") {
-			column_names += column + ", ";
-			select_names += "x." + column + ", ";
-			join_names += "x." + column + " = y." + column + " \nand ";
-			join_names_cte += "x." + column + " = z." + column + " \nand ";
-		}
 		if (column != "action" && column != "generation" && column != "arrival") {
 			table_column_names += column + ", ";
 		}
 	}
 	// remove the last comma and space
-	column_names = column_names.substr(0, column_names.size() - 2);
 	table_column_names = table_column_names.substr(0, table_column_names.size() - 2);
 	
-	update_query_1 += column_names + ", "; // without the alias
+	update_query_1 += protected_column_names + ", "; // without the alias
 	update_query_1 += "count(distinct client_id)\n\t";
 	update_query_1 += "from " + centralized_view_name + " \n\t";
-	update_query_1 += "group by " + column_names + "\n\t";
+	update_query_1 += "group by " + protected_column_names + "\n\t";
 	update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation) + ") y \n";
 	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
 
@@ -121,14 +147,14 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	// we also add a where clause to speed up the query
 	string x_agg = "with x as (\n\t";
-	x_agg += "select " + column_names + ", count(distinct client_id) as client_count \n\t";
+	x_agg += "select " + protected_column_names + ", count(distinct client_id) as client_count \n\t";
 	x_agg += "from " + centralized_view_name + " \n\t";
-	x_agg += "group by " + column_names + "), \n";
+	x_agg += "group by " + protected_column_names + "), \n";
 	string y_agg = "y as (\n\t";
-	y_agg += "select " + column_names + ", count(distinct client_id) as client_count \n\t";
+	y_agg += "select " + protected_column_names + ", count(distinct client_id) as client_count \n\t";
 	y_agg += "from " + centralized_table_name + " \n\t";
 	y_agg += "where rdda_window >= " + to_string(current_window - ttl_windows) + " \n\t";
-	y_agg += "group by " + column_names + ") \n";
+	y_agg += "group by " + protected_column_names + ") \n";
 	string update_query_2 = x_agg + y_agg;
 	update_query_2 += "update " + centralized_view_name + " z \n";
 	update_query_2 += "set action = 2 \n";

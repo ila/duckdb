@@ -45,6 +45,7 @@ TableScope ParseScope(std::string &query) {
 unordered_map<string, constraints> ParseCreateTable(std::string &query) {
 
 	unordered_map<string, constraints> constraints_table;
+	bool protected_found = false;
 
 	std::regex columns_regex("\\((.*)\\)");
 	std::smatch columns_match;
@@ -77,14 +78,23 @@ unordered_map<string, constraints> ParseCreateTable(std::string &query) {
 				constraints_column.sensitive = true;
 			}
 
+			if (regex_search(split, std::regex("\\protected\\b"))) {
+				constraints_column.protected_ = true;
+				protected_found = true;
+			}
+
 			StringUtil::Trim(split);
 			// we only add the column if it has constraints
-			if (constraints_column.randomized || constraints_column.sensitive) {
+			if (constraints_column.randomized || constraints_column.sensitive || constraints_column.protected_) {
 				constraints_table.insert(make_pair(column_name, constraints_column));
 			}
 		}
 
-		query = regex_replace(query, std::regex("\\b(sensitive|randomized)\\b"), "");
+		query = regex_replace(query, std::regex("\\b(sensitive|randomized|protected)\\b"), "");
+	}
+
+	if (!protected_found) {
+		throw ParserException("Protected column not found!");
 	}
 
 	return constraints_table;

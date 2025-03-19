@@ -61,7 +61,7 @@ static int32_t GenerateClientInformation(Connection &con, unordered_map<string, 
 	if (r->RowCount() > 0) {
 		// this can happen for example if a connection fails the first time
 		id = r->GetValue(0, 0).GetValue<uint64_t>();
-		timestamp_string = r->GetValue(0, 1).ToString();
+		timestamp_string = r->GetValue(1, 0).ToString();
 	} else {
 		// id, creation, last_update
 		RandomEngine engine;

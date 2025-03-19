@@ -16,6 +16,7 @@ enum class TableScope { null = 0, centralized = 1, decentralized = 2, replicated
 struct constraints {
 	bool randomized = false;
 	bool sensitive = false;
+	bool protected_ = false;
 };
 
 struct RDDAViewConstraint {

@@ -187,7 +187,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				for (auto &constraint : constraints) {
 					auto constraint_string = "insert into rdda_table_constraints values ('" + table_name + "', '" +
 					                         constraint.first + "', " + to_string(constraint.second.randomized) +
-					                         ", " + to_string(constraint.second.sensitive) + ");\n";
+					                         ", " + to_string(constraint.second.sensitive) + ", " + to_string(constraint.second.protected_) + ");\n";
 					centralized_queries += constraint_string;
 				}
 				con.Rollback();

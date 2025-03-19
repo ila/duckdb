@@ -1,7 +1,7 @@
 CREATE DECENTRALIZED TABLE runs (
     nickname VARCHAR,
-    city VARCHAR,
-    date DATE,
+    city VARCHAR PROTECTED,
+    date DATE PROTECTED,
     start_time TIME,
     end_time TIME,
     steps INT,
@@ -14,7 +14,7 @@ CREATE DECENTRALIZED MATERIALIZED VIEW daily_runs_city AS
     GROUP BY nickname, city, date
     WINDOW 24
     TTL 48
-    MINIMUM AGGREGATION 3
+    MINIMUM AGGREGATION 2
     REFRESH 4;
 
 -- todo incrementalize this kind of query
@@ -37,6 +37,18 @@ INSERT INTO runs (nickname, city, date, start_time, end_time, steps, heartbeat_r
 -- Day 4
 ('runner42', 'Berlin', '2025-02-25', '08:15:00', '09:15:00', 7680, 138),
 ('runner42', 'Berlin', '2025-02-25', '17:30:00', '18:30:00', 7150, 134);
+
+INSERT INTO runs (nickname, city, date, start_time, end_time, steps, heartbeat_rate) VALUES
+-- Day 1
+('fastestgirlinberlin', 'Berlin', '2025-02-22', '08:00:00', '09:00:00', 7920, 140),
+-- Day 2
+('fastestgirlinberlin', 'Berlin', '2025-02-23', '07:45:00', '08:45:00', 8500, 135),
+('fastestgirlinberlin', 'Berlin', '2025-02-23', '18:15:00', '19:15:00', 7200, 136),
+-- Day 3
+('fastestgirlinberlin', 'Berlin', '2025-02-24', '06:30:00', '07:30:00', 7100, 142),
+('fastestgirlinberlin', 'Berlin', '2025-02-24', '19:00:00', '20:00:00', 7250, 139),
+-- Day 4
+('fastestgirlinberlin', 'Berlin', '2025-02-25', '08:15:00', '09:15:00', 9100, 138);
 
 insert into daily_runs_city
 SELECT nickname, city, date, SUM(steps) AS total_steps
