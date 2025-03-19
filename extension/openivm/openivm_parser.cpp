@@ -45,6 +45,8 @@ ParserExtensionParseResult IVMParserExtension::IVMParseFunction(ParserExtensionI
 		return ParserExtensionParseResult();
 	}
 
+	// todo - implement drop materialized view
+
 	// we see a materialized view - but we create a table under the hood
 	// first we turn this instruction into a table ddl
 	CompilerExtension::ReplaceMaterializedView(query_lower);

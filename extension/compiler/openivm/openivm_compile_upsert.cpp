@@ -115,6 +115,7 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	string upsert_query = "insert or replace into " + view_name + "\n" + query_string + "\n";
 
 	// we need to delete the rows with SUM or COUNT equal to 0
+	// todo - sometimes this is wrong (ex. sometimes the sum is allowed to be 0?)
 	string delete_query = "\ndelete from " + view_name + " where ";
 	for (auto &column : aggregates) {
 		delete_query += column + " = 0 and ";
@@ -145,14 +146,14 @@ string CompileSimpleAggregates(string &view_name, const vector<string> &column_n
 	// there should be only one column here
 	for (auto &column : column_names) {
 		if (column != "_duckdb_ivm_multiplicity") { // we don't need the multiplicity column
-			update_query += column + " = \n\t" + column + " \n\t\t- (select " + column + " from delta_" + view_name +
-			                " where _duckdb_ivm_multiplicity = false)\n\t\t+ (select " + column + " from delta_" +
-			                view_name + " where _duckdb_ivm_multiplicity = true);\n";
+			update_query += column + " = \n\t" + column + " \n\t\t- coalesce((select " + column + " from delta_" + view_name +
+			                " where _duckdb_ivm_multiplicity = false), 0)\n\t\t+ coalesce((select " + column + " from delta_" +
+			                view_name + " where _duckdb_ivm_multiplicity = true), 0);\n";
 		}
 	}
-	// in this case, we choose not to delete from the main view if the SUM or COUNT is 0
+	// in this case, we choose not to delete from the main view if the final SUM or COUNT is 0
 	// in SQL, this query would still return a row with NULL or 0
-	// todo update the row such that the sum is set to NULL if it is zero
+	// todo - update the row such that the sum is set to NULL if it is zero?
 
 	return update_query;
 }

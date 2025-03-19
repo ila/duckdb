@@ -161,7 +161,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 			table_name = attached_db_catalog_name + "." + attached_db_schema_name + "." + table_name;
 		}
 		// now we delete anything we don't need anymore
-		delete_from_delta_table_query += "delete from " + table_name + " where timestamp < (select min(last_update) from _duckdb_ivm_delta_tables where table_name = '" + table_name + "');\n";
+		delete_from_delta_table_query += "delete from " + table_name + " where _duckdb_ivm_timestamp < (select min(last_update) from _duckdb_ivm_delta_tables where table_name = '" + table_name + "');\n";
 	}
 
 	string query = ivm_query + "\n\n" + update_timestamp_query + "\n" + upsert_query + "\n" + delete_from_view_query + "\n" + ivm_result + "\n" + delete_from_delta_table_query;
