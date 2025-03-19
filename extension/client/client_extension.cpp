@@ -28,8 +28,7 @@ static void Refresh(ClientContext &context, const FunctionParameters &parameters
 	string config_path = "../extension/client/";
 	auto view_name = StringValue::Get(parameters.values[0]);
 	auto con = Connection(*context.db);
-	//auto timestamp = RefreshMaterializedView(view_name, con); todo test this
-	auto timestamp = Timestamp::GetCurrentTimestamp();
+	auto timestamp = RefreshMaterializedView(view_name, con);
 	// we need to send this timestamp to the server (event time)
 	auto sock = SendResults(view_name, timestamp, con, config_path);
 	CloseConnection(sock);
@@ -38,14 +37,6 @@ static void Refresh(ClientContext &context, const FunctionParameters &parameters
 
 static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t timestamp) {
 
-	// checking that there is only one client
-	string clients = "select * from client_information;";
-	auto r = con.Query(clients);
-	if (r->RowCount() > 0) {
-		// this can happen for example if a connection fails the first time
-		return;
-	}
-
 	string table_name;
 	if (config["schema_name"] != "main") {
 		table_name = config["schema_name"] + ".client_information";
@@ -53,7 +44,7 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 		table_name = "client_information";
 	}
 	string query = "insert or ignore into " + table_name + " values (" + std::to_string(id) + ", '" + timestamp.GetString() + "', NULL);";
-	r = con.Query(query);
+	auto r = con.Query(query);
 	if (r->HasError()) {
 		throw ParserException("Error while inserting client information: " + r->GetError());
 	}
@@ -61,15 +52,25 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 
 static int32_t GenerateClientInformation(Connection &con, unordered_map<string, string> &config) {
 
-	// id, creation, last_update
-	RandomEngine engine;
-	const auto id = engine.NextRandomInteger64();
-	const auto timestamp = Timestamp::GetCurrentTimestamp();
-	const auto timestamp_string = Timestamp::ToString(timestamp);
+	uint64_t id;
+	string timestamp_string;
 
-	InsertClient(con, config, id, timestamp_string);
+	// checking that there is only one client
+	string query = "select * from client_information;";
+	auto r = con.Query(query);
+	if (r->RowCount() > 0) {
+		// this can happen for example if a connection fails the first time
+		id = r->GetValue(0, 0).GetValue<uint64_t>();
+		timestamp_string = r->GetValue(0, 1).ToString();
+	} else {
+		// id, creation, last_update
+		RandomEngine engine;
+		id = engine.NextRandomInteger64();
+		timestamp_t timestamp = Timestamp::GetCurrentTimestamp();
+		timestamp_string = Timestamp::ToString(timestamp);
+		InsertClient(con, config, id, timestamp_string);
+	}
 
-	// todo exception handling
 	int32_t sock = ConnectClient(config);
 
 	client_messages message = new_client;
@@ -86,7 +87,7 @@ static int32_t GenerateClientInformation(Connection &con, unordered_map<string, 
 	char *buffer = new char[size];
 	read(sock, buffer, size);
 	string queries(buffer, size);
-	auto r = con.Query(queries);
+	r = con.Query(queries);
 	// we cannot wrap this into a commit/rollback block because the materialized view depends on the previous table
 	if (r->HasError()) {
 		Printer::Print("Error while executing queries: " + r->GetError());

@@ -219,6 +219,7 @@ void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, stri
 	}
 	auto window = std::stoi(r->GetValue(0, 0).ToString());
 
+	con.BeginTransaction();
 	Appender appender(con, centralized_view);
 
 	auto ts_gen = Timestamp::FromString(timestamp_str);
@@ -250,6 +251,7 @@ void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, stri
 		}
 	}
 	appender.Close();
+	con.Commit();
 	Printer::Print("New result inserted for the view " + view_name_str);
 }
 

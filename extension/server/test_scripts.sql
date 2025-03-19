@@ -43,4 +43,5 @@ SELECT nickname, city, date, SUM(steps) AS total_steps
 FROM runs
 GROUP BY nickname, city, date;
 
+pragma ivm('daily_runs_city');
 pragma refresh('daily_runs_city');

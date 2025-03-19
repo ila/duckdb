@@ -138,6 +138,7 @@ int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, s
 
 	// closing the connected socket
 	return sock;
+	// todo - remove the data from the mv
 }
 
 }

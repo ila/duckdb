@@ -43,24 +43,32 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	LocalFileSystem fs;
 
 	string file_name = centralized_view_name + "_flush.sql";
-	if (fs.FileExists(file_name)) {
-		auto queries = CompilerExtension::ReadFile(file_name);
-		con.Query(queries);
-		return;
-	}
+	// todo - this file is recomputed every time, we should store it
+	// but if we store it then we have to extract window and ttl with sql
+	// if (fs.FileExists(file_name)) {
+	// 	auto queries = CompilerExtension::ReadFile(file_name);
+	// 	con.Query(queries);
+	// 	return;
+	// }
 	string min_agg_query = "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
 	auto r = con.Query(min_agg_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying columns metadata: " + r->GetError());
 	}
+	if (r->RowCount() == 0) {
+        throw ParserException("View metadata not found");
+    }
 	auto minimum_aggregation = std::stoi(r->GetValue(0, 0).ToString());
 	auto window = std::stoi(r->GetValue(1, 0).ToString());
 	auto ttl = std::stoi(r->GetValue(2, 0).ToString());
 
-	string current_window_query = "select rdda_window from rdda_current_window where view_name = '" + view_name + "';";
-	r = con.Query(min_agg_query);
+	string current_window_query = "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name + "';";
+	r = con.Query(current_window_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying window metadata: " + r->GetError());
+	}
+	if (r->RowCount() == 0) {
+		throw ParserException("Window metadata not found");
 	}
 	auto current_window = std::stoi(r->GetValue(0, 0).ToString());
 	int ttl_windows = ttl / window;
@@ -76,6 +84,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string select_names = "";
 	string column_names = "";
 	string join_names = "";
+	string join_names_cte = "";
 	string table_column_names = ""; // column names of the centralized table (without metadata)
 
 	auto &centralized_view_entry = centralized_view_catalog_entry->Cast<TableCatalogEntry>();
@@ -84,6 +93,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 			column_names += column + ", ";
 			select_names += "x." + column + ", ";
 			join_names += "x." + column + " = y." + column + " \nand ";
+			join_names_cte += "x." + column + " = z." + column + " \nand ";
 		}
 		if (column != "action" && column != "generation" && column != "arrival") {
 			table_column_names += column + ", ";
@@ -120,17 +130,14 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	y_agg += "where rdda_window >= " + to_string(current_window - ttl_windows) + " \n\t";
 	y_agg += "group by " + column_names + ") \n";
 	string update_query_2 = x_agg + y_agg;
-	update_query_2 += "update " + centralized_view_name + " x \n";
+	update_query_2 += "update " + centralized_view_name + " z \n";
 	update_query_2 += "set action = 2 \n";
 	update_query_2 += "from x, y \n";
-	update_query_2 += "where " + join_names + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n\n";
+	update_query_2 += "where " + join_names + join_names_cte + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n\n";
 	// lastly we remove stale tuples
 	string delete_query_2 = "delete from " + centralized_view_name + " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n\n";
 
 	auto queries = update_query_1 + insert_query + delete_query_1 + update_query_2 + insert_query + delete_query_1 + delete_query_2;
 	ExecuteAndWriteQueries(con, queries, file_name, false);
-
-	// fixme - error with ambiguous table name in the cte
-
 }
 } // namespace duckdb

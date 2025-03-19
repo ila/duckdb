@@ -62,10 +62,12 @@ void DetachParserDatabase(Connection &con) {
 void ExecuteAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
 	if (!queries.empty()) {
 		CompilerExtension::WriteFile(file_path, append, queries);
+		con.BeginTransaction();
 		auto r = con.Query(queries);
 		if (r->HasError()) {
 			throw ParserException("Error while executing compiled queries: " + r->GetError());
 		}
+		con.Commit();
 	}
 }
 
