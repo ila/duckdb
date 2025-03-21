@@ -127,7 +127,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 		throw ParserException("Error while getting database name: ", db_name->GetError());
 	}
 	auto db_name_str = db_name->GetValue(0, 0).ToString();
-	if (!client_info && db_name_str != "rdda_parser_internal") {
+	// todo - double check this
+	if (!client_info && db_name_str == "rdda_parser") {
 		// table does not exist --> the database should be initialized
 		std::cout << "Initializing server!\n";
 		InitializeServer(con, config_path, config);

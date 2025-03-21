@@ -1,4 +1,5 @@
 #include "rdda_parser.hpp"
+#include "common.hpp"
 
 #include "../../tools/shell/include/shell_state.hpp"
 #include "../compiler/include/compiler_extension.hpp"
@@ -141,11 +142,14 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	string secure_queries = "";
 
 	string parser_db_name = path + "rdda_parser_internal.db";
+	string db_file_name = "rdda_parser.db"; // this holds the server metadata
+	// we need a separate database only holding schema and metadata to minimize locks/write conflicts
+	DuckDB db(db_file_name);
 
 	// creating a separate schema such that we can check for syntax errors
-	Connection con(*context.db);
+	Connection con(db);
+	string db_name = GetCurrentDatabaseName(con);
 	// we get the database name
-	auto db_name = GetCurrentDatabaseName(con);
 	// we attach to the parser database
 	AttachParserDatabase(con);
 
@@ -305,6 +309,9 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	SwitchBackToDatabase(con, db_name);
 	DetachParserDatabase(con);
 
+	// todo monday:
+	// implement 2 more dbs (client data and server data (in the settings)
+	// make sure that the queries are executes in the correct place
 	ExecuteAndWriteQueries(con, centralized_queries, path + "centralized_queries.sql", false);
 	WriteQueries(con, decentralized_queries, path + "decentralized_queries.sql", true);
 	// todo make the location of secure queries dynamic
