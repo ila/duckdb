@@ -22,13 +22,13 @@ TableScope ParseScope(std::string &query) {
 	std::regex_search(query, scope_match, scope_regex);
 	if (scope_match.size() == 5) {
 		if ((scope_match[2].str() == "centralized" &&
-			 (scope_match[3].str() == "decentralized" || scope_match[3].str() == "replicated")) ||
-			(scope_match[2].str() == "decentralized" &&
-			 (scope_match[3].str() == "centralized" || scope_match[3].str() == "replicated")) ||
-			(scope_match[2].str() == "replicated" &&
-			 (scope_match[3].str() == "decentralized" || scope_match[3].str() == "centralized"))) {
+		     (scope_match[3].str() == "decentralized" || scope_match[3].str() == "replicated")) ||
+		    (scope_match[2].str() == "decentralized" &&
+		     (scope_match[3].str() == "centralized" || scope_match[3].str() == "replicated")) ||
+		    (scope_match[2].str() == "replicated" &&
+		     (scope_match[3].str() == "decentralized" || scope_match[3].str() == "centralized"))) {
 			throw ParserException("Cannot specify multiple table scopes");
-			 }
+		}
 		if (scope_match[2].str() == "centralized") {
 			scope = TableScope::centralized;
 		} else if (scope_match[2].str() == "decentralized") {

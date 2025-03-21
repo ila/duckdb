@@ -71,8 +71,6 @@ struct IVMParseData : ParserExtensionParseData {
 
 	explicit IVMParseData(unique_ptr<SQLStatement> statement, bool plan) : statement(std::move(statement)), plan(plan) {
 	}
-
-
 };
 
 class IVMState : public ClientContextState {
@@ -113,8 +111,7 @@ public:
 	};
 
 	static unique_ptr<FunctionData> IVMBind(ClientContext &context, TableFunctionBindInput &input,
-	                                                vector<LogicalType> &return_types, vector<string> &names) {
-
+	                                        vector<LogicalType> &return_types, vector<string> &names) {
 
 		names.emplace_back("MATERIALIZED VIEW CREATION");
 		return_types.emplace_back(LogicalType::BOOLEAN);

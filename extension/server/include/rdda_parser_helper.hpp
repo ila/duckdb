@@ -16,5 +16,4 @@ void CheckConstraints(LogicalOperator &plan, unordered_map<string, constraints> 
 
 }
 
-
-#endif //RDDA_PARSER_HELPER_HPP
+#endif // RDDA_PARSER_HELPER_HPP

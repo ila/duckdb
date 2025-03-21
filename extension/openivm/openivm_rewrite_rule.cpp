@@ -15,20 +15,20 @@
 #include <iostream>
 
 namespace {
-using duckdb::vector;
+using duckdb::BoundColumnRefExpression;
 using duckdb::ColumnBinding;
 using duckdb::Expression;
-using duckdb::BoundColumnRefExpression;
+using duckdb::JoinCondition;
+using duckdb::LogicalComparisonJoin;
 using duckdb::LogicalOperator;
 using duckdb::LogicalType;
-using duckdb::LogicalComparisonJoin;
-using duckdb::unique_ptr;
 using duckdb::make_uniq;
-using duckdb::JoinCondition;
+using duckdb::unique_ptr;
+using duckdb::vector;
 
 /// Print the column bindings of a join, and each of its children, as well as the total count of bindings.
 #ifdef DEBUG
-void print_column_bindings(const unique_ptr<LogicalComparisonJoin>& join) {
+void print_column_bindings(const unique_ptr<LogicalComparisonJoin> &join) {
 	const auto join_bindings = join->GetColumnBindings();
 	// lc/rc: left child and right child.
 	const auto lc_bindings = join->children[0]->GetColumnBindings();
@@ -51,9 +51,8 @@ void print_column_bindings(const unique_ptr<LogicalComparisonJoin>& join) {
 #endif
 
 /// Create an empty join object from an existing comparison join, to work around the JoinRefType issue.
-unique_ptr<LogicalComparisonJoin> create_empty_join(
-	duckdb::ClientContext &context, const unique_ptr<LogicalComparisonJoin>& current_join
-) {
+unique_ptr<LogicalComparisonJoin> create_empty_join(duckdb::ClientContext &context,
+                                                    const unique_ptr<LogicalComparisonJoin> &current_join) {
 	unique_ptr<LogicalComparisonJoin> copied_join =
 	    duckdb::unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(current_join->Copy(context));
 	// Note: Children are not cleared, just set to a nullptr. New children should be set, and not have emplace_back.
@@ -67,7 +66,7 @@ unique_ptr<LogicalComparisonJoin> create_empty_join(
 }
 
 /// (for use in rebind_join_conditions only)
-void rebind_bcr_if_needed(BoundColumnRefExpression& bcr, const std::unordered_map<idx_t, idx_t>& idx_map) {
+void rebind_bcr_if_needed(BoundColumnRefExpression &bcr, const std::unordered_map<idx_t, idx_t> &idx_map) {
 	const idx_t table_index = bcr.binding.table_index;
 	// Only replace if there is something to be mapped.
 	if (idx_map.find(table_index) != idx_map.end()) {
@@ -77,12 +76,11 @@ void rebind_bcr_if_needed(BoundColumnRefExpression& bcr, const std::unordered_ma
 
 /// Rebind the column bindings in all expressions to a different table index (but same column index).
 /// Does not modify the official vector, but returns a new vector instead.
-vector<JoinCondition> rebind_join_conditions(
-    const vector<JoinCondition>& original_conditions, const std::unordered_map<idx_t, idx_t>& idx_map
-) {
+vector<JoinCondition> rebind_join_conditions(const vector<JoinCondition> &original_conditions,
+                                             const std::unordered_map<idx_t, idx_t> &idx_map) {
 	vector<JoinCondition> return_vec;
 	return_vec.reserve(original_conditions.size());
-	for (const JoinCondition& cond: original_conditions) {
+	for (const JoinCondition &cond : original_conditions) {
 		unique_ptr<Expression> i_left = cond.left->Copy();
 		unique_ptr<Expression> i_right = cond.right->Copy();
 		if (cond.left->expression_class == duckdb::ExpressionClass::BOUND_COLUMN_REF) {
@@ -107,9 +105,9 @@ vector<JoinCondition> rebind_join_conditions(
 /*
 /// Add the multiplicity column to a projection map if a projection map is defined.
 void ensure_mul_binding(
-	vector<idx_t>& projection_map,
-	const vector<ColumnBinding> &child_bindings,
-	const ColumnBinding& mul_binding) {
+    vector<idx_t>& projection_map,
+    const vector<ColumnBinding> &child_bindings,
+    const ColumnBinding& mul_binding) {
     if (!projection_map.empty()) {
         for (idx_t i = 0; i < child_bindings.size(); ++i) {
             if (child_bindings[i] == mul_binding) {
@@ -123,9 +121,9 @@ void ensure_mul_binding(
 
 /// Adjust the column order, such that the multiplicity column is at the end.
 /// This vector of Expressions is meant to be used in conjunction with a LogicalProjection.
-vector<unique_ptr<Expression>> project_multiplicity_to_end(
-    const vector<ColumnBinding>& bindings, const vector<LogicalType>& types, const ColumnBinding& mul_binding
-) {
+vector<unique_ptr<Expression>> project_multiplicity_to_end(const vector<ColumnBinding> &bindings,
+                                                           const vector<LogicalType> &types,
+                                                           const ColumnBinding &mul_binding) {
 	assert(bindings.size() == types.size());
 	const size_t col_count = bindings.size();
 	// Note: slots are already made here, only need to be "populated".
@@ -147,9 +145,9 @@ vector<unique_ptr<Expression>> project_multiplicity_to_end(
 }
 
 /// Project out the multiplicity column of the dL side for dL JOIN dR, such that one multiplicity column remains.
-vector<unique_ptr<Expression>> project_out_duplicate_mul_column(
-    const vector<ColumnBinding>& bindings, const vector<LogicalType>& types, const ColumnBinding& redundant_mul_binding
-) {
+vector<unique_ptr<Expression>> project_out_duplicate_mul_column(const vector<ColumnBinding> &bindings,
+                                                                const vector<LogicalType> &types,
+                                                                const ColumnBinding &redundant_mul_binding) {
 	const size_t col_count = bindings.size();
 	assert(col_count == types.size());
 
@@ -157,8 +155,8 @@ vector<unique_ptr<Expression>> project_out_duplicate_mul_column(
 	auto projection_col_refs = vector<unique_ptr<Expression>>();
 	projection_col_refs.reserve(col_count - 1); // -1, since left mul removed.
 	// Iterate over all columns. All but 1 should end up in the above vector.
-	for (idx_t i = 0; i < col_count; ++i ) {
-		const auto& binding = bindings[i];
+	for (idx_t i = 0; i < col_count; ++i) {
+		const auto &binding = bindings[i];
 		if (binding != redundant_mul_binding) {
 			projection_col_refs.emplace_back(make_uniq<BoundColumnRefExpression>(types[i], binding));
 		}
@@ -167,9 +165,8 @@ vector<unique_ptr<Expression>> project_out_duplicate_mul_column(
 }
 
 /// Create a projection matching the column order of the join (only needed for Verify purposes).
-vector<unique_ptr<Expression>> bindings_to_expressions(
-    const vector<ColumnBinding>& bindings, const vector<LogicalType>& types
-	) {
+vector<unique_ptr<Expression>> bindings_to_expressions(const vector<ColumnBinding> &bindings,
+                                                       const vector<LogicalType> &types) {
 	const size_t col_count = bindings.size();
 	assert(col_count == types.size());
 
@@ -177,32 +174,31 @@ vector<unique_ptr<Expression>> bindings_to_expressions(
 	auto projection_col_refs = vector<unique_ptr<Expression>>();
 	projection_col_refs.reserve(col_count);
 	// Insert the columns. Mind the `-1`: the last element is omitted.
-	for (idx_t i = 0; i < col_count; ++i ) {
-        projection_col_refs.emplace_back(make_uniq<BoundColumnRefExpression>(types[i], bindings[i]));
-    }
+	for (idx_t i = 0; i < col_count; ++i) {
+		projection_col_refs.emplace_back(make_uniq<BoundColumnRefExpression>(types[i], bindings[i]));
+	}
 	return projection_col_refs;
 }
 
 } // namespace
 
-
 namespace duckdb {
 
-void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan,
-                                   string &view_name, string &view_catalog_name, string &view_schema_name) {
+void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOperator> &plan, string &view_name,
+                                   string &view_catalog_name, string &view_schema_name) {
 #ifdef DEBUG
 	printf("\nAdd the insert node to the plan...\n");
 	printf("Plan:\n%s\nParameters:", plan->ToString().c_str());
 	// Get whatever ParameterToString yields.
-	for (const auto& i_param : plan->ParamsToString()) {
+	for (const auto &i_param : plan->ParamsToString()) {
 		printf("%s", i_param.second.c_str());
 	}
 	printf("\n---end of insert node output---\n");
 #endif
 
 	auto delta_table_catalog_entry =
-	    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, view_catalog_name, view_schema_name,
-	                      "delta_" + view_name, OnEntryNotFound::RETURN_NULL, QueryErrorContext());
+	    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, view_catalog_name, view_schema_name, "delta_" + view_name,
+	                      OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 	optional_ptr<TableCatalogEntry> table = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
 	// create insert node. It is new node, hence it gets a new table_idx
 	// putting an arbitrary index here
@@ -226,8 +222,8 @@ void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOpe
 
 ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	ClientContext &context = pw.input.context;
-    // Store the table indices of the original operator for usage in any column binding replacers much later.
-    // Needed here, because the bindings of the operator may eventually change.
+	// Store the table indices of the original operator for usage in any column binding replacers much later.
+	// Needed here, because the bindings of the operator may eventually change.
 	const vector<ColumnBinding> original_bindings = pw.plan->GetColumnBindings();
 	/*
 	 * For join support, create a copy of both children for use later.
@@ -255,8 +251,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 
 	// Rewrite operators depending on their type.
 	switch (pw.plan->type) {
-	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
-	{
+	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
 		/* Please note!
 		 * These are the bindings AFTER ModifyPlan has made changes, meaning both sides have a multiplicity column.
 		 * As a consequence, they need to be filtered out later.
@@ -273,7 +268,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		types.emplace_back(pw.mul_type); // Add bool type for multiplicity.
 		// Cast plan into a LogicalComparisonJoin representing dL JOIN dR.
 		printf("Modified plan (join, start):\n%s\nParameters:", pw.plan->ToString().c_str());
-		for (const auto& i_param : pw.plan->ParamsToString()) {
+		for (const auto &i_param : pw.plan->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 #ifdef DEBUG
@@ -300,16 +295,18 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		 * -> 2c. Create a projection with the correct binding (for union purposes).
 		 * 3. Create the necessary Unions.
 		 * 4. ColumnBindingReplacer for the stuff above the union (this logic can likely stay mostly the same).
-		*/
+		 */
 		// FIXME: issues with creating join from scratch: (1) JoinRefType and (2) properly copying join conditions.
 		// (1) Plan and delta children
-		unique_ptr<LogicalComparisonJoin> plan_as_join = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(pw.plan));
+		unique_ptr<LogicalComparisonJoin> plan_as_join =
+		    unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(pw.plan));
 		if (plan_as_join->join_type != JoinType::INNER) {
-			throw Exception(ExceptionType::OPTIMIZER, JoinTypeToString(plan_as_join->join_type) + " type not yet supported in OpenIVM");
+			throw Exception(ExceptionType::OPTIMIZER,
+			                JoinTypeToString(plan_as_join->join_type) + " type not yet supported in OpenIVM");
 		}
 		// Define dL and dR references, for easier copies later.
-		const unique_ptr<LogicalOperator>& delta_left = plan_as_join->children[0];
-		const unique_ptr<LogicalOperator>& delta_right = plan_as_join->children[1];
+		const unique_ptr<LogicalOperator> &delta_left = plan_as_join->children[0];
+		const unique_ptr<LogicalOperator> &delta_right = plan_as_join->children[1];
 		// Define the original column bindings for the multiplicity column of dL and dR.
 		const ColumnBinding org_dl_mul = child_mul_bindings[0];
 		const ColumnBinding org_dr_mul = child_mul_bindings[1];
@@ -336,16 +333,14 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 #endif
 			// Create a projection.
 			{
-                const vector<ColumnBinding> join_bindings = dl_r->GetColumnBindings();
+				const vector<ColumnBinding> join_bindings = dl_r->GetColumnBindings();
 				const vector<LogicalType> join_types = dl_r->types;
 				const ColumnBinding dl_mul_binding = {res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
-				vector<unique_ptr<Expression>> dl_r_projection_bindings = project_multiplicity_to_end(
-					join_bindings, join_types, dl_mul_binding
-				);
+				vector<unique_ptr<Expression>> dl_r_projection_bindings =
+				    project_multiplicity_to_end(join_bindings, join_types, dl_mul_binding);
 				// Now, the vector with bindings should be complete. Let's put it in a Projection node!
-				dl_r_projected = make_uniq<LogicalProjection>(
-					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_r_projection_bindings)
-				);
+				dl_r_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
+				                                              std::move(dl_r_projection_bindings));
 			}
 			dl_r_projected->children.emplace_back(std::move(dl_r));
 #ifdef DEBUG
@@ -374,12 +369,12 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 #endif
 			// Make a projection. Although not necessary, it harmonises the shape of the query tree.
 			{
-                const vector<ColumnBinding> join_bindings = l_dr->GetColumnBindings();
+				const vector<ColumnBinding> join_bindings = l_dr->GetColumnBindings();
 				const vector<LogicalType> join_types = l_dr->types;
-				vector<unique_ptr<Expression>> l_dr_projection_bindings = bindings_to_expressions(join_bindings, join_types);
-				l_dr_projected = make_uniq<LogicalProjection>(
-					pw.input.optimizer.binder.GenerateTableIndex(), std::move(l_dr_projection_bindings)
-				);
+				vector<unique_ptr<Expression>> l_dr_projection_bindings =
+				    bindings_to_expressions(join_bindings, join_types);
+				l_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
+				                                              std::move(l_dr_projection_bindings));
 			}
 			l_dr_projected->children.emplace_back(std::move(l_dr));
 #ifdef DEBUG
@@ -399,7 +394,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			unique_ptr<LogicalComparisonJoin> dl_dr = create_empty_join(context, plan_as_join);
 			{
 				std::unordered_map<old_idx, new_idx> idx_map = dl_res.idx_map;
-				for (const auto& pair: dr_res.idx_map) {
+				for (const auto &pair : dr_res.idx_map) {
 					idx_map.insert(pair);
 				}
 				dl_dr->conditions = rebind_join_conditions(plan_as_join->conditions, idx_map);
@@ -409,8 +404,10 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
 				ColumnBinding dr_mul_binding = {dr_res.idx_map[org_dr_mul.table_index], org_dr_mul.column_index};
 				JoinCondition mul_equal_condition;
-				mul_equal_condition.left = make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul_binding, 0);
-				mul_equal_condition.right = make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul_binding, 0);
+				mul_equal_condition.left =
+				    make_uniq<BoundColumnRefExpression>("left_mul", pw.mul_type, dl_mul_binding, 0);
+				mul_equal_condition.right =
+				    make_uniq<BoundColumnRefExpression>("right_mul", pw.mul_type, dr_mul_binding, 0);
 				mul_equal_condition.comparison = ExpressionType::COMPARE_EQUAL;
 				dl_dr->conditions.emplace_back(std::move(mul_equal_condition));
 			}
@@ -428,40 +425,30 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			{
 				const vector<LogicalType> join_types = dl_dr->types;
 				const ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
-				auto dl_dr_projection_bindings = project_out_duplicate_mul_column(join_bindings, join_types, dl_mul_binding);
-				dl_dr_projected = make_uniq<LogicalProjection>(
-					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_dr_projection_bindings)
-				);
+				auto dl_dr_projection_bindings =
+				    project_out_duplicate_mul_column(join_bindings, join_types, dl_mul_binding);
+				dl_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
+				                                               std::move(dl_dr_projection_bindings));
 			}
 			dl_dr_projected->children.emplace_back(std::move(dl_dr));
 #ifdef DEBUG
 			auto projection_debug_bindings = dl_dr_projected->GetColumnBindings();
 			printf("dL-dR projection CB count: %zu\n", projection_debug_bindings.size());
-			printf("Expected CB count: %zu - 1 = %zu (i.e. join bindings -1)\n", join_bindings.size(), join_bindings.size() - 1);
+			printf("Expected CB count: %zu - 1 = %zu (i.e. join bindings -1)\n", join_bindings.size(),
+			       join_bindings.size() - 1);
 #endif
 		}
 		// Now that all joins have the same columns, create a Union!
-		auto copy_union = make_uniq<LogicalSetOperation>(
-		    pw.input.optimizer.binder.GenerateTableIndex(),
-		    types.size(),
-		    std::move(dl_r_projected),
-		    std::move(l_dr_projected),
-		    LogicalOperatorType::LOGICAL_UNION,
-		    true
-		);
+		auto copy_union = make_uniq<LogicalSetOperation>(pw.input.optimizer.binder.GenerateTableIndex(), types.size(),
+		                                                 std::move(dl_r_projected), std::move(l_dr_projected),
+		                                                 LogicalOperatorType::LOGICAL_UNION, true);
 		copy_union->types = types;
 		auto upper_u_table_index = pw.input.optimizer.binder.GenerateTableIndex();
-		pw.plan = make_uniq<LogicalSetOperation>(
-		    upper_u_table_index,
-		    types.size(),
-		    std::move(copy_union),
-		    std::move(dl_dr_projected),
-		    LogicalOperatorType::LOGICAL_UNION,
-		    true
-		);
+		pw.plan = make_uniq<LogicalSetOperation>(upper_u_table_index, types.size(), std::move(copy_union),
+		                                         std::move(dl_dr_projected), LogicalOperatorType::LOGICAL_UNION, true);
 		pw.plan->types = types;
 		printf("Modified plan (join, end):\n%s\nParameters:", pw.plan->ToString().c_str());
-		for (const auto& i_param : pw.plan->ParamsToString()) {
+		for (const auto &i_param : pw.plan->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 		// Rebind everything, because new joins have been implemented.
@@ -470,11 +457,12 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			// Two different bindings, don't confuse them!
 			auto union_bindings = pw.plan->GetColumnBindings();
 			if (union_bindings.size() - original_bindings.size() != 1) {
-				throw InternalException("Union (with multiplicity column) should have exactly 1 more binding than original join!");
+				throw InternalException(
+				    "Union (with multiplicity column) should have exactly 1 more binding than original join!");
 			}
 			ColumnBindingReplacer replacer;
-			vector<ReplacementBinding>& replacement_bindings = replacer.replacement_bindings;
-			for (idx_t col_idx = 0; col_idx < original_bindings.size() ; ++col_idx) {
+			vector<ReplacementBinding> &replacement_bindings = replacer.replacement_bindings;
+			for (idx_t col_idx = 0; col_idx < original_bindings.size(); ++col_idx) {
 				// Old binding should be 0.0 or 1.0 something. Taken from the initial state of pw.plan.
 				const auto &old_binding = original_bindings[col_idx];
 				const auto &new_binding = union_bindings[col_idx];
@@ -483,7 +471,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 #ifdef DEBUG
 			// Print the replacement bindings.
 			printf("\n--- Running a ColumnBindingReplacer after the Union ---\n");
-			for (const auto& i_binding : replacement_bindings) {
+			for (const auto &i_binding : replacement_bindings) {
 				// Split up in two because of encoding issues.
 				printf("old binding %s -> ", (i_binding.old_binding.ToString().c_str()));
 				printf("new binding %s\n", (i_binding.new_binding.ToString().c_str()));
@@ -511,7 +499,6 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// we are at the bottom of the tree
 		auto old_get = dynamic_cast<LogicalGet *>(pw.plan.get());
 
-
 		// FIXME: Should the types be set here?
 
 #ifdef DEBUG
@@ -524,41 +511,36 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		{
 			// Get TableCatalogEntry using CatalogEntry. Check whether it is a nullptr first though.
 			// Although cast later, cannot be put into a scope because it is a reference.
-            optional_ptr<CatalogEntry> opt_catalog_entry;
-            {
-                string delta_table;
-                string delta_table_schema;
-                string delta_table_catalog;
-                // checking if the table to be scanned exists in DuckDB
-                if (old_get->GetTable().get() == nullptr) {
-                    // we are using PostgreSQL (the underlying table does not exist)
-                    delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
-                    delta_table_schema = "public";
-                    delta_table_catalog = "p"; // todo
-                } else {
-                    // DuckDB (default case)
-                    delta_table = "delta_" + old_get->GetTable().get()->name;
-                    delta_table_schema = old_get->GetTable().get()->schema.name;
-                    delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
-                }
-                opt_catalog_entry = Catalog::GetEntry(
-                    context,
-                    CatalogType::TABLE_ENTRY,
-                    delta_table_catalog,
-                    delta_table_schema,
-                    delta_table,
-                    OnEntryNotFound::RETURN_NULL,
-                    error_context
-                );
-                if (opt_catalog_entry == nullptr) {
-                    // if delta base table does not exist, return error. This also means there are no deltas to compute.
-                    throw Exception(ExceptionType::BINDER, "Table " + delta_table + " does not exist, no deltas to compute!");
-                }
-            }
-            TableCatalogEntry& table_entry = opt_catalog_entry->Cast<TableCatalogEntry>();
+			optional_ptr<CatalogEntry> opt_catalog_entry;
+			{
+				string delta_table;
+				string delta_table_schema;
+				string delta_table_catalog;
+				// checking if the table to be scanned exists in DuckDB
+				if (old_get->GetTable().get() == nullptr) {
+					// we are using PostgreSQL (the underlying table does not exist)
+					delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
+					delta_table_schema = "public";
+					delta_table_catalog = "p"; // todo
+				} else {
+					// DuckDB (default case)
+					delta_table = "delta_" + old_get->GetTable().get()->name;
+					delta_table_schema = old_get->GetTable().get()->schema.name;
+					delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
+				}
+				opt_catalog_entry =
+				    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, delta_table_catalog, delta_table_schema,
+				                      delta_table, OnEntryNotFound::RETURN_NULL, error_context);
+				if (opt_catalog_entry == nullptr) {
+					// if delta base table does not exist, return error. This also means there are no deltas to compute.
+					throw Exception(ExceptionType::BINDER,
+					                "Table " + delta_table + " does not exist, no deltas to compute!");
+				}
+			}
+			TableCatalogEntry &table_entry = opt_catalog_entry->Cast<TableCatalogEntry>();
 			table_name = table_entry.name;
-            unique_ptr<FunctionData> bind_data;
-            auto scan_function = table_entry.GetScanFunction(context, bind_data);
+			unique_ptr<FunctionData> bind_data;
+			auto scan_function = table_entry.GetScanFunction(context, bind_data);
 
 			// Define the return names and types.
 			vector<LogicalType> return_types = {};
@@ -589,29 +571,26 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			column_ids.push_back(mul_col_idx);
 			new_mul_binding = ColumnBinding(old_get->table_index, mul_col_idx.GetPrimaryIndex());
 
-            /* Timestamp column */
-            return_types.push_back(LogicalType::TIMESTAMP);
-            return_names.push_back("_duckdb_ivm_timestamp");
-            const auto timestamp_idx = ColumnIndex(column_ids.size());
-            column_ids.push_back(timestamp_idx);
+			/* Timestamp column */
+			return_types.push_back(LogicalType::TIMESTAMP);
+			return_names.push_back("_duckdb_ivm_timestamp");
+			const auto timestamp_idx = ColumnIndex(column_ids.size());
+			column_ids.push_back(timestamp_idx);
 			timestamp_binding = ColumnBinding(old_get->table_index, timestamp_idx.GetPrimaryIndex());
 
 			// Finally, create the delta GET node.
-			delta_get_node = make_uniq<LogicalGet>(
-                old_get->table_index, // Will get renumbered later.
-                scan_function,
-                std::move(bind_data),
-                std::move(return_types),
-                std::move(return_names)
-            );
-            delta_get_node->SetColumnIds(std::move(column_ids));
+			delta_get_node = make_uniq<LogicalGet>(old_get->table_index, // Will get renumbered later.
+			                                       scan_function, std::move(bind_data), std::move(return_types),
+			                                       std::move(return_names));
+			delta_get_node->SetColumnIds(std::move(column_ids));
 		}
 		delta_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
 		// Add a filter for the timestamp. The filtered column should not be passed through by the GET-node.
 		Connection con(*context.db);
 		con.SetAutoCommit(false);
 		// we add a table filter
-		auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + pw.view + "' and table_name = '" + table_name + "';";
+		auto timestamp_query = "select last_update from _duckdb_ivm_delta_tables where view_name = '" + pw.view +
+		                       "' and table_name = '" + table_name + "';";
 		auto r = con.Query(timestamp_query);
 		if (r->HasError()) {
 			throw InternalException("Error while querying last_update");
@@ -626,17 +605,17 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// Add the multiplicity column to the projection IDs, if any projection IDs are defined.
 		// The size is "past the end" of the old get projection IDs, and thus the projection ID of the mul column.
 		if (!delta_get_node->projection_ids.empty()) {
-            delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
+			delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
 		}
 		// fixme [ila] - I have no idea what this code does
 		// we need to add 2 columns, timestamp and multiplicity
 		// how to make this code resilient?
-        delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
+		delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		delta_get_node->ResolveOperatorTypes();
 #ifdef DEBUG
 		auto debug_bindings_2 = delta_get_node->GetColumnBindings();
 #endif
-        delta_get_node->Verify(pw.input.context);
+		delta_get_node->Verify(pw.input.context);
 		return {std::move(delta_get_node), new_mul_binding};
 	}
 	/*
@@ -678,13 +657,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		}
 		printf("Modified plan (aggregate/group by):\n%s\nParameters:", pw.plan->ToString().c_str());
 		// Output ParameterToString.
-		for (const auto& i_param : pw.plan->ParamsToString()) {
+		for (const auto &i_param : pw.plan->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 		printf("\n---end of modified plan (aggregate/group by)---\n");
 #endif
 		// Return plan, along with the modified multiplicity binding.
-        pw.plan->Verify(pw.input.context);
+		pw.plan->Verify(pw.input.context);
 		return {std::move(pw.plan), mod_mul_binding};
 	}
 	/*
@@ -695,7 +674,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// Some printing
 		printf("\nIn logical projection case \n Add the multiplicity column to the second node...\n");
 		printf("Modified plan (projection, start):\n%s\nParameters:", pw.plan->ToString().c_str());
-		for (const auto& i_param : pw.plan->ParamsToString()) {
+		for (const auto &i_param : pw.plan->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 		printf("\n---end of modified plan (projection)---\n");
@@ -704,18 +683,17 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("Top node CB before %zu %s\n", i, bindings[i].ToString().c_str());
 		}
 		// Cast operator to logical projection, to then modify it.
-		auto projection_node =  unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(pw.plan));
+		auto projection_node = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(pw.plan));
 
 		// Use the child's multiplicity column for the projection, by putting it at the end.
-		auto mul_expression = make_uniq<BoundColumnRefExpression>(
-		    "_duckdb_ivm_multiplicity", pw.mul_type, child_mul_bindings[0]
-		);
+		auto mul_expression =
+		    make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", pw.mul_type, child_mul_bindings[0]);
 		printf("Add multiplicity column to expression\n");
 		projection_node->expressions.emplace_back(std::move(mul_expression));
 
 		printf("Modified plan (of projection_node):\n%s\nParameters:", projection_node->ToString().c_str());
 		// Output ParameterToString.
-		for (const auto& i_param : projection_node->ParamsToString()) {
+		for (const auto &i_param : projection_node->ParamsToString()) {
 			printf("%s", i_param.second.c_str());
 		}
 		printf("\n---end of modified plan (of projection_node)---\n");
@@ -727,8 +705,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			printf("Top node CB %zu %s\n", i, new_bindings[i].ToString().c_str());
 		}
 		auto new_mul_binding = new_bindings[new_bindings.size() - 1];
-        projection_node->Verify(pw.input.context);
-        return {std::move(projection_node), new_mul_binding};
+		projection_node->Verify(pw.input.context);
+		return {std::move(projection_node), new_mul_binding};
 	}
 	/*
 	 * END OF CASE.
@@ -741,38 +719,39 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		}
 
 		/* LogicalFilter gets its GetColumnBindings from its (only) child.
-		 * For a non-empty filter, all that needs to be done is to ensure that the multiplicity column is passed through.
-		 * If the filter has a projection map, the index of the multiplicity column should be appended to it.
+		 * For a non-empty filter, all that needs to be done is to ensure that the multiplicity column is passed
+		 * through. If the filter has a projection map, the index of the multiplicity column should be appended to it.
 		 * This is done by checking the CBs of the child, and finding the index corresponding to the multiplicity's CB.
-		 * If the map is empty, all columns (including multiplicity) are taken from the child, so nothing needs to be done.
+		 * If the map is empty, all columns (including multiplicity) are taken from the child, so nothing needs to be
+		 * done.
 		 */
 		unique_ptr<LogicalFilter> plan_as_filter = unique_ptr_cast<LogicalOperator, LogicalFilter>(std::move(pw.plan));
 		plan_as_filter->ResolveOperatorTypes(); // Might not be needed, but does not hurt.
 		if (!plan_as_filter->projection_map.empty()) {
 #ifdef DEBUG
-            auto filter_binds_before = plan_as_filter->GetColumnBindings();
-            printf("LOGICAL_FILTER projection_map size before adding mul CB: %zu\n", filter_binds_before.size());
+			auto filter_binds_before = plan_as_filter->GetColumnBindings();
+			printf("LOGICAL_FILTER projection_map size before adding mul CB: %zu\n", filter_binds_before.size());
 #endif
-            auto child_binds = plan_as_filter->children[0]->GetColumnBindings();
-            // Multiplicity column likely at the end, so use reverse for-loop.
-            // Watch out for off-by-one errors; code is written this way because i >= 0 is always true for size_t.
-            ColumnBinding mul_binding = child_mul_bindings[0];  // Only one child.
-            idx_t mul_index = child_binds.size();  // Gets decremented at start of while-loop.
-            bool mul_found = false;
-            while (mul_found == false && mul_index > 0) {
-                --mul_index;
-                if (child_binds[mul_index] == mul_binding) {
-                    mul_found = true;
-                };
-            }
-            if (!mul_found) {
-                throw InternalException("Filter's child does not have multiplicity column!");
-            }
-            // Multiplicity column is present and found; add it to the projection map.
-            plan_as_filter->projection_map.emplace_back(mul_index);
+			auto child_binds = plan_as_filter->children[0]->GetColumnBindings();
+			// Multiplicity column likely at the end, so use reverse for-loop.
+			// Watch out for off-by-one errors; code is written this way because i >= 0 is always true for size_t.
+			ColumnBinding mul_binding = child_mul_bindings[0]; // Only one child.
+			idx_t mul_index = child_binds.size();              // Gets decremented at start of while-loop.
+			bool mul_found = false;
+			while (mul_found == false && mul_index > 0) {
+				--mul_index;
+				if (child_binds[mul_index] == mul_binding) {
+					mul_found = true;
+				};
+			}
+			if (!mul_found) {
+				throw InternalException("Filter's child does not have multiplicity column!");
+			}
+			// Multiplicity column is present and found; add it to the projection map.
+			plan_as_filter->projection_map.emplace_back(mul_index);
 #ifdef DEBUG
-            auto filter_binds_after = plan_as_filter->GetColumnBindings();
-            printf("LOGICAL_FILTER projection_map size after adding mul CB: %zu\n", filter_binds_after.size());
+			auto filter_binds_after = plan_as_filter->GetColumnBindings();
+			printf("LOGICAL_FILTER projection_map size after adding mul CB: %zu\n", filter_binds_after.size());
 #endif
 		}
 #ifdef DEBUG
@@ -786,7 +765,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		throw NotImplementedException("Operator type %s not supported", LogicalOperatorToString(pw.plan->type));
 	}
 	// Default: return the plan, along with the multiplicity column of the first (and hopefully only) child.
-    pw.plan->Verify(pw.input.context);
+	pw.plan->Verify(pw.input.context);
 	return {std::move(pw.plan), child_mul_bindings[0]};
 }
 
@@ -832,9 +811,11 @@ void IVMRewriteRule::IVMRewriteRuleFunction(OptimizerExtensionInput &input, duck
 		for (size_t i = 0; i < 30; ++i) {
 			input.optimizer.binder.GenerateTableIndex();
 		}
-		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, filter_pushdown';");
+		con.Query("SET disabled_optimizers='compressed_materialization, statistics_propagation, expression_rewriter, "
+		          "filter_pushdown';");
 	} else {
-		con.Query("SET disabled_optimizers='compressed_materialization, column_lifetime, statistics_propagation, expression_rewriter, filter_pushdown';");
+		con.Query("SET disabled_optimizers='compressed_materialization, column_lifetime, statistics_propagation, "
+		          "expression_rewriter, filter_pushdown';");
 	}
 	con.Commit();
 

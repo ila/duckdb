@@ -72,7 +72,7 @@ public:
 	};
 
 	static unique_ptr<FunctionData> RDDABind(ClientContext &context, TableFunctionBindInput &input,
-	                                                 vector<LogicalType> &return_types, vector<string> &names) {
+	                                         vector<LogicalType> &return_types, vector<string> &names) {
 
 		names.emplace_back("RDDA OBJECT CREATION");
 		return_types.emplace_back(LogicalType::BOOLEAN);
@@ -83,8 +83,7 @@ public:
 		return make_uniq<RDDABindData>(result);
 	}
 
-	static unique_ptr<GlobalTableFunctionState> RDDAInit(ClientContext &context,
-	                                                             TableFunctionInitInput &input) {
+	static unique_ptr<GlobalTableFunctionState> RDDAInit(ClientContext &context, TableFunctionInitInput &input) {
 		return make_uniq<RDDAGlobalData>();
 	}
 

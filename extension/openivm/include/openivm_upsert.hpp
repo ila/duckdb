@@ -13,6 +13,4 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 } // namespace duckdb
 
-
-
 #endif // DUCKDB_OPENIVM_UPSERT_HPP

@@ -11,10 +11,9 @@
 
 namespace duckdb {
 
-void ReplaceTableName(string& query);
-void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, string& path);
+void ReplaceTableName(string &query);
+void RunIVMCrossSystemDemo(string &catalog, string &schema, string &database, string &path);
 
 } // namespace duckdb
-
 
 #endif // DUCKDB_OPENIVM_CROSS_SYSTEM_DEMO_HPP

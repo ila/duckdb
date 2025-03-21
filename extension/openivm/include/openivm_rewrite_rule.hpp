@@ -7,22 +7,19 @@ namespace duckdb {
 
 /// The input parameter for IVMRewriteRule::ModifyPlan. Used to simplify the recursive calls.
 struct PlanWrapper {
-	PlanWrapper(
-	    OptimizerExtensionInput& input_,
-	    unique_ptr<LogicalOperator>& plan_,
-	    string& view_,
-	    LogicalOperator*& root_
-	    ) : input(input_), plan(plan_), view(view_), root(root_)
-	{}
+	PlanWrapper(OptimizerExtensionInput &input_, unique_ptr<LogicalOperator> &plan_, string &view_,
+	            LogicalOperator *&root_)
+	    : input(input_), plan(plan_), view(view_), root(root_) {
+	}
 	// Everything should be a reference, as it is used later.
 	/// Contains the query context, and general optimizer information.
-	OptimizerExtensionInput& input;
+	OptimizerExtensionInput &input;
 	/// The (subtree) that should be worked on.
-	unique_ptr<LogicalOperator>& plan;
+	unique_ptr<LogicalOperator> &plan;
 	/// TODO: Give this a description.
-	string& view;
+	string &view;
 	/// The root of the query tree. Needed for a ColumnBinding replacer.
-	LogicalOperator*& root;
+	LogicalOperator *&root;
 	/// The logical type of the multiplicity column. Should always be a boolean.
 	const LogicalType mul_type = LogicalType::BOOLEAN;
 };
@@ -30,16 +27,14 @@ struct PlanWrapper {
 /// The output parameter for IVMRewriteRule::ModifyPlan.
 /// Used to combine a LogicalOperator with the ColumnBinding of the multiplicity column.
 struct ModifiedPlan {
-	ModifiedPlan(
-	    unique_ptr<LogicalOperator> op_, ColumnBinding mul_binding_
-	    ) : op(std::move(op_)), mul_binding(mul_binding_)
-	{}
+	ModifiedPlan(unique_ptr<LogicalOperator> op_, ColumnBinding mul_binding_)
+	    : op(std::move(op_)), mul_binding(mul_binding_) {
+	}
 
 	/// The operator of the modified plan.
 	unique_ptr<LogicalOperator> op;
 	/// The multiplicity binding of the modified plan (should always be defined).
 	ColumnBinding mul_binding;
-
 };
 
 class IVMRewriteRule : public OptimizerExtension {

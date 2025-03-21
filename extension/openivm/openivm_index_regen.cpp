@@ -15,13 +15,12 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 	// Initialise the bindings with the ColumnBindings of the current operator.
 	std::vector<ColumnBinding> current_bindings = plan->GetColumnBindings();
 	std::vector<unique_ptr<LogicalOperator>> rec_children;
-	for (auto& child: plan->children) {
+	for (auto &child : plan->children) {
 		RenumberWrapper child_wrap = renumber_table_indices(std::move(child), binder);
 		table_reassign.insert(child_wrap.idx_map.cbegin(), child_wrap.idx_map.cend());
 		// Add the bindings of the children as well.
-		current_bindings.insert(
-			current_bindings.end(), child_wrap.column_bindings.cbegin(), child_wrap.column_bindings.cend()
-        );
+		current_bindings.insert(current_bindings.end(), child_wrap.column_bindings.cbegin(),
+		                        child_wrap.column_bindings.cend());
 		rec_children.emplace_back(std::move(child_wrap.op));
 	}
 
@@ -29,7 +28,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		// Breaking operator and in general a weird case; only operator with 2 or 3 indices in GetTableIndex.
 		unique_ptr<LogicalAggregate> agg_ptr = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(plan));
-        // Assuming that assignments are currently valid, reassign the values.
+		// Assuming that assignments are currently valid, reassign the values.
 		// Cannot be done in a loop without using pointers, which may be a bit too messy just for this.
 		// Group index.
 		{
@@ -64,7 +63,7 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 		const idx_t current_idx = get_ptr->table_index;
 		const idx_t new_idx = binder.GenerateTableIndex();
 		get_ptr->table_index = new_idx;
-		table_reassign[current_idx] = new_idx;  // Current map is probably empty at this stage.
+		table_reassign[current_idx] = new_idx; // Current map is probably empty at this stage.
 #ifdef DEBUG
 		printf("Index regen LOGICAL_GET: Change %zu -> %zu\n", current_idx, new_idx);
 #endif
@@ -104,9 +103,8 @@ RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder 
 	return {std::move(plan), table_reassign, current_bindings};
 }
 
-ColumnBindingReplacer vec_to_replacer(
-	const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx>& table_mapping
-) {
+ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding> &bindings,
+                                      const std::unordered_map<old_idx, new_idx> &table_mapping) {
 	std::unordered_map<old_idx, std::unordered_set<col_idx>> to_replace;
 	// We only need to include those bindings whose tables are in the table mapping.
 	for (const ColumnBinding col_binding : bindings) {
@@ -118,7 +116,7 @@ ColumnBindingReplacer vec_to_replacer(
 	}
 	// Now that all bindings are checked, let's create a ColumnBindingReplacer!
 	ColumnBindingReplacer replacer;
-	for (const auto& pair : to_replace) {
+	for (const auto &pair : to_replace) {
 		const old_idx old_t = pair.first;
 		const new_idx new_t = table_mapping.at(old_t);
 		for (const col_idx col : pair.second) {
@@ -130,7 +128,7 @@ ColumnBindingReplacer vec_to_replacer(
 	return replacer;
 }
 
-RenumberWrapper renumber_and_rebind_subtree(unique_ptr<LogicalOperator> plan, Binder& binder) {
+RenumberWrapper renumber_and_rebind_subtree(unique_ptr<LogicalOperator> plan, Binder &binder) {
 	RenumberWrapper res = renumber_table_indices(std::move(plan), binder);
 	ColumnBindingReplacer replacer = vec_to_replacer(res.column_bindings, res.idx_map);
 	replacer.VisitOperator(*res.op);

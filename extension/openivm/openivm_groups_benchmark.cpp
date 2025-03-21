@@ -27,7 +27,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Benchmark initialized..."
 	          << "\n";
 
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generating data..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generating data..."
+	          << "\n";
 
 	// generating groups
 	CreateTable(tuples, insertions);
@@ -46,7 +47,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 		// loading the groups
 		auto start_time = std::chrono::high_resolution_clock::now();
 		con.Query("CREATE TABLE groups(group_id INTEGER, group_index VARCHAR, group_value INTEGER);");
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
+		          << "\n";
 
 		auto r = con.Query("COPY groups FROM '/tmp/data/t" + to_string(tuples) + "/groups.tbl' (DELIMITER ',');");
 		if (r->HasError()) {
@@ -56,7 +58,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 		auto end_time = std::chrono::high_resolution_clock::now();
 		load_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loaded groups..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loaded groups..."
+		          << "\n";
 	}
 
 	auto count_groups = con.Query("SELECT COUNT(*) FROM groups;")->GetValue(0, 0).ToString();
@@ -97,7 +100,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 		auto end_time = std::chrono::high_resolution_clock::now();
 		materialized_view_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Materialized view created..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Materialized view created..."
+		          << "\n";
 
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Query: " << materialized_view << "\n";
 
@@ -106,7 +110,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 		end_time = std::chrono::high_resolution_clock::now();
 		index_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..."
+		          << "\n";
 
 		create_groups = false;
 	}
@@ -116,10 +121,11 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 	          << "Rows inserted in the materialized view: " << Format(count_query_groups) << "\n";
 
 	// inserting new data in the delta table
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Applying modifications to the base table..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Applying modifications to the base table..."
+	          << "\n";
 	auto start_time = std::chrono::high_resolution_clock::now();
-	auto r = con.Query("COPY groups FROM '/tmp/data/t" + to_string(tuples) + "/groups_new_" +
-	          to_string(insertions) + ".tbl' (DELIMITER ',');");
+	auto r = con.Query("COPY groups FROM '/tmp/data/t" + to_string(tuples) + "/groups_new_" + to_string(insertions) +
+	                   ".tbl' (DELIMITER ',');");
 	if (r->HasError()) {
 		fs.RemoveFile("groups.db");
 		throw InternalException("Failed to load new groups data: %s", r->GetError().c_str());
@@ -132,7 +138,7 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 			throw InternalException("Failed to update groups data: %s", r->GetError().c_str());
 		}
 	}
-    // deleting
+	// deleting
 	if (deletes > 0) {
 		r = con.Query("DELETE FROM groups WHERE group_id > " + to_string(tuples + insertions - deletes) + ";");
 		if (r->HasError()) {
@@ -237,7 +243,8 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Query executed..."
 	          << "\n";
 
-	auto total_time = materialized_view_time + index_time + compile_time + insert_time + upsert_time + delete_time + (copy_time / 2);
+	auto total_time =
+	    materialized_view_time + index_time + compile_time + insert_time + upsert_time + delete_time + (copy_time / 2);
 
 	// printing the benchmark results
 	std::cout << "\nBenchmark Results:" << '\n';
@@ -266,7 +273,6 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 	std::cout << "| " << std::left << std::setw(41) << "Query without IVM"
 	          << "| " << std::setw(9) << query_groups_time.count() << " |" << '\n';
 	std::cout << std::setw(56) << std::setfill('-') << "" << '\n';
-
 }
 
 } // namespace duckdb

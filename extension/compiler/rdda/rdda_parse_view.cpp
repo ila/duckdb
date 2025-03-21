@@ -35,8 +35,8 @@ RDDAViewConstraint ParseCreateView(string &query, TableScope scope) {
 			throw ParserException("Invalid value for TTL, must be greater than zero!");
 		}
 		if (constraint.ttl < constraint.window) {
-            throw ParserException("TTL must be greater than or equal to WINDOW!");
-        }
+			throw ParserException("TTL must be greater than or equal to WINDOW!");
+		}
 		query = regex_replace(query, ttl_regex, "");
 	} else if (scope == TableScope::decentralized) {
 		throw ParserException("TTL is a required field!");

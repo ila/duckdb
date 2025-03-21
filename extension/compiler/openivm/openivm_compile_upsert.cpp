@@ -81,8 +81,8 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	// now we sum the columns
 	for (auto &column : aggregates) {
 		// we coalesce newly added groups (otherwise the sum would be null)
-		select_string =
-		    select_string + "\n\tsum(coalesce(" + view_name + "." + column + ", 0) + delta_" + view_name + "." + column + "), ";
+		select_string = select_string + "\n\tsum(coalesce(" + view_name + "." + column + ", 0) + delta_" + view_name +
+		                "." + column + "), ";
 	}
 	// remove the last comma
 	select_string.erase(select_string.size() - 2, 2);
@@ -146,9 +146,9 @@ string CompileSimpleAggregates(string &view_name, const vector<string> &column_n
 	// there should be only one column here
 	for (auto &column : column_names) {
 		if (column != "_duckdb_ivm_multiplicity") { // we don't need the multiplicity column
-			update_query += column + " = \n\t" + column + " \n\t\t- coalesce((select " + column + " from delta_" + view_name +
-			                " where _duckdb_ivm_multiplicity = false), 0)\n\t\t+ coalesce((select " + column + " from delta_" +
-			                view_name + " where _duckdb_ivm_multiplicity = true), 0);\n";
+			update_query += column + " = \n\t" + column + " \n\t\t- coalesce((select " + column + " from delta_" +
+			                view_name + " where _duckdb_ivm_multiplicity = false), 0)\n\t\t+ coalesce((select " +
+			                column + " from delta_" + view_name + " where _duckdb_ivm_multiplicity = true), 0);\n";
 		}
 	}
 	// in this case, we choose not to delete from the main view if the final SUM or COUNT is 0

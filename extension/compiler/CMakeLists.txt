@@ -7,49 +7,49 @@ add_extension_definitions()
 include_directories(include include/openivm include/rdda)
 
 add_library(
-        compiler_extension STATIC
-        compiler_extension.cpp
-        openivm/openivm_compile_upsert.cpp
-        rdda/rdda_parse_table.cpp
-        rdda/rdda_parse_view.cpp
-        rdda/rdda_parse_select.cpp
-        logical_plan_to_string.cpp
-        data_representation.cpp)
+  compiler_extension STATIC
+  compiler_extension.cpp
+  openivm/openivm_compile_upsert.cpp
+  rdda/rdda_parse_table.cpp
+  rdda/rdda_parse_view.cpp
+  rdda/rdda_parse_select.cpp
+  logical_plan_to_string.cpp
+  data_representation.cpp)
 
 add_executable(
-        compiler
-        compiler_library.cpp
-        compiler_extension.cpp
-        openivm/openivm_compile_upsert.cpp
-        rdda/rdda_parse_table.cpp
-        rdda/rdda_parse_view.cpp
-        rdda/rdda_parse_select.cpp
-        data_representation.cpp
-        logical_plan_to_string.cpp)
+  compiler
+  compiler_library.cpp
+  compiler_extension.cpp
+  openivm/openivm_compile_upsert.cpp
+  rdda/rdda_parse_table.cpp
+  rdda/rdda_parse_view.cpp
+  rdda/rdda_parse_select.cpp
+  data_representation.cpp
+  logical_plan_to_string.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(
-        compiler
-        ${PARAMETERS}
-        compiler_library.cpp
-        compiler_extension.cpp
-        openivm/openivm_compile_upsert.cpp
-        rdda/rdda_parse_table.cpp
-        rdda/rdda_parse_view.cpp
-        rdda/rdda_parse_select.cpp
-        logical_plan_to_string.cpp
-        data_representation.cpp)
+  compiler
+  ${PARAMETERS}
+  compiler_library.cpp
+  compiler_extension.cpp
+  openivm/openivm_compile_upsert.cpp
+  rdda/rdda_parse_table.cpp
+  rdda/rdda_parse_view.cpp
+  rdda/rdda_parse_select.cpp
+  logical_plan_to_string.cpp
+  data_representation.cpp)
 
 install(
-        TARGETS compiler_extension
-        EXPORT "${DUCKDB_EXPORT_SET}"
-        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
-        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+  TARGETS compiler_extension
+  EXPORT "${DUCKDB_EXPORT_SET}"
+  LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+  ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
 
 install(
-        TARGETS compiler
-        EXPORT "${DUCKDB_EXPORT_SET}"
-        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
-        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+  TARGETS compiler
+  EXPORT "${DUCKDB_EXPORT_SET}"
+  LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+  ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
 
 target_link_libraries(compiler duckdb)

@@ -12,13 +12,13 @@
 #include "postgres_version.hpp"
 
 #ifdef __linux__
-    #if __has_include(<postgresql/libpq-fe.h>)
-	#include <postgresql/libpq-fe.h>
-    #else
-	#include <libpq-fe.h>
-    #endif
+#if __has_include(<postgresql/libpq-fe.h>)
+#include <postgresql/libpq-fe.h>
 #else
-    #error "Unsupported OS"
+#include <libpq-fe.h>
+#endif
+#else
+#error "Unsupported OS"
 #endif
 
 namespace duckdb {

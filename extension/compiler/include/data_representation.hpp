@@ -16,7 +16,6 @@
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
 
-
 // Naming the representation: DuckAST
 
 namespace duckdb {
@@ -63,7 +62,6 @@ public:
 	DuckASTAggregate(vector<string> &aggregate_function, vector<string> &group_column);
 };
 
-
 /*
  * DuckASTOrderBy is a 1:1 relationship with the LogicalOrder
  * in src/include/duckdb/planner/logical_order.hpp
@@ -81,7 +79,7 @@ public:
  * Will support all the joins like Cross Join, unconditional joins etc..
  * Contains a table index mapped with table name
  */
-class DuckASTJoin: public DuckASTBaseOperator {
+class DuckASTJoin : public DuckASTBaseOperator {
 public:
 	// Contains all table names
 	vector<string> tables;
@@ -134,25 +132,26 @@ public:
 	DuckASTNode();
 	DuckASTNode(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
 	void SetExpression(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
-	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> &parent_node, string &name, DuckASTOperatorType type);
+	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> &parent_node, string &name,
+	            DuckASTOperatorType type);
 };
 
 void GenerateString(const unique_ptr<DuckASTNode> &node, string &plan_string);
 void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
-		    bool has_filter = false, int join_child_index = -1);
+                    bool has_filter = false, int join_child_index = -1);
 
 class DuckAST {
 private:
 	void DisplayTree(unique_ptr<DuckASTNode> node);
 
-
 public:
 	DuckAST();
-	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> parent_node, string &name, DuckASTOperatorType type);
+	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> parent_node, string &name,
+	            DuckASTOperatorType type);
 	static void PrintAST(unique_ptr<DuckASTNode> node, const string &prefix = "", bool is_last = true);
 	void GenerateString(string &plan_string);
 	void PrintAST(unique_ptr<DuckAST> ast);
-	DuckASTNode* GetLastNode();
+	DuckASTNode *GetLastNode();
 	unique_ptr<DuckASTNode> root;
 };
 } // namespace duckdb

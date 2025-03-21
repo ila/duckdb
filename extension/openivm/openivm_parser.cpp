@@ -173,7 +173,8 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		// recreate the file - we assume the queries will be executed after the parsing is done
 		CompilerExtension::WriteFile(system_tables_path, false, system_table);
 
-		auto delta_tables_table = "create table if not exists _duckdb_ivm_delta_tables (view_name varchar, table_name varchar, last_update timestamp, primary key(view_name, table_name));\n";
+		auto delta_tables_table = "create table if not exists _duckdb_ivm_delta_tables (view_name varchar, table_name "
+		                          "varchar, last_update timestamp, primary key(view_name, table_name));\n";
 		// recreate the file - we assume the queries will be executed after the parsing is done
 		CompilerExtension::WriteFile(system_tables_path, true, delta_tables_table);
 
@@ -237,16 +238,17 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 
 			auto catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
 
-			//auto table_entry = dynamic_cast<TableCatalogEntry *>(catalog_entry.get());
-			//auto table_string = table_entry->ToSQL();
-			//auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
+			// auto table_entry = dynamic_cast<TableCatalogEntry *>(catalog_entry.get());
+			// auto table_string = table_entry->ToSQL();
+			// auto delta_table = CompilerExtension::GenerateDeltaTable(table_string);
 
 			auto delta_table = "create table if not exists " + catalog_schema + "delta_" + table_name +
-			                   " as select *, true as _duckdb_ivm_multiplicity, now() as _duckdb_ivm_timestamp from "
-			                   + catalog_schema + table_name + " limit 0;\n";
+			                   " as select *, true as _duckdb_ivm_multiplicity, now() as _duckdb_ivm_timestamp from " +
+			                   catalog_schema + table_name + " limit 0;\n";
 			CompilerExtension::WriteFile(compiled_file_path, true, delta_table);
 
-			auto delta_table_insert = "insert into _duckdb_ivm_delta_tables values ('" + view_name + "', 'delta_" + table_name + "', now());\n";
+			auto delta_table_insert = "insert into _duckdb_ivm_delta_tables values ('" + view_name + "', 'delta_" +
+			                          table_name + "', now());\n";
 			CompilerExtension::WriteFile(system_tables_path, true, delta_table_insert);
 		}
 
@@ -312,7 +314,8 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 		done = false;
 	}
 
-	ParserExtensionPlanResult result;// register ivmfunction with a string as parameter and pass it here (in place of true)
+	ParserExtensionPlanResult
+	    result; // register ivmfunction with a string as parameter and pass it here (in place of true)
 	result.function = IVMFunction();
 	result.parameters.push_back(true); // this could be true or false if we add exception handling
 	result.modified_databases = {};

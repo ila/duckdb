@@ -57,7 +57,7 @@ static unique_ptr<TableRef> DoIVM(ClientContext &context, TableFunctionBindInput
 }
 
 static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &context, TableFunctionBindInput &input,
-                                                  vector<LogicalType> &return_types, vector<string> &names) {
+                                                           vector<LogicalType> &return_types, vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -96,7 +96,7 @@ static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &contex
 }
 
 static duckdb::unique_ptr<FunctionData> DoIVMDemoBind(ClientContext &context, TableFunctionBindInput &input,
-                                                           vector<LogicalType> &return_types, vector<string> &names) {
+                                                      vector<LogicalType> &return_types, vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -239,18 +239,19 @@ static void LoadInternal(DatabaseInstance &instance) {
 	db_config.optimizer_extensions.push_back(ivm_rewrite_rule);
 	db_config.optimizer_extensions.push_back(ivm_insert_rule);
 
-
 	TableFunction ivm_func("DoIVM", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMFunction,
 	                       DoIVMBind, DoIVMInit);
 
-	TableFunction ivm_benchmark_groups_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER}, DoIVMBenchmarkFunction,
-	                       DoIVMBenchmarkBind, DoIVMBenchmarkInit);
+	TableFunction ivm_benchmark_groups_func(
+	    "IVMBenchmark", {LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
+	    DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
-	TableFunction ivm_benchmark_lineitem_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::DOUBLE}, DoIVMBenchmarkFunction,
-	                                 DoIVMBenchmarkBind, DoIVMBenchmarkInit);
+	TableFunction ivm_benchmark_lineitem_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::DOUBLE},
+	                                          DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
-	TableFunction ivm_demo_func("IVMDemo", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}, DoIVMDemoFunction,
-	                                 DoIVMDemoBind, DoIVMDemoInit);
+	TableFunction ivm_demo_func(
+	    "IVMDemo", {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR},
+	    DoIVMDemoFunction, DoIVMDemoBind, DoIVMDemoInit);
 
 	con.BeginTransaction();
 	auto &catalog = Catalog::GetSystemCatalog(*con.context);
@@ -301,15 +302,15 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// this is called at the database startup and every time a query fails
 	// these three functions are the same - they just take different parameters
 	// based on whether we want to specify the catalog and schema
-	auto ivm_options = PragmaFunction::PragmaCall(
-	    "ivm_options", UpsertDeltaQueries, {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
+	auto ivm_options = PragmaFunction::PragmaCall("ivm_options", UpsertDeltaQueries,
+	                                              {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, ivm_options);
-	auto ivm = PragmaFunction::PragmaCall(
-	    "ivm", UpsertDeltaQueries, {LogicalType::VARCHAR});
+	auto ivm = PragmaFunction::PragmaCall("ivm", UpsertDeltaQueries, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, ivm); // default catalog and schema
 	// this is when we have two attached databases (so two catalogs and schemas)
 	auto ivm_cross_system = PragmaFunction::PragmaCall(
-	    "ivm_cross_system", UpsertDeltaQueries, {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
+	    "ivm_cross_system", UpsertDeltaQueries,
+	    {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, ivm_cross_system);
 }
 

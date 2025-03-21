@@ -29,7 +29,7 @@ DuckASTProjection::DuckASTProjection(string &name) {
 DuckASTProjection::~DuckASTProjection() {
 }
 
-void DuckASTProjection::AddColumn(const string& table_index, const string &column_index, const string &alias) {
+void DuckASTProjection::AddColumn(const string &table_index, const string &column_index, const string &alias) {
 	this->column_aliases[table_index + "." + column_index] = alias;
 }
 
@@ -131,22 +131,16 @@ DuckAST::DuckAST() {
 
 // Uses the parent node pointer provided and appends to its list of children
 void DuckASTNode::Insert(unique_ptr<DuckASTBaseOperator> opr, unique_ptr<DuckASTNode> &parent_node, string &id,
-					 DuckASTOperatorType type) {
+                         DuckASTOperatorType type) {
 	opr->name = id;
 
-	// if (parent_node->type == DuckASTOperatorType::NONE) {
-	// 	parent_node = make_uniq<DuckASTNode>(move(opr), type);
-	// 	parent_node->type = type;
-	// 	return;
-	// }
-
 	auto node = make_uniq<DuckASTNode>(move(opr), type);
-	parent_node->children.emplace_back(move(node));  // Transfer ownership
+	parent_node->children.emplace_back(move(node)); // Transfer ownership
 }
 
 // Primary function which recursively generates a valid sql string from the AST
-void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
-                             bool has_filter, int join_child_index) {
+void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string, bool has_filter,
+                    int join_child_index) {
 	if (node == nullptr) {
 		return;
 	}
@@ -279,7 +273,7 @@ void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, 
 	case DuckASTOperatorType::INSERT: {
 		auto exp = dynamic_cast<DuckASTInsert *>(node->opr.get());
 		prefix_string = "insert into " + exp->table_name + " ";
-		for (const auto& child : node->children) {
+		for (const auto &child : node->children) {
 			GenerateString(child, prefix_string, plan_string);
 		}
 		break;

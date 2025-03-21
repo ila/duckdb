@@ -180,7 +180,8 @@ void CompilerExtension::ReplaceMaterializedView(string &query) {
 }
 
 string CompilerExtension::ExtractViewQuery(string &query) {
-	std::regex rgx_create_view(R"(create\s+(table|materialized view)\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)\s+as\s+(.*))");
+	std::regex rgx_create_view(
+	    R"(create\s+(table|materialized view)\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_]+)\s+as\s+(.*))");
 
 	std::smatch match;
 	string query_string;
@@ -219,7 +220,8 @@ std::string CompilerExtension::GenerateDeltaTable(std::string &input) {
 	input = std::regex_replace(input, std::regex(R"(\")"), "");
 
 	// Define the regular expressions for matching
-	std::regex create_table_re(R"(create\s+table\s+([^\s\(\)]+(?:\.[^\s\(\)]+){0,2})\s*\(([^;]+)\);)", std::regex::icase);
+	std::regex create_table_re(R"(create\s+table\s+([^\s\(\)]+(?:\.[^\s\(\)]+){0,2})\s*\(([^;]+)\);)",
+	                           std::regex::icase);
 	std::regex primary_key_re(R"((primary\s+key\s*\([^\)]+\)))", std::regex::icase);
 	std::regex inline_primary_key_re(R"(([^\s,]+[^\),]*\s+primary\s+key))", std::regex::icase);
 
@@ -254,7 +256,8 @@ std::string CompilerExtension::GenerateDeltaTable(std::string &input) {
 		// Check if there is a primary key constraint defined at the end
 		if (std::regex_search(columns, match, primary_key_re)) {
 			primary_key = match[0].str();
-			pk_columns = primary_key.substr(primary_key.find('(') + 1, primary_key.find(')') - primary_key.find('(') - 1);
+			pk_columns =
+			    primary_key.substr(primary_key.find('(') + 1, primary_key.find(')') - primary_key.find('(') - 1);
 			columns = std::regex_replace(columns, primary_key_re, "");
 		}
 

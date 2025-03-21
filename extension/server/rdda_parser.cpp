@@ -97,7 +97,8 @@ string ConstructTable(Connection &con, string view_name, bool view) {
 		centralized_table_definition += column.GetName() + " " + StringUtil::Lower(column.GetType().ToString()) + ", ";
 	}
 	if (view) {
-		centralized_table_definition += "generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);\n";
+		centralized_table_definition +=
+		    "generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);\n";
 	} else {
 		// remove the last comma and space
 		centralized_table_definition += "rdda_window int, client_id ubigint);\n";
@@ -121,18 +122,17 @@ ParserExtensionParseResult RDDAParserExtension::RDDAParseFunction(ParserExtensio
 	if (query_lower.substr(0, 6) == "create") {
 		if (scope != TableScope::null) {
 			return ParserExtensionParseResult(
-		make_uniq_base<ParserExtensionParseData, RDDAParseData>(query_lower, scope));
+			    make_uniq_base<ParserExtensionParseData, RDDAParseData>(query_lower, scope));
 		}
 	}
 	return ParserExtensionParseResult();
-
 }
 
 ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionInfo *info, ClientContext &context,
-															  unique_ptr<ParserExtensionParseData> parse_data) {
+                                                                unique_ptr<ParserExtensionParseData> parse_data) {
 
-	auto query = dynamic_cast<RDDAParseData*>(parse_data.get())->query;
-	auto scope = dynamic_cast<RDDAParseData*>(parse_data.get())->scope;
+	auto query = dynamic_cast<RDDAParseData *>(parse_data.get())->query;
+	auto scope = dynamic_cast<RDDAParseData *>(parse_data.get())->scope;
 	// after the parser, the query string reaches this point
 
 	// each instruction set gets saved to a file, for portability
@@ -180,14 +180,15 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 
 				// now we add the table in our RDDA catalog (name, scope, query, is_view)
 				auto table_string = "insert into rdda_tables values('" + table_name + "', " +
-									to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
+				                    to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
 				centralized_queries += table_string;
 
 				decentralized_queries += query;
 				for (auto &constraint : constraints) {
 					auto constraint_string = "insert into rdda_table_constraints values ('" + table_name + "', '" +
-					                         constraint.first + "', " + to_string(constraint.second.randomized) +
-					                         ", " + to_string(constraint.second.sensitive) + ", " + to_string(constraint.second.protected_) + ");\n";
+					                         constraint.first + "', " + to_string(constraint.second.randomized) + ", " +
+					                         to_string(constraint.second.sensitive) + ", " +
+					                         to_string(constraint.second.protected_) + ");\n";
 					centralized_queries += constraint_string;
 				}
 				con.Rollback();
@@ -197,14 +198,14 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 					decentralized_queries += query;
 					// now we add the table in our RDDA catalog (name, scope, query, is_view)
 					auto table_string = "insert into rdda_tables values('" + table_name + "', " +
-										to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
+					                    to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
 					centralized_queries += table_string;
 				} else {
 					// centralized table
 					centralized_queries += query;
 					// now we add the table in our RDDA catalog (name, scope, query, is_view)
 					auto table_string = "insert into rdda_tables values('" + table_name + "', " +
-										to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
+					                    to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
 					centralized_queries += table_string;
 				}
 			}
@@ -219,7 +220,9 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 			if (view_name.substr(0, 23) == "rdda_centralized_view_") {
 				throw ParserException("Centralized views cannot start with rdda_centralized_view_");
 			}
-			auto view_string = "insert into rdda_tables values('" + view_name + "', " + to_string(static_cast<int32_t>(scope)) + ", '" + CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
+			auto view_string = "insert into rdda_tables values('" + view_name + "', " +
+			                   to_string(static_cast<int32_t>(scope)) + ", '" +
+			                   CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
 			centralized_queries += view_string;
 			if (scope == TableScope::replicated) {
 				// todo - do we need anything else here?
@@ -251,29 +254,30 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				con.Rollback();
 				AttachParserDatabase(con);
 				centralized_queries += query;
-				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
-									  to_string(view_constraints.window) + ", " +
-									  to_string(view_constraints.ttl) + ", " +
-									  to_string(view_constraints.refresh) + ", " +
-									  to_string(view_constraints.min_agg) + ");\n";
+				auto view_constraint_string =
+				    "insert into rdda_view_constraints values('" + view_name + "', " +
+				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
+				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ");\n";
 				centralized_queries += view_constraint_string;
 			} else if (scope == TableScope::decentralized) {
 				// todo - check that this is defined over decentralized tables/views
-				auto view_constraint_string = "insert into rdda_view_constraints values('" + view_name + "', " +
-				                              to_string(view_constraints.window) + ", " +
-				                              to_string(view_constraints.ttl) + ", " +
-				                              to_string(view_constraints.refresh) + ", " +
-				                              to_string(view_constraints.min_agg) + ");\n";
+				auto view_constraint_string =
+				    "insert into rdda_view_constraints values('" + view_name + "', " +
+				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
+				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ");\n";
 				decentralized_queries += query;
 				secure_queries += ConstructTable(con, view_name, true);
-				view_string = "insert into rdda_tables values('rdda_centralized_view_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 1);\n";
+				view_string = "insert into rdda_tables values('rdda_centralized_view_" + view_name + "', " +
+				              to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 1);\n";
 				centralized_queries += view_string;
 				// we also need to create the respective centralized view
 				centralized_queries += ConstructTable(con, view_name, false);
-				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " + to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
+				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " +
+				              to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
 				centralized_queries += view_string;
 				centralized_queries += view_constraint_string;
-				auto window_string = "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0);\n";
+				auto window_string =
+				    "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0);\n";
 				centralized_queries += window_string;
 			}
 		}
@@ -306,7 +310,8 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	// todo make the location of secure queries dynamic
 	ExecuteAndWriteQueries(con, secure_queries, path + "secure_queries.sql", false);
 
-	ParserExtensionPlanResult result;// register a function with a string as parameter and pass it here (in place of true)
+	ParserExtensionPlanResult
+	    result; // register a function with a string as parameter and pass it here (in place of true)
 	result.function = RDDAFunction();
 	result.parameters.push_back(true); // this could be true or false if we add exception handling
 	result.modified_databases = {};

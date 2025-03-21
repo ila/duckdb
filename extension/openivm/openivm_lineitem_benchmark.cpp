@@ -74,13 +74,16 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	fs.CreateDirectory("data");
 
 	auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Benchmark initialized..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Benchmark initialized..."
+	          << "\n";
 
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generating data..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generating data..."
+	          << "\n";
 
 	// generating lineitem
 	GenerateLineitem(scale_factor, new_scale_factor);
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generated lineitem..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generated lineitem..."
+	          << "\n";
 
 	DuckDB db("lineitem.db");
 	Connection con(db);
@@ -99,10 +102,11 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 		    "l_returnflag VARCHAR(1), l_linestatus VARCHAR(1), l_shipdate DATE, l_commitdate DATE, l_receiptdate "
 		    "DATE, l_shipinstruct VARCHAR(25), l_shipmode VARCHAR(10), l_comment VARCHAR(44));");
 
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
+		          << "\n";
 
-		auto r =
-		    con.Query("COPY lineitem FROM '/tmp/data/sf" + DoubleToString(scale_factor) + "/lineitem.tbl' (DELIMITER '|');");
+		auto r = con.Query("COPY lineitem FROM '/tmp/data/sf" + DoubleToString(scale_factor) +
+		                   "/lineitem.tbl' (DELIMITER '|');");
 		if (r->HasError()) {
 			fs.RemoveFile("lineitem.db");
 			throw InternalException("Failed to load lineitem data: %s", r->GetError().c_str());
@@ -110,7 +114,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 		auto end_time = std::chrono::high_resolution_clock::now();
 		load_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loaded lineitem..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loaded lineitem..."
+		          << "\n";
 	}
 	auto count_lineitem = con.Query("SELECT COUNT(*) FROM lineitem;")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Rows inserted in lineitem: " << Format(count_lineitem)
@@ -118,9 +123,10 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 
 	// storing query 1 in a string for future usage
 	// note: this is slightly different from query 1, since the average was removed
-	string query_1_tpch = "SELECT l_returnflag, l_linestatus, SUM(l_quantity) AS sum_qty, SUM(l_extendedprice) AS "
-	                      "sum_base_price, COUNT(*) AS count_order FROM lineitem WHERE l_shipdate <= CAST('1998-09-02' AS date) "
-	                      "GROUP BY l_returnflag, l_linestatus;";
+	string query_1_tpch =
+	    "SELECT l_returnflag, l_linestatus, SUM(l_quantity) AS sum_qty, SUM(l_extendedprice) AS "
+	    "sum_base_price, COUNT(*) AS count_order FROM lineitem WHERE l_shipdate <= CAST('1998-09-02' AS date) "
+	    "GROUP BY l_returnflag, l_linestatus;";
 
 	string materialized_view = "CREATE MATERIALIZED VIEW query_1 AS " + query_1_tpch;
 	std::chrono::milliseconds materialized_view_time = std::chrono::milliseconds(0);
@@ -153,7 +159,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 		auto end_time = std::chrono::high_resolution_clock::now();
 		materialized_view_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Materialized view created..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Materialized view created..."
+		          << "\n";
 
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Query: " << query_1_tpch << "\n";
 
@@ -162,7 +169,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 		end_time = std::chrono::high_resolution_clock::now();
 		index_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..." << "\n";
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "ART index created..."
+		          << "\n";
 
 		create_lineitem = false;
 	}
@@ -172,7 +180,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	          << "Rows inserted in the materialized view: " << Format(count_query_1) << "\n";
 
 	// inserting new data in the delta table
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Applying modifications to the base table..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Applying modifications to the base table..."
+	          << "\n";
 	auto start_time = std::chrono::high_resolution_clock::now();
 	auto r = con.Query("COPY lineitem FROM '/tmp/data/sf" + DoubleToString(scale_factor) + "/lineitem_new_" +
 	                   DoubleToString(new_scale_factor) + ".tbl' (DELIMITER '|');");
@@ -184,7 +193,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	auto copy_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "New data inserted..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "New data inserted..."
+	          << "\n";
 	auto count_delta_lineitem = con.Query("SELECT COUNT(*) FROM delta_lineitem;")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
 	          << "Rows inserted in delta_lineitem: " << Format(count_delta_lineitem) << "\n";
@@ -203,7 +213,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	end_time = std::chrono::high_resolution_clock::now();
 	auto compile_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Queries compiled..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Queries compiled..."
+	          << "\n";
 
 	auto queries = ReadQueries("ivm_upsert_queries_query_1.sql");
 	auto insert_query = queries[0];
@@ -223,7 +234,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	end_time = std::chrono::high_resolution_clock::now();
 	auto insert_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM insertion performed..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM insertion performed..."
+	          << "\n";
 
 	auto count_delta_query_1 = con.Query("SELECT COUNT(*) FROM delta_query_1;")->GetValue(0, 0).ToString();
 	// to make sure the cache is warm
@@ -239,7 +251,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	end_time = std::chrono::high_resolution_clock::now();
 	auto upsert_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM upsert performed..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM upsert performed..."
+	          << "\n";
 
 	start_time = std::chrono::high_resolution_clock::now();
 	con.Query(delete_query_1);
@@ -248,7 +261,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	end_time = std::chrono::high_resolution_clock::now();
 	auto delete_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM deletion performed..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM deletion performed..."
+	          << "\n";
 
 	auto new_count_query_1 = con.Query("SELECT COUNT(*) FROM query_1")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
@@ -264,7 +278,8 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	end_time = std::chrono::high_resolution_clock::now();
 	auto query_lineitem_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Query executed..." << "\n";
+	std::cout << std::put_time(std::localtime(&now), "%c ") << "Query executed..."
+	          << "\n";
 
 	auto total_time =
 	    materialized_view_time + index_time + compile_time + insert_time + upsert_time + delete_time + (copy_time / 2);
@@ -272,28 +287,29 @@ void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor) {
 	// printing the benchmark results
 	std::cout << "\nBenchmark Results:" << '\n';
 	std::cout << std::setw(56) << std::setfill('-') << "" << '\n';
-	std::cout << std::left << std::setw(43) << "| Operation" << "| Time (ms) |" << '\n';
+	std::cout << std::left << std::setw(43) << "| Operation"
+	          << "| Time (ms) |" << '\n';
 	std::cout << std::setw(56) << std::setfill('-') << "" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "Data load" << "| " << std::setw(9) << load_time.count() << " |"
-	          << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "Materialized view (+ tables) creation" << "| " << std::setw(9)
-	          << materialized_view_time.count() << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "ART index creation" << "| " << std::setw(9)
-	          << index_time.count() << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "Copy" << "| " << std::setw(9) << copy_time.count() << " |"
-	          << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "Queries compilation" << "| " << std::setw(9)
-	          << compile_time.count() << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "IVM insertion" << "| " << std::setw(9) << insert_time.count()
-	          << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "IVM upsert" << "| " << std::setw(9) << upsert_time.count()
-	          << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "IVM deletion" << "| " << std::setw(9) << delete_time.count()
-	          << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "Total IVM time" << "| " << std::setw(9) << total_time.count()
-	          << " |" << '\n';
-	std::cout << "| " << std::left << std::setw(41) << "Query without IVM" << "| " << std::setw(9)
-	          << query_lineitem_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "Data load"
+	          << "| " << std::setw(9) << load_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "Materialized view (+ tables) creation"
+	          << "| " << std::setw(9) << materialized_view_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "ART index creation"
+	          << "| " << std::setw(9) << index_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "Copy"
+	          << "| " << std::setw(9) << copy_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "Queries compilation"
+	          << "| " << std::setw(9) << compile_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "IVM insertion"
+	          << "| " << std::setw(9) << insert_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "IVM upsert"
+	          << "| " << std::setw(9) << upsert_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "IVM deletion"
+	          << "| " << std::setw(9) << delete_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "Total IVM time"
+	          << "| " << std::setw(9) << total_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "Query without IVM"
+	          << "| " << std::setw(9) << query_lineitem_time.count() << " |" << '\n';
 	std::cout << std::setw(56) << std::setfill('-') << "" << '\n';
 }
 

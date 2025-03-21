@@ -62,7 +62,6 @@ void CleanupSockets(int sockfd, vector<int32_t> &client_socket) {
 	close(self_pipe[1]);
 }
 
-
 void SerializeQueryPlan(string &query, string &path, string &dbname) {
 
 	DuckDB db(path + dbname);
@@ -126,8 +125,8 @@ void DeserializeQueryPlan(string &path, string &dbname) {
 void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string &timestamp) {
 
 	string table_name = "rdda_clients";
-	string query =
-	    "insert or ignore into " + table_name + " values (" + std::to_string(id) + ", '" + timestamp + "', '" + timestamp + "');";
+	string query = "insert or ignore into " + table_name + " values (" + std::to_string(id) + ", '" + timestamp +
+	               "', '" + timestamp + "');";
 	auto r = con.Query(query);
 	if (r->HasError()) {
 		throw ParserException("Error while inserting client information: " + r->GetError());
@@ -212,7 +211,8 @@ void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, stri
 	}
 
 	// we extract the window
-	auto window_query = "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name_str + "';";
+	auto window_query =
+	    "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name_str + "';";
 	auto r = con.Query(window_query);
 	if (r->HasError() || r->RowCount() == 0) {
 		throw ParserException("Error while querying window metadata: " + r->GetError());
@@ -259,7 +259,8 @@ void InsertNewStatistics(int32_t connfd) {
 	// Placeholder for future logic
 }
 
-void HandleClientMessage(client_messages message, int32_t connfd, Connection &con, unordered_map<string, string> &config, vector<int32_t> &client_socket, int index) {
+void HandleClientMessage(client_messages message, int32_t connfd, Connection &con,
+                         unordered_map<string, string> &config, vector<int32_t> &client_socket, int index) {
 	switch (message) {
 	case close_connection:
 		CloseConnection(connfd, client_socket, index);
@@ -296,7 +297,7 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 	int32_t max_clients = std::stoi(config["max_clients"]);
 	int32_t server_port = std::stoi(config["server_port"]);
 
-	sockaddr_in servaddr{};
+	sockaddr_in servaddr {};
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_addr.s_addr = INADDR_ANY;
@@ -356,7 +357,7 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 		}
 
 		struct timeval timeout;
-		timeout.tv_sec = 5;  // Check server_running every 5 seconds
+		timeout.tv_sec = 5; // Check server_running every 5 seconds
 		timeout.tv_usec = 0;
 
 		int activity = select(max_sockfd + 1, &readfds, nullptr, nullptr, &timeout);
@@ -366,12 +367,13 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 			break;
 		}
 
-		if (!server_running) break;
+		if (!server_running)
+			break;
 
 		if (FD_ISSET(self_pipe[0], &readfds)) {
 			char buf;
 			read(self_pipe[0], &buf, 1);
-			break;  // Exit after reading self-pipe
+			break; // Exit after reading self-pipe
 		}
 
 		if (FD_ISSET(sockfd, &readfds)) {
@@ -391,7 +393,8 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 
 		for (int i = 0; i < max_clients; i++) {
 			int connfd = client_socket[i];
-			if (connfd <= 0) continue;
+			if (connfd <= 0)
+				continue;
 
 			if (FD_ISSET(connfd, &readfds)) {
 				client_messages message;
@@ -404,7 +407,6 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 
 				Printer::Print("Reading message: " + toString(message) + "...");
 				HandleClientMessage(message, connfd, con, config, client_socket, i);
-
 			}
 		}
 	}
@@ -412,6 +414,5 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 	CleanupSockets(sockfd, client_socket);
 	Printer::Print("Server shut down cleanly.");
 }
-
 
 } // namespace duckdb

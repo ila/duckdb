@@ -37,8 +37,8 @@ int32_t ConnectClient(unordered_map<string, string> &config) {
 		Printer::Print("Unknown host\n");
 	}
 
-	memset(&serv_addr, '\0', sizeof(serv_addr)); // zero structure out
-	serv_addr.sin_family = AF_INET; // match the socket() call
+	memset(&serv_addr, '\0', sizeof(serv_addr));                        // zero structure out
+	serv_addr.sin_family = AF_INET;                                     // match the socket() call
 	memcpy(&serv_addr.sin_addr.s_addr, h->h_addr_list[0], h->h_length); // copy the address
 	serv_addr.sin_port = htons(stoi(config["server_port"]));
 
@@ -83,7 +83,6 @@ timestamp_t RefreshMaterializedView(string &view_name, Connection &con) {
 	// todo - also find a way to persist refresh timestamps
 	// if the transmission is not ok, we need to know when a row was generated
 	return timestamp; // todo - timezone
-
 }
 
 int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, string &path) {
@@ -120,7 +119,9 @@ int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, s
 	send(sock, &size, sizeof(view_name.size()), 0);
 	send(sock, view_name.c_str(), view_name.size(), 0);
 
-	auto r = con.Query("insert into client_refreshes values ('" + view_name + "', '" + Timestamp::ToString(timestamp) + "') on conflict do update set last_result = '" + Timestamp::ToString(timestamp) + "' where view_name = '" + view_name + "';");
+	auto r = con.Query("insert into client_refreshes values ('" + view_name + "', '" + Timestamp::ToString(timestamp) +
+	                   "') on conflict do update set last_result = '" + Timestamp::ToString(timestamp) +
+	                   "' where view_name = '" + view_name + "';");
 	if (r->HasError()) {
 		throw ParserException("Error while updating client metadata: " + r->GetError());
 	}
@@ -141,4 +142,4 @@ int32_t SendResults(string &view_name, timestamp_t timestamp, Connection &con, s
 	// todo - remove the data from the mv
 }
 
-}
+} // namespace duckdb

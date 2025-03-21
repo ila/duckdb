@@ -34,7 +34,6 @@ static void Refresh(ClientContext &context, const FunctionParameters &parameters
 	CloseConnection(sock);
 }
 
-
 static void InsertClient(Connection &con, unordered_map<string, string> &config, uint64_t id, string_t timestamp) {
 
 	string table_name;
@@ -43,7 +42,8 @@ static void InsertClient(Connection &con, unordered_map<string, string> &config,
 	} else {
 		table_name = "client_information";
 	}
-	string query = "insert or ignore into " + table_name + " values (" + std::to_string(id) + ", '" + timestamp.GetString() + "', NULL);";
+	string query = "insert or ignore into " + table_name + " values (" + std::to_string(id) + ", '" +
+	               timestamp.GetString() + "', NULL);";
 	auto r = con.Query(query);
 	if (r->HasError()) {
 		throw ParserException("Error while inserting client information: " + r->GetError());
@@ -95,7 +95,8 @@ static int32_t GenerateClientInformation(Connection &con, unordered_map<string, 
 		Printer::Print("Attempting to continue execution...");
 	}
 	// now update the last_update
-	auto update = "update client_information set last_update = '" + timestamp_string + "' where id = " + std::to_string(id) + ";";
+	auto update =
+	    "update client_information set last_update = '" + timestamp_string + "' where id = " + std::to_string(id) + ";";
 	r = con.Query(update);
 	if (r->HasError()) {
 		throw ParserException("Error while updating client information: " + r->GetError());
@@ -114,12 +115,10 @@ void InitializeClient(ClientContext &context, const FunctionParameters &paramete
 	CreateSystemTables(config_path, con);
 	auto sock = GenerateClientInformation(con, config);
 	CloseConnection(sock);
-
 }
 
 static void InsertChunks(const std::unique_ptr<MaterializedQueryResult> &result,
-                         const unique_ptr<TableDescription> &view_info,
-                         Connection &con) {
+                         const unique_ptr<TableDescription> &view_info, Connection &con) {
 
 	for (auto &chunk : result->Collection().Chunks()) {
 		// appending one chunk at the time in order to free memory
@@ -155,7 +154,6 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	auto refresh = PragmaFunction::PragmaCall("refresh", Refresh, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, refresh);
-
 }
 
 void ClientExtension::Load(DuckDB &db) {

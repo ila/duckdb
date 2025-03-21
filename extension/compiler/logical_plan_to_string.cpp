@@ -36,11 +36,9 @@ string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &
 }
 
 // TODO: support multiple children (not sure if here or elsewhere).
-void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan,
-                         unique_ptr<DuckASTNode> &ast_plan,
+void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan, unique_ptr<DuckASTNode> &ast_plan,
                          std::unordered_map<string, string> &column_names,
-                         std::vector<std::pair<string, string>> &column_aliases,
-                         bool is_second_child) {
+                         std::vector<std::pair<string, string>> &column_aliases, bool is_second_child) {
 
 	// todo refactor the AST (unnecessary fields) + fix aggregations
 
@@ -57,7 +55,8 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		// [ila] I refactored this, this function was called using the root previously
 		ast_plan->Insert(move(ql_cross_prod), ast_plan, node_id, DuckASTOperatorType::CROSS_JOIN);
 		LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
-		return LogicalPlanToString(context, plan->children[1], ast_plan->children[0], column_names, column_aliases, true);
+		return LogicalPlanToString(context, plan->children[1], ast_plan->children[0], column_names, column_aliases,
+		                           true);
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
@@ -245,13 +244,15 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			if (!catalog_value.IsNull() && !schema_value.IsNull()) {
 				catalog_schema = catalog_value.ToString() + "." + schema_value.ToString() + ".";
 			}
-			ql_get_exp->table_name = catalog_schema + dynamic_cast<PostgresBindData *>(node->bind_data.get())->table_name;
+			ql_get_exp->table_name =
+			    catalog_schema + dynamic_cast<PostgresBindData *>(node->bind_data.get())->table_name;
 		}
 		ql_get_exp->all_columns = true;
 
 		if (!node->table_filters.filters.empty()) {
 			for (auto &filter : node->table_filters.filters) {
-				ql_get_exp->filter_condition = filter.second->ToString(node->names[filter.first]);;
+				ql_get_exp->filter_condition = filter.second->ToString(node->names[filter.first]);
+				;
 			}
 		}
 
@@ -265,7 +266,7 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		}
 		/* 2024-11-03 Not used.
 		auto current_table_index = node->GetTableIndex()[0];
-        */
+		*/
 		unordered_map<string, string> cur_col_map; // To avoid any changes in ordering of columns
 
 		for (size_t i = 0; i < bindings.size(); i++) {
@@ -283,19 +284,19 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		vector<pair<string, string>> cur_col_aliases;
 
 		for (int i = 0; i < bindings.size(); i++) {
-			if (bindings[i].table_index != current_table_index) {
-				continue;
-			}
-			auto key = std::to_string(bindings[i].table_index) + "." + std::to_string(bindings[i].column_index);
-			auto it1 = column_names.find(key);
-			auto it2 = cur_col_map.find(key);
-			if (it2 != cur_col_map.end() && it1 != column_names.end()) {
-				if (it1->second == it2->second) {
-					cur_col_aliases.push_back({it2->second, "duckdb_placeholder_internal"});
-				} else {
-					cur_col_aliases.push_back({it2->second, it1->second});
-				}
-			}
+		    if (bindings[i].table_index != current_table_index) {
+		        continue;
+		    }
+		    auto key = std::to_string(bindings[i].table_index) + "." + std::to_string(bindings[i].column_index);
+		    auto it1 = column_names.find(key);
+		    auto it2 = cur_col_map.find(key);
+		    if (it2 != cur_col_map.end() && it1 != column_names.end()) {
+		        if (it1->second == it2->second) {
+		            cur_col_aliases.push_back({it2->second, "duckdb_placeholder_internal"});
+		        } else {
+		            cur_col_aliases.push_back({it2->second, it1->second});
+		        }
+		    }
 		} */
 
 		for (size_t i = 0; i < bindings.size(); i++) {
@@ -325,7 +326,7 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			ql_get_exp->all_columns = false;
 		}
 
-		//ql_get_exp->column_aliases = cur_col_aliases;
+		// ql_get_exp->column_aliases = cur_col_aliases;
 		ql_get_exp->column_aliases = column_aliases;
 		auto node_id = node->GetName() + "_AST";
 

@@ -27,17 +27,17 @@ struct RenumberWrapper {
 /// Note that this function does not modify the tree.
 /// However, it does modify the binder, since the binder is responsible for generating table indices.
 /// Returns an unordered map with old_idx -> new_idx for each pair of modified table indices.
-RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder& binder);
+RenumberWrapper renumber_table_indices(unique_ptr<LogicalOperator> plan, Binder &binder);
 
 /// Renumber all table indices in the entire query subtree, and replace all ColumnBindings.
 /// Effectively a call to renumber_table_indices followed by a ColumnBindingReplacer.
-RenumberWrapper renumber_and_rebind_subtree(unique_ptr<LogicalOperator> plan, Binder& binder);
+RenumberWrapper renumber_and_rebind_subtree(unique_ptr<LogicalOperator> plan, Binder &binder);
 
 /// Create a ColumnBindingReplacer using a vector of ColumnBindings, and a mapping of old->new table indices.
 /// The bindings in the vector do not need to be unique or sorted.
 /// This function will take care of only using distinct bindings.
-ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding>& bindings, const std::unordered_map<old_idx, new_idx>& table_mapping);
-
+ColumnBindingReplacer vec_to_replacer(const std::vector<ColumnBinding> &bindings,
+                                      const std::unordered_map<old_idx, new_idx> &table_mapping);
 
 } // namespace duckdb
 

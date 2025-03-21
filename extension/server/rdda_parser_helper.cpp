@@ -21,7 +21,6 @@ void CheckConstraints(LogicalOperator &plan, unordered_map<string, constraints> 
 	// 4. minimum aggregation columns must be used in a query with a group by
 
 	// todo - implement this
-
 }
 
-}
+} // namespace duckdb

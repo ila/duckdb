@@ -51,19 +51,21 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// 	con.Query(queries);
 	// 	return;
 	// }
-	string min_agg_query = "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
+	string min_agg_query =
+	    "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
 	auto r = con.Query(min_agg_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying columns metadata: " + r->GetError());
 	}
 	if (r->RowCount() == 0) {
-        throw ParserException("View metadata not found!");
-    }
+		throw ParserException("View metadata not found!");
+	}
 	auto minimum_aggregation = std::stoi(r->GetValue(0, 0).ToString());
 	auto window = std::stoi(r->GetValue(1, 0).ToString());
 	auto ttl = std::stoi(r->GetValue(2, 0).ToString());
 
-	string current_window_query = "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name + "';";
+	string current_window_query =
+	    "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name + "';";
 	r = con.Query(current_window_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying window metadata: " + r->GetError());
@@ -74,12 +76,13 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	auto current_window = std::stoi(r->GetValue(0, 0).ToString());
 	int ttl_windows = ttl / window;
 
-	auto centralized_view_catalog_entry = Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, "test", "main", centralized_view_name,
-										 OnEntryNotFound::RETURN_NULL, QueryErrorContext());
+	auto centralized_view_catalog_entry =
+	    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, "test", "main", centralized_view_name,
+	                      OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 
 	if (!centralized_view_catalog_entry) {
-        throw ParserException("Centralized view not found: " + centralized_view_name);
-    }
+		throw ParserException("Centralized view not found: " + centralized_view_name);
+	}
 	string update_query_1 = "update " + centralized_view_name + " x\nset action = 2 \nfrom (\n\tselect ";
 
 	string protected_column_names = "";
@@ -91,26 +94,28 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string view_query = "select query from rdda_tables where name = '" + view_name + "';";
 	auto view_query_result = con.Query(view_query);
 	if (view_query_result->HasError()) {
-        throw ParserException("Error while querying view definition: " + view_query_result->GetError());
-    }
+		throw ParserException("Error while querying view definition: " + view_query_result->GetError());
+	}
 	con.BeginTransaction();
 	auto table_names = con.GetTableNames(view_query_result->GetValue(0, 0).ToString());
 	con.Rollback();
 	// currently there is only one table name, but might be extended in the future
 	string in_table_names = "(";
 	for (auto &table : table_names) {
-        in_table_names += "'" + table + "', ";
-    }
+		in_table_names += "'" + table + "', ";
+	}
 	in_table_names = in_table_names.substr(0, in_table_names.size() - 2) + ")";
 
-	auto protected_columns_query = "select column_name from rdda_table_constraints where rdda_protected = 1 and table_name in " + in_table_names + ";";
+	auto protected_columns_query =
+	    "select column_name from rdda_table_constraints where rdda_protected = 1 and table_name in " + in_table_names +
+	    ";";
 	auto protected_columns = con.Query(protected_columns_query);
 	if (protected_columns->HasError()) {
-        throw ParserException("Error while querying protected columns: " + protected_columns->GetError());
-    }
+		throw ParserException("Error while querying protected columns: " + protected_columns->GetError());
+	}
 	for (size_t i = 0; i < protected_columns->RowCount(); i++) {
 		auto column = protected_columns->GetValue(0, i).ToString();
-        protected_column_names += column + ", ";
+		protected_column_names += column + ", ";
 		join_names += "x." + column + " = y." + column + " \nand ";
 		join_names_cte += "x." + column + " = z." + column + " \nand ";
 	}
@@ -128,7 +133,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	}
 	// remove the last comma and space
 	table_column_names = table_column_names.substr(0, table_column_names.size() - 2);
-	
+
 	update_query_1 += protected_column_names + ", "; // without the alias
 	update_query_1 += "count(distinct client_id)\n\t";
 	update_query_1 += "from " + centralized_view_name + " \n\t";
@@ -136,7 +141,8 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation) + ") y \n";
 	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
 
-	auto insert_query = "insert into " + centralized_table_name + " \nselect " + table_column_names + " \nfrom " + centralized_view_name + " \nwhere action = 2;\n\n";
+	auto insert_query = "insert into " + centralized_table_name + " \nselect " + table_column_names + " \nfrom " +
+	                    centralized_view_name + " \nwhere action = 2;\n\n";
 	auto delete_query_1 = "delete from " + centralized_view_name + " \nwhere action = 2;\n\n";
 
 	// now in the centralized view we only have tuples not meeting the minimum aggregation
@@ -159,11 +165,14 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	update_query_2 += "update " + centralized_view_name + " z \n";
 	update_query_2 += "set action = 2 \n";
 	update_query_2 += "from x, y \n";
-	update_query_2 += "where " + join_names + join_names_cte + "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n\n";
+	update_query_2 += "where " + join_names + join_names_cte +
+	                  "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n\n";
 	// lastly we remove stale tuples
-	string delete_query_2 = "delete from " + centralized_view_name + " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n\n";
+	string delete_query_2 = "delete from " + centralized_view_name +
+	                        " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n\n";
 
-	auto queries = update_query_1 + insert_query + delete_query_1 + update_query_2 + insert_query + delete_query_1 + delete_query_2;
+	auto queries = update_query_1 + insert_query + delete_query_1 + update_query_2 + insert_query + delete_query_1 +
+	               delete_query_2;
 	ExecuteAndWriteQueries(con, queries, file_name, false);
 }
 } // namespace duckdb

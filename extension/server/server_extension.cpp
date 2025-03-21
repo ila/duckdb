@@ -40,7 +40,8 @@ static void InitializeServer(Connection &con, string &config_path, unordered_map
 	CreateSystemTables(config_path, con);
 
 	for (auto &config_item : config) {
-		string string_insert = "insert into rdda_settings values ('" + config_item.first + "', '" + config_item.second + "');";
+		string string_insert =
+		    "insert into rdda_settings values ('" + config_item.first + "', '" + config_item.second + "');";
 		auto r = con.Query(string_insert);
 		if (r->HasError()) {
 			throw ParserException("Error while inserting settings: " + r->GetError());
@@ -85,16 +86,15 @@ static vector<string> ExtractTables(string &query) {
 	planner.CreatePlan(statement->Copy());
 
 	// DFS
-	std::stack<LogicalOperator*> node_stack;
+	std::stack<LogicalOperator *> node_stack;
 	node_stack.push(planner.plan.get());
 	while (!node_stack.empty()) {
 		auto node = node_stack.top();
 		node_stack.pop();
 		if (node->type == LogicalOperatorType::LOGICAL_GET) {
-			auto scan = dynamic_cast<LogicalGet*>(node);
-			auto table_data = dynamic_cast<TableScanBindData*>(scan->bind_data.get());
+			auto scan = dynamic_cast<LogicalGet *>(node);
+			auto table_data = dynamic_cast<TableScanBindData *>(scan->bind_data.get());
 			tables.push_back(table_data->table.name);
-
 		}
 		for (auto &child : node->children) {
 			node_stack.push(child.get());

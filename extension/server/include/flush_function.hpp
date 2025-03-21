@@ -9,8 +9,7 @@
 #include <rdda_parser.hpp>
 
 namespace duckdb {
-    void FlushFunction(ClientContext &context, const FunctionParameters &parameters);
+void FlushFunction(ClientContext &context, const FunctionParameters &parameters);
 };
 
-
-#endif //FLUSH_FUNCTION_HPP
+#endif // FLUSH_FUNCTION_HPP

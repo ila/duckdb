@@ -153,7 +153,8 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	// to check this, we extract the minimum timestamp from _duckdb_ivm_delta_tables
 	string delete_from_delta_table_query;
 	// firstly we reset the timestamp
-	string update_timestamp_query = "update _duckdb_ivm_delta_tables set last_update = now() where view_name = '" + view_name + "';\n";
+	string update_timestamp_query =
+	    "update _duckdb_ivm_delta_tables set last_update = now() where view_name = '" + view_name + "';\n";
 
 	for (size_t i = 0; i < tables->RowCount(); i++) {
 		auto table_name = tables->GetValue(0, i).ToString();
@@ -161,10 +162,14 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 			table_name = attached_db_catalog_name + "." + attached_db_schema_name + "." + table_name;
 		}
 		// now we delete anything we don't need anymore
-		delete_from_delta_table_query += "delete from " + table_name + " where _duckdb_ivm_timestamp < (select min(last_update) from _duckdb_ivm_delta_tables where table_name = '" + table_name + "');\n";
+		delete_from_delta_table_query += "delete from " + table_name +
+		                                 " where _duckdb_ivm_timestamp < (select min(last_update) from "
+		                                 "_duckdb_ivm_delta_tables where table_name = '" +
+		                                 table_name + "');\n";
 	}
 
-	string query = ivm_query + "\n\n" + update_timestamp_query + "\n" + upsert_query + "\n" + delete_from_view_query + "\n" + ivm_result + "\n" + delete_from_delta_table_query;
+	string query = ivm_query + "\n\n" + update_timestamp_query + "\n" + upsert_query + "\n" + delete_from_view_query +
+	               "\n" + ivm_result + "\n" + delete_from_delta_table_query;
 
 	// now also compiling the queries for future usage
 	string db_path;
@@ -183,7 +188,8 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	// (the "execute" flag is only for benchmarking purposes)
 	// if the database is in memory, we do not want to run the whole IVM thing
 	// so we return a dummy query (we must return something here)
-	if (!context.db->config.options.database_path.empty() && (execute.IsNull() || execute.GetValue<bool>())) { // in memory
+	if (!context.db->config.options.database_path.empty() &&
+	    (execute.IsNull() || execute.GetValue<bool>())) { // in memory
 		return query;
 	} else {
 		return "select 1"; // dummy query

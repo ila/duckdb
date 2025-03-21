@@ -13,14 +13,14 @@
 
 namespace duckdb {
 
-void ReplaceTableName(string &catalog, string &schema, string& query) {
+void ReplaceTableName(string &catalog, string &schema, string &query) {
 	// regex pattern to match table names not followed by an alias
 	// todo test with alias
 	std::regex pattern(R"(\b((?:from|join)\s+)(\w+)(?![^(]*\))\b)", std::regex_constants::icase);
 	query = std::regex_replace(query, pattern, "$1" + catalog + "." + schema + ".$2");
 }
 
-void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, string& path) {
+void RunIVMCrossSystemDemo(string &catalog, string &schema, string &database, string &path) {
 
 	// note: I manually changed the engine_version here to make the extension work
 
@@ -47,7 +47,7 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, st
 	con.Query("set ivm_catalog_name='" + catalog + "'");
 	con.Query("set ivm_schema_name='" + schema + "'");
 
-	auto res =  con.Query("ATTACH '" + conn_info + "' AS p (TYPE postgres);");
+	auto res = con.Query("ATTACH '" + conn_info + "' AS p (TYPE postgres);");
 	if (res->HasError()) {
 		throw Exception(ExceptionType::TRANSACTION, "Could not attach to PostgreSQL: " + res->GetError());
 	}
@@ -85,7 +85,6 @@ void RunIVMCrossSystemDemo(string& catalog, string& schema, string& database, st
 	} else {
 		std::cout << "Invalid input. Expected 'OK'.\n";
 	}
-
 }
 
 } // namespace duckdb
