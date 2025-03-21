@@ -1,5 +1,6 @@
 #include "include/logical_plan_to_string.hpp"
 
+#include "../../third_party/catch/catch.hpp"
 #include "../postgres_scanner/include/postgres_scanner.hpp"
 
 #include <duckdb/planner/operator/logical_any_join.hpp>
@@ -24,44 +25,43 @@ string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &
 	std::vector<std::pair<string, string>> column_aliases;
 
 	string insert_table_name;
-	auto prj = unique_ptr<DuckAST>(new DuckAST());
+	unique_ptr<DuckASTNode> root = make_uniq<DuckASTNode>();
 	// now we can call the recursive function
-	LogicalPlanToString(context, plan, plan_string, prj, column_names, column_aliases);
-	// DuckAST::printAST(prj->root);
-
-	// Printer::Print("Display!-------------");
-	prj->generateString(plan_string);
-	// Printer::Print(plan_string);
+	LogicalPlanToString(context, plan, root, column_names, column_aliases);
+	GenerateString(root, plan_string);
+#if DEBUG
+	Printer::Print(plan_string);
+#endif
 	return plan_string;
 }
 
 // TODO: support multiple children (not sure if here or elsewhere).
 void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &plan,
-                         string &plan_string, unique_ptr<DuckAST> &ql_tree,
-                         std::unordered_map<string, string> column_names,
-                         std::vector<std::pair<string, string>> column_aliases, bool is_second_child) {
+                         unique_ptr<DuckASTNode> &ast_plan,
+                         std::unordered_map<string, string> &column_names,
+                         std::vector<std::pair<string, string>> &column_aliases,
+                         bool is_second_child) {
 
 	// todo refactor the AST (unnecessary fields) + fix aggregations
 
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT: {
 		auto node = dynamic_cast<LogicalUnconditionalJoin *>(plan.get());
-		auto parent_node = ql_tree->getLastNode();
-		auto ql_cross_prod = new DuckASTJoin();
+		auto ql_cross_prod = make_uniq<DuckASTJoin>();
 		auto node_id = node->GetName() + "_AST";
 		auto child1 = dynamic_cast<LogicalGet *>(plan->children[0].get());
 		auto child2 = dynamic_cast<LogicalGet *>(plan->children[1].get());
-		ql_cross_prod->add_table(child1->GetTable()->name);
-		ql_cross_prod->add_table(child2->GetTable()->name);
-		auto ql_node = (shared_ptr<DuckASTBaseOperator>)ql_cross_prod;
-		ql_tree->insert(ql_node, parent_node, node_id, DuckASTOperatorType::CROSS_JOIN);
-		LogicalPlanToString(context, plan->children[0], plan_string, ql_tree, column_names, column_aliases);
-		return LogicalPlanToString(context, plan->children[1], plan_string, ql_tree, column_names, column_aliases, true);
+		ql_cross_prod->AddTable(child1->GetTable()->name);
+		ql_cross_prod->AddTable(child2->GetTable()->name);
+		// todo - check if this is correct
+		// [ila] I refactored this, this function was called using the root previously
+		ast_plan->Insert(move(ql_cross_prod), ast_plan, node_id, DuckASTOperatorType::CROSS_JOIN);
+		LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
+		return LogicalPlanToString(context, plan->children[1], ast_plan->children[0], column_names, column_aliases, true);
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto node = dynamic_cast<LogicalProjection *>(plan.get());
-		auto ql_proj_exp = new DuckASTProjection();
-		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
+		auto ql_proj_exp = make_uniq<DuckASTProjection>();
 		auto bindings = node->GetColumnBindings();
 		for (auto &expression : node->expressions) {
 			if (expression->type == ExpressionType::BOUND_COLUMN_REF) {
@@ -69,12 +69,11 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 				auto column_index = to_string(column->binding.column_index);
 				auto table_index = to_string(column->binding.table_index);
 				auto column_name = column->alias;
-				ql_proj_exp->add_column(table_index, column_index, column_name);
+				ql_proj_exp->AddColumn(table_index, column_index, column_name);
 			}
 		}
-		auto opr = (shared_ptr<DuckASTBaseOperator>)(ql_proj_exp);
 		auto node_id = ql_proj_exp->name + "_AST";
-		ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::PROJECTION);
+		ast_plan->Insert(move(ql_proj_exp), ast_plan, node_id, DuckASTOperatorType::PROJECTION);
 
 		if (column_aliases.empty()) {
 			// this is the first projection (at least in this first rudimentary implementation)
@@ -92,7 +91,7 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			}
 		}
 
-		return LogicalPlanToString(context, plan->children[0], plan_string, ql_tree, column_names, column_aliases);
+		return LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		auto node = dynamic_cast<LogicalFilter *>(plan.get());
@@ -104,13 +103,11 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 				condition += c.second.c_str();
 			}
 		}
-		auto ql_filter_exp = new DuckASTFilter(condition);
-		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
-		auto opr = shared_ptr<DuckASTBaseOperator>(ql_filter_exp);
+		auto ql_filter_exp = make_uniq<DuckASTFilter>(condition);
 		auto node_id = node->GetName() + "_AST";
-		ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::FILTER);
+		ast_plan->Insert(move(ql_filter_exp), ast_plan, node_id, DuckASTOperatorType::FILTER);
 		// We just append the filter operator to the ql tree
-		return LogicalPlanToString(context, plan->children[0], plan_string, ql_tree, column_names, column_aliases);
+		return LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
 	}
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		auto node = dynamic_cast<LogicalAggregate *>(plan.get());
@@ -118,7 +115,6 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		// i.e. select sum(x), sum(y) from table group by x, y; we'll get x and y in the node->groups
 		// and sum(x) and sum(y) in the node->expressions
 		auto binds = node->GetColumnBindings();
-		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
 
 		vector<string> group_names;
 
@@ -193,16 +189,14 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 			}
 		}
 		auto node_id = node->GetName() + "_AST";
-		auto ql_aggregate_node = new DuckASTAggregate(aggregate_function, group_names);
-		auto opr = (shared_ptr<DuckASTBaseOperator>)(ql_aggregate_node);
-		opr->name = node_id;
-		ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::AGGREGATE);
-		return LogicalPlanToString(context, plan->children[0], plan_string, ql_tree, column_names, column_aliases);
+		auto ql_aggregate_node = make_uniq<DuckASTAggregate>(aggregate_function, group_names);
+		ql_aggregate_node->name = node_id;
+		ast_plan->Insert(move(ql_aggregate_node), ast_plan, node_id, DuckASTOperatorType::AGGREGATE);
+		return LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
 	}
 	case LogicalOperatorType::LOGICAL_ORDER_BY: {
 		auto node = dynamic_cast<LogicalOrder *>(plan.get());
-		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
-		auto ql_order_by = new DuckASTOrderBy();
+		auto ql_order_by = make_uniq<DuckASTOrderBy>();
 		for (auto &order : node->orders) {
 			auto name = order.expression->GetName();
 			// Extracts the columns to ORDER BY and the ordering i.e. desc, asc etc
@@ -220,23 +214,21 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 				throw NotImplementedException("We only support ASC and DESC!");
 			}
 			}
-			ql_order_by->add_order_column(name, order_type);
-			auto opr = (shared_ptr<DuckASTBaseOperator>)(ql_order_by);
+			ql_order_by->AddOrderColumn(name, order_type);
 			auto node_id = node->GetName() + "_AST";
-			opr->name = node_id;
-			ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::ORDER_BY);
-			return LogicalPlanToString(context, plan->children[0], plan_string, ql_tree, column_names, column_aliases);
+			ql_order_by->name = node_id;
+			ast_plan->Insert(move(ql_order_by), ast_plan, node_id, DuckASTOperatorType::ORDER_BY);
+			return LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
 		}
 	}
 	case LogicalOperatorType::LOGICAL_GET: {
 		// we reached a root node (scan)
 		auto node = dynamic_cast<LogicalGet *>(plan.get());
 
-		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
-		if (is_second_child) {
-			curNode = curNode->parent_node;
-		}
-		auto ql_get_exp = new DuckASTGet();
+		// if (is_second_child) {
+		// 	curNode = move(curNode->parent_node);
+		// }
+		auto ql_get_exp = make_uniq<DuckASTGet>();
 		ql_get_exp->name = node->GetName();
 		if (node->GetTable().get()) { // DuckDB table scan
 			ql_get_exp->table_name = node->GetTable().get()->name;
@@ -278,8 +270,10 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 
 		for (size_t i = 0; i < bindings.size(); i++) {
 			auto cur_binding = bindings[i];
+			// cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
+			//     scan_column_names[column_ids[i].GetPrimaryIndex()];
 			cur_col_map[to_string(cur_binding.table_index) + "." + to_string(cur_binding.column_index)] =
-			    scan_column_names[column_ids[i].GetPrimaryIndex()];
+			    scan_column_names[column_ids[cur_binding.column_index].GetPrimaryIndex()];
 		}
 
 		// Checking for aliases with context to the current table only
@@ -333,9 +327,9 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 
 		//ql_get_exp->column_aliases = cur_col_aliases;
 		ql_get_exp->column_aliases = column_aliases;
+		auto node_id = node->GetName() + "_AST";
 
-		auto opr = (shared_ptr<DuckASTBaseOperator>)ql_get_exp;
-		ql_tree->insert(opr, curNode, ql_get_exp->name + "_AST", DuckASTOperatorType::GET);
+		ast_plan->Insert(move(ql_get_exp), ast_plan, node_id, DuckASTOperatorType::GET);
 		break;
 	}
 	case LogicalOperatorType::LOGICAL_INSERT: {
@@ -343,15 +337,13 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		// the plan to be turned into string starts with an INSERT
 
 		auto node = dynamic_cast<LogicalInsert *>(plan.get());
-		auto ql_ins_exp = new DuckASTInsert();
+		auto ql_ins_exp = make_uniq<DuckASTInsert>();
 		ql_ins_exp->table_name = node->table.name;
 		ql_ins_exp->name = "INSERT_AST"; // the name of the node is private
-		shared_ptr<DuckASTNode> curNode = ql_tree->getLastNode();
 
-		auto opr = (shared_ptr<DuckASTBaseOperator>)(ql_ins_exp);
-		auto node_id = "INSERT_AST"; // todo remove the id
-		ql_tree->insert(opr, curNode, node_id, DuckASTOperatorType::INSERT);
-		return LogicalPlanToString(context, plan->children[0], plan_string, ql_tree, column_names, column_aliases);
+		string node_id = "INSERT_AST"; // todo remove the id
+		ast_plan->Insert(move(ql_ins_exp), ast_plan, node_id, DuckASTOperatorType::INSERT);
+		return LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
 	}
 	default: {
 		throw NotImplementedException("We do not support this operator type yet: " + plan->GetName());

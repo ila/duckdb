@@ -57,3 +57,4 @@ GROUP BY nickname, city, date;
 
 pragma ivm('daily_runs_city');
 pragma refresh('daily_runs_city');
+pragma flush('daily_runs_city');

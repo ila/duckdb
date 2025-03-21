@@ -100,7 +100,7 @@ string ConstructTable(Connection &con, string view_name, bool view) {
 		centralized_table_definition += "generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);\n";
 	} else {
 		// remove the last comma and space
-		centralized_table_definition += "rdda_window int, client_id int);\n";
+		centralized_table_definition += "rdda_window int, client_id ubigint);\n";
 	}
 	return centralized_table_definition;
 }

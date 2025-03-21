@@ -10,22 +10,12 @@
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/main/connection.hpp"
-#include "duckdb/optimizer/optimizer.hpp"
-#include "duckdb/parser/parser.hpp"
-#include "duckdb/parser/tableref/basetableref.hpp"
-#include "duckdb/planner/expression.hpp"
-#include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
-#include "duckdb/planner/operator/logical_projection.hpp"
-#include "duckdb/planner/planner.hpp"
-#include "duckdb/planner/tableref/bound_basetableref.hpp"
-#include "duckdb/planner/operator/logical_join.hpp"
-#include "duckdb/planner/operator/logical_cross_product.hpp"
-#include "duckdb/common/printer.hpp"
+
 
 // Naming the representation: DuckAST
 
@@ -40,7 +30,7 @@ class DuckASTBaseOperator {
 public:
 	string name;
 	DuckASTBaseOperator();
-	DuckASTBaseOperator(string name);
+	DuckASTBaseOperator(const string &name);
 	virtual ~DuckASTBaseOperator();
 };
 
@@ -48,9 +38,9 @@ class DuckASTProjection : public DuckASTBaseOperator {
 public:
 	std::map<string, string> column_aliases;
 	DuckASTProjection();
-	DuckASTProjection(string name);
+	DuckASTProjection(string &name);
 	~DuckASTProjection() override;
-	void add_column(string table_index, string column_index, string alias);
+	void AddColumn(const string &table_index, const string &column_index, const string &alias);
 };
 
 class DuckASTFilter : public DuckASTBaseOperator {
@@ -58,7 +48,7 @@ public:
 	std::string filter_condition;
 	DuckASTFilter();
 	DuckASTFilter(const string &filter_condition);
-	void set_filter_condition(string filter_condition);
+	void SetFilterCondition(string &filter_condition);
 };
 
 /*
@@ -84,7 +74,7 @@ public:
 	unordered_map<string, string> order;
 	DuckASTOrderBy();
 	// appends to the order column
-	void add_order_column(string &col, string &ord);
+	void AddOrderColumn(const string &col, const string &ord);
 };
 
 /*
@@ -100,9 +90,8 @@ public:
 	// No requirement in cross joins with/without filter
 	string condition;
 
-	void add_table(string table_name);
-
-	void set_condition(string& condition);
+	void AddTable(string &table_name);
+	void SetCondition(string &condition);
 };
 
 /*
@@ -120,10 +109,10 @@ public:
 	// Filter (for filter pushdown)
 	std::string filter_condition;
 	DuckASTGet();
-	DuckASTGet(string table_name);
+	DuckASTGet(string &table_name);
 	~DuckASTGet() override;
 	// sets the table name variable - just a setter function
-	void set_table_name(string table_name);
+	void SetTableName(string &table_name);
 };
 
 class DuckASTInsert : public DuckASTBaseOperator {
@@ -131,37 +120,40 @@ public:
 	// Insert nodes only have the table name
 	std::string table_name;
 	DuckASTInsert();
-	DuckASTInsert(string t);
+	DuckASTInsert(string &t);
 	~DuckASTInsert() override;
-	void set_table_name(string t);
+	void SetTableName(string &t);
 };
 
 class DuckASTNode {
 public:
-	shared_ptr<DuckASTBaseOperator> opr; // Operator
+	unique_ptr<DuckASTBaseOperator> opr; // Operator
 	string name;
-	vector<shared_ptr<DuckASTNode>> children;
-	shared_ptr<DuckASTNode> parent_node;
+	vector<unique_ptr<DuckASTNode>> children;
 	DuckASTOperatorType type;
 	DuckASTNode();
-	DuckASTNode(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
-	void setExpression(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
+	DuckASTNode(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
+	void SetExpression(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
+	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> &parent_node, string &name, DuckASTOperatorType type);
 };
+
+void GenerateString(const unique_ptr<DuckASTNode> &node, string &plan_string);
+void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
+		    bool has_filter = false, int join_child_index = -1);
+
 class DuckAST {
 private:
-	void displayTree(shared_ptr<DuckASTNode> node);
-	void generateString(const shared_ptr<DuckASTNode>& node, string &prefix_string, string &plan_string,
-	                      bool has_filter = false, int join_child_index = -1);
-	shared_ptr<DuckASTNode> last_ptr = nullptr;
+	void DisplayTree(unique_ptr<DuckASTNode> node);
+
 
 public:
 	DuckAST();
-	void insert(shared_ptr<DuckASTBaseOperator> &expr, shared_ptr<DuckASTNode> &parent_node, string name, DuckASTOperatorType type);
-	static void printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix = "", bool isLast = true);
-	void generateString(string &plan_string);
-	void printAST(shared_ptr<duckdb::DuckAST> ast);
-	shared_ptr<DuckASTNode> getLastNode();
-	shared_ptr<DuckASTNode> root;
+	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> parent_node, string &name, DuckASTOperatorType type);
+	static void PrintAST(unique_ptr<DuckASTNode> node, const string &prefix = "", bool is_last = true);
+	void GenerateString(string &plan_string);
+	void PrintAST(unique_ptr<DuckAST> ast);
+	DuckASTNode* GetLastNode();
+	unique_ptr<DuckASTNode> root;
 };
 } // namespace duckdb
 

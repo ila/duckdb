@@ -84,9 +84,10 @@ static int32_t GenerateClientInformation(Connection &con, unordered_map<string, 
 	// now receive the queries
 	size_t size;
 	read(sock, &size, sizeof(size_t));
-	char *buffer = new char[size];
-	read(sock, buffer, size);
-	string queries(buffer, size);
+
+	vector<char> buffer(size); // Automatically managed memory
+	read(sock, buffer.data(), size);
+	string queries(buffer.data(), size);
 	r = con.Query(queries);
 	// we cannot wrap this into a commit/rollback block because the materialized view depends on the previous table
 	if (r->HasError()) {

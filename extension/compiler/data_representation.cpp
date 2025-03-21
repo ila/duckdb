@@ -11,7 +11,7 @@ namespace duckdb {
 DuckASTBaseOperator::DuckASTBaseOperator() {
 }
 
-DuckASTBaseOperator::DuckASTBaseOperator(string name) {
+DuckASTBaseOperator::DuckASTBaseOperator(const string &name) {
 	this->name = name;
 }
 
@@ -22,14 +22,14 @@ DuckASTBaseOperator::~DuckASTBaseOperator() {
 DuckASTProjection::DuckASTProjection() {
 }
 
-DuckASTProjection::DuckASTProjection(string name) {
+DuckASTProjection::DuckASTProjection(string &name) {
 	this->name = name;
 }
 
 DuckASTProjection::~DuckASTProjection() {
 }
 
-void DuckASTProjection::add_column(string table_index, string column_index, string alias) {
+void DuckASTProjection::AddColumn(const string& table_index, const string &column_index, const string &alias) {
 	this->column_aliases[table_index + "." + column_index] = alias;
 }
 
@@ -48,7 +48,7 @@ DuckASTAggregate::DuckASTAggregate(vector<string> &aggregate_function, vector<st
 DuckASTOrderBy::DuckASTOrderBy() {
 }
 
-void DuckASTOrderBy::add_order_column(string &col, string &ord) {
+void DuckASTOrderBy::AddOrderColumn(const string &col, const string &ord) {
 	this->order[col] = ord;
 }
 
@@ -61,17 +61,17 @@ DuckASTFilter::DuckASTFilter(const string &filter_condition) {
 	this->filter_condition = filter_condition;
 }
 
-void DuckASTFilter::set_filter_condition(string filter_condition) {
+void DuckASTFilter::SetFilterCondition(string &filter_condition) {
 	this->filter_condition = filter_condition;
 }
 
 // DuckASTJoin functions
-void DuckASTJoin::add_table(string table_name) {
+void DuckASTJoin::AddTable(string &table_name) {
 	// Reference from table index to table name
 	this->tables.push_back(table_name);
 }
 
-void DuckASTJoin::set_condition(string &condition) {
+void DuckASTJoin::SetCondition(string &condition) {
 	this->condition = condition;
 }
 
@@ -80,13 +80,13 @@ DuckASTGet::DuckASTGet() {
 	this->all_columns = false;
 }
 
-DuckASTGet::DuckASTGet(string table_name) {
+DuckASTGet::DuckASTGet(string &table_name) {
 	this->table_name = table_name;
 	this->all_columns = false;
 	this->filter_condition = "";
 }
 
-void DuckASTGet::set_table_name(string table_name) {
+void DuckASTGet::SetTableName(string &table_name) {
 	this->table_name = table_name;
 }
 
@@ -99,10 +99,10 @@ DuckASTInsert::DuckASTInsert() {
 DuckASTInsert::~DuckASTInsert() {
 }
 
-void DuckASTInsert::set_table_name(string t) {
+void DuckASTInsert::SetTableName(string &t) {
 	this->table_name = t;
 }
-DuckASTInsert::DuckASTInsert(string t) {
+DuckASTInsert::DuckASTInsert(string &t) {
 	this->table_name = t;
 }
 
@@ -112,16 +112,16 @@ DuckASTNode::DuckASTNode() {
 	this->type = DuckASTOperatorType::NONE;
 }
 
-DuckASTNode::DuckASTNode(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
-	this->opr = opr;
-	this->type = type;
+DuckASTNode::DuckASTNode(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
 	this->name = opr->name;
+	this->opr = move(opr);
+	this->type = type;
 }
 
-void DuckASTNode::setExpression(shared_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
-	this->opr = std::move(opr);
-	this->type = type;
+void DuckASTNode::SetExpression(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type) {
 	this->name = opr->name;
+	this->opr = move(opr);
+	this->type = type;
 }
 
 // DuckAST
@@ -130,44 +130,26 @@ DuckAST::DuckAST() {
 }
 
 // Uses the parent node pointer provided and appends to its list of children
-void DuckAST::insert(shared_ptr<DuckASTBaseOperator> &opr, shared_ptr<DuckASTNode> &parent_node, string id,
-                     DuckASTOperatorType type) {
-	// Printer::Print("Inserting: " + id);
+void DuckASTNode::Insert(unique_ptr<DuckASTBaseOperator> opr, unique_ptr<DuckASTNode> &parent_node, string &id,
+					 DuckASTOperatorType type) {
 	opr->name = id;
-	if (root == nullptr && parent_node == nullptr) {
-		root = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
-		root->type = type;
-		root->parent_node = nullptr;
-		this->last_ptr = root;
-		return;
-	}
 
-	auto node = (shared_ptr<DuckASTNode>)(new DuckASTNode(opr, type));
-	node->parent_node = parent_node;
-	parent_node->children.push_back(node);
-	this->last_ptr = node;
-}
+	// if (parent_node->type == DuckASTOperatorType::NONE) {
+	// 	parent_node = make_uniq<DuckASTNode>(move(opr), type);
+	// 	parent_node->type = type;
+	// 	return;
+	// }
 
-// Returns the last node in the entire AST.
-// Helps in appending new nodes
-shared_ptr<DuckASTNode> DuckAST::getLastNode() {
-	return last_ptr;
+	auto node = make_uniq<DuckASTNode>(move(opr), type);
+	parent_node->children.emplace_back(move(node));  // Transfer ownership
 }
 
 // Primary function which recursively generates a valid sql string from the AST
-void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
+void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
                              bool has_filter, int join_child_index) {
 	if (node == nullptr) {
 		return;
 	}
-
-	// insert into my_table values(1), (2), (3);
-	// select my_column from my_table where ...
-	// insert into other_table select my_column from my_table where ...
-
-	// create table as ...
-	// with my_table as (select my_column from my_table where ...)
-	// delete from my_table where ...
 
 	// Append to plan_string according to node type
 	switch (node->type) {
@@ -186,22 +168,21 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix
 
 		for (int i = node->children.size() - 1; i >= 0; i--) {
 			auto &child = node->children[i];
-			generateString(child, prefix_string, plan_string, false, i);
+			GenerateString(child, prefix_string, plan_string, false, i);
 		}
 		break;
 	}
 	case DuckASTOperatorType::PROJECTION: {
 		for (const auto &child : node->children) {
-			generateString(child, prefix_string, plan_string);
+			GenerateString(child, prefix_string, plan_string);
 		}
 		break;
 	}
 	case DuckASTOperatorType::FILTER: {
 		auto exp = dynamic_cast<DuckASTFilter *>(node->opr.get());
 		plan_string = exp->filter_condition + plan_string;
-		auto children = node->children;
 		for (const auto &child : node->children) {
-			generateString(child, prefix_string, plan_string, true);
+			GenerateString(child, prefix_string, plan_string, true);
 		}
 		break;
 	}
@@ -220,7 +201,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix
 		}
 		plan_string = " order by " + order_string + plan_string;
 		for (const auto &child : node->children) {
-			generateString(child, prefix_string, plan_string, true);
+			GenerateString(child, prefix_string, plan_string, true);
 		}
 		break;
 	}
@@ -244,7 +225,7 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix
 			plan_string = " group by " + grp_string + plan_string;
 		}
 		for (const auto &child : node->children) {
-			generateString(child, prefix_string, plan_string);
+			GenerateString(child, prefix_string, plan_string);
 		}
 		break;
 	}
@@ -260,17 +241,14 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix
 			plan_string = " where " + exp->filter_condition + plan_string;
 		}
 		if (exp->all_columns) {
-			plan_string = "select * from " + table_name + " " + plan_string;
+			plan_string = prefix_string + "select * from " + table_name + " " + plan_string;
 			return;
 		}
 
 		for (auto &pair : exp->column_aliases) {
 			if (pair.first == pair.second || pair.second == "duckdb_placeholder_internal") {
-				// select_string = select_string + pair.first + ", ";
 				columns.push_back(pair.first);
 			} else {
-				// select_string = select_string + pair.first + " as " + pair.second + ", ";
-				// columns.push_back(pair.first + " as " + pair.second);
 				columns.push_back(pair.second + " as " + pair.first);
 			}
 		}
@@ -302,24 +280,26 @@ void DuckAST::generateString(const shared_ptr<DuckASTNode> &node, string &prefix
 		auto exp = dynamic_cast<DuckASTInsert *>(node->opr.get());
 		prefix_string = "insert into " + exp->table_name + " ";
 		for (const auto& child : node->children) {
-			generateString(child, prefix_string, plan_string);
+			GenerateString(child, prefix_string, plan_string);
 		}
 		break;
 	}
 	}
 }
 
-void DuckAST::generateString(string &plan_string) {
-	if (root == nullptr)
+void GenerateString(const unique_ptr<DuckASTNode> &node, string &plan_string) {
+	if (node == nullptr) {
 		return;
+	}
 	string prefix_string;
-	this->generateString(root, prefix_string, plan_string);
+	// first children is the dummy node
+	GenerateString(move(node->children[0]), prefix_string, plan_string);
 	plan_string += ";";
 }
 
-void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool isLast) {
+void DuckAST::PrintAST(unique_ptr<DuckASTNode> node, const string &prefix, bool is_last) {
 	std::cout << prefix;
-	std::cout << (isLast ? "└── " : "├── ");
+	std::cout << (is_last ? "└── " : "├── ");
 	if (node->opr != nullptr) {
 		std::cout << "Node: " << node->name << ", Type: " << node->type << ", Operator: " << node->opr->name
 		          << std::endl;
@@ -329,15 +309,15 @@ void DuckAST::printAST(shared_ptr<duckdb::DuckASTNode> node, string prefix, bool
 
 	// Recursively print children
 	for (size_t i = 0; i < node->children.size(); ++i) {
-		printAST(node->children[i], prefix + (isLast ? "    " : "│   "), i == node->children.size() - 1);
+		PrintAST(move(node->children[i]), prefix + (is_last ? "    " : "│   "), i == node->children.size() - 1);
 	}
 }
 
-void DuckAST::printAST(shared_ptr<duckdb::DuckAST> ast) {
+void DuckAST::PrintAST(unique_ptr<DuckAST> ast) {
 	// Print AST starting from the root
 	if (ast->root != nullptr) {
 		std::cout << "root\n" << std::endl;
-		printAST(ast->root, "", false);
+		PrintAST(move(ast->root), "", false);
 	} else {
 		std::cout << "Empty AST" << std::endl;
 	}
