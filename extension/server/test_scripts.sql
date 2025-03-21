@@ -46,9 +46,7 @@ INSERT INTO runs (nickname, city, date, start_time, end_time, steps, heartbeat_r
 ('fastestgirlinberlin', 'Berlin', '2025-02-23', '18:15:00', '19:15:00', 7200, 136),
 -- Day 3
 ('fastestgirlinberlin', 'Berlin', '2025-02-24', '06:30:00', '07:30:00', 7100, 142),
-('fastestgirlinberlin', 'Berlin', '2025-02-24', '19:00:00', '20:00:00', 7250, 139),
--- Day 4
-('fastestgirlinberlin', 'Berlin', '2025-02-25', '08:15:00', '09:15:00', 9100, 138);
+('fastestgirlinberlin', 'Berlin', '2025-02-24', '19:00:00', '20:00:00', 7250, 139);
 
 insert into daily_runs_city
 SELECT nickname, city, date, SUM(steps) AS total_steps

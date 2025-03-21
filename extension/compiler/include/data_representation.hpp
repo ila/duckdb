@@ -134,26 +134,12 @@ public:
 	void SetExpression(unique_ptr<DuckASTBaseOperator> opr, DuckASTOperatorType type);
 	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> &parent_node, string &name,
 	            DuckASTOperatorType type);
+	void PrintAST(unique_ptr<DuckASTNode> node, const string &prefix, bool is_last);
 };
 
 void GenerateString(const unique_ptr<DuckASTNode> &node, string &plan_string);
 void GenerateString(const unique_ptr<DuckASTNode> &node, string &prefix_string, string &plan_string,
-                    bool has_filter = false, int join_child_index = -1);
-
-class DuckAST {
-private:
-	void DisplayTree(unique_ptr<DuckASTNode> node);
-
-public:
-	DuckAST();
-	void Insert(unique_ptr<DuckASTBaseOperator> expr, unique_ptr<DuckASTNode> parent_node, string &name,
-	            DuckASTOperatorType type);
-	static void PrintAST(unique_ptr<DuckASTNode> node, const string &prefix = "", bool is_last = true);
-	void GenerateString(string &plan_string);
-	void PrintAST(unique_ptr<DuckAST> ast);
-	DuckASTNode *GetLastNode();
-	unique_ptr<DuckASTNode> root;
-};
+		    bool has_filter = false, int join_child_index = -1);
 } // namespace duckdb
 
 #endif

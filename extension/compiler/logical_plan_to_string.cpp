@@ -29,9 +29,6 @@ string LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &
 	// now we can call the recursive function
 	LogicalPlanToString(context, plan, root, column_names, column_aliases);
 	GenerateString(root, plan_string);
-#if DEBUG
-	Printer::Print(plan_string);
-#endif
 	return plan_string;
 }
 

@@ -124,11 +124,6 @@ void DuckASTNode::SetExpression(unique_ptr<DuckASTBaseOperator> opr, DuckASTOper
 	this->type = type;
 }
 
-// DuckAST
-DuckAST::DuckAST() {
-	root = nullptr;
-}
-
 // Uses the parent node pointer provided and appends to its list of children
 void DuckASTNode::Insert(unique_ptr<DuckASTBaseOperator> opr, unique_ptr<DuckASTNode> &parent_node, string &id,
                          DuckASTOperatorType type) {
@@ -291,7 +286,7 @@ void GenerateString(const unique_ptr<DuckASTNode> &node, string &plan_string) {
 	plan_string += ";";
 }
 
-void DuckAST::PrintAST(unique_ptr<DuckASTNode> node, const string &prefix, bool is_last) {
+void DuckASTNode::PrintAST(unique_ptr<DuckASTNode> node, const string &prefix, bool is_last) {
 	std::cout << prefix;
 	std::cout << (is_last ? "└── " : "├── ");
 	if (node->opr != nullptr) {
@@ -304,16 +299,6 @@ void DuckAST::PrintAST(unique_ptr<DuckASTNode> node, const string &prefix, bool 
 	// Recursively print children
 	for (size_t i = 0; i < node->children.size(); ++i) {
 		PrintAST(move(node->children[i]), prefix + (is_last ? "    " : "│   "), i == node->children.size() - 1);
-	}
-}
-
-void DuckAST::PrintAST(unique_ptr<DuckAST> ast) {
-	// Print AST starting from the root
-	if (ast->root != nullptr) {
-		std::cout << "root\n" << std::endl;
-		PrintAST(move(ast->root), "", false);
-	} else {
-		std::cout << "Empty AST" << std::endl;
 	}
 }
 
