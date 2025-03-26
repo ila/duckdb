@@ -226,7 +226,7 @@ std::string CompilerExtension::GenerateDeltaTable(std::string &input) {
 	std::regex inline_primary_key_re(R"(([^\s,]+[^\),]*\s+primary\s+key))", std::regex::icase);
 
 	// Define the columns to be added
-	std::string multiplicity_col = "_duckdb_ivm_multiplicity boolean";
+	std::string multiplicity_col = "_duckdb_ivm_multiplicity boolean default true";
 	std::string timestamp_col = "timestamp timestamp default now()";
 
 	// Variables to hold matches

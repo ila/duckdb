@@ -14,12 +14,9 @@ Note: if the extension is called with an in-memory database, the tables do not g
 If the extension is called with a persistent database, the tables are created and the changes are stored in the delta tables.
 In order to attach a database, use `duckdb my_database.db' from the CLI.
 
-Here is an example. First create the base table and the view:
+Here is an example. First create the base table and the view, and insert sample data:
 ```SQL
 CREATE TABLE sales (order_id INT, product_name VARCHAR(1), amount INT, date_ordered DATE);
-```
-Insert sample data:
-```SQL
 INSERT INTO sales VALUES (1, 'a', 100, '2023-01-10'), (2, 'b', 50, '2023-01-12'), (3, 'a', 75, '2023-01-15'), (4, 'c', 60, '2023-01-18'), (5, 'b', 30, '2023-01-20'), (6, 'b', 35, '2023-01-21');
 ```
 Now create a materialized view with ONE of the following queries:

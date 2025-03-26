@@ -152,6 +152,19 @@ public:
 						if (r->HasError()) {
 							throw InternalException("Cannot insert in delta table! " + r->GetError());
 						}
+						// lastly, we need to set the multiplicity and timestamp of the new data
+						// altering a table setting defaults still does not work in the same transaction
+						r = con.Query("update delta_" + insert_node->table.name +
+                                  " set _duckdb_ivm_multiplicity = true where _duckdb_ivm_multiplicity is null;");
+						if (r->HasError()) {
+                            throw InternalException("Cannot update multiplicity metadata! " + r->GetError());
+                        }
+						r = con.Query("update delta_" + insert_node->table.name +
+                                  " set _duckdb_ivm_timestamp = now() where _duckdb_ivm_timestamp is null;");
+						if (r->HasError()) {
+                            throw InternalException("Cannot update timestamp metadata! " + r->GetError());
+                        }
+
 						con.Commit();
 
 					} else if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
