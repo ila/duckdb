@@ -72,6 +72,23 @@ void ExecuteAndWriteQueries(Connection &con, const string &queries, const string
 	}
 }
 
+void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
+	// wrapping each query in a transaction to avoid concurrency issues
+	if (!queries.empty()) {
+		CompilerExtension::WriteFile(file_path, append, queries);
+	}
+	// splitting each query by ;
+	auto query_list = StringUtil::Split(queries, ';');
+	for (auto &query : query_list) {
+		con.BeginTransaction();
+		auto r = con.Query(query + ";");
+		if (r->HasError()) {
+			throw ParserException("Error while executing compiled queries: " + r->GetError());
+		}
+		con.Commit();
+    }
+}
+
 void WriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
 	if (!queries.empty()) {
 		CompilerExtension::WriteFile(file_path, append, queries);
@@ -88,6 +105,9 @@ void ParseExecuteQuery(Connection &con, const string &query) {
 string ConstructTable(Connection &con, string view_name, bool view) {
 	// we make the respective centralized view
 	auto table_info = con.TableInfo(view_name);
+	if (!table_info) {
+		throw ParserException("Table not found: " + view_name);
+	}
 	if (view) {
 		view_name = "rdda_centralized_view_" + view_name;
 	} else {
@@ -135,16 +155,22 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	auto query = dynamic_cast<RDDAParseData *>(parse_data.get())->query;
 	auto scope = dynamic_cast<RDDAParseData *>(parse_data.get())->scope;
 	// after the parser, the query string reaches this point
+	string server_config_path = "../extension/server/";
+	string server_config = "server.config";
+	auto config = ParseConfig(server_config_path, server_config);
 
 	// each instruction set gets saved to a file, for portability
 	string centralized_queries = "";
 	string decentralized_queries = "";
 	string secure_queries = "";
+	string metadata_queries = "";
 
 	string parser_db_name = path + "rdda_parser_internal.db";
-	string db_file_name = "rdda_parser.db"; // this holds the server metadata
+	string metadata_db_name = "rdda_parser.db"; // this holds the server metadata
+	string client_db_name = "rdda_client.db"; // this holds the centralized views
+	string server_db_name = config["db_name"];
 	// we need a separate database only holding schema and metadata to minimize locks/write conflicts
-	DuckDB db(db_file_name);
+	DuckDB db(metadata_db_name);
 
 	// creating a separate schema such that we can check for syntax errors
 	Connection con(db);
@@ -185,7 +211,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				// now we add the table in our RDDA catalog (name, scope, query, is_view)
 				auto table_string = "insert into rdda_tables values('" + table_name + "', " +
 				                    to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
-				centralized_queries += table_string;
+				metadata_queries += table_string;
 
 				decentralized_queries += query;
 				for (auto &constraint : constraints) {
@@ -193,7 +219,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 					                         constraint.first + "', " + to_string(constraint.second.randomized) + ", " +
 					                         to_string(constraint.second.sensitive) + ", " +
 					                         to_string(constraint.second.protected_) + ");\n";
-					centralized_queries += constraint_string;
+					metadata_queries += constraint_string;
 				}
 				con.Rollback();
 			} else {
@@ -203,14 +229,14 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 					// now we add the table in our RDDA catalog (name, scope, query, is_view)
 					auto table_string = "insert into rdda_tables values('" + table_name + "', " +
 					                    to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
-					centralized_queries += table_string;
+					metadata_queries += table_string;
 				} else {
 					// centralized table
 					centralized_queries += query;
 					// now we add the table in our RDDA catalog (name, scope, query, is_view)
 					auto table_string = "insert into rdda_tables values('" + table_name + "', " +
 					                    to_string(static_cast<int32_t>(scope)) + ", NULL, 0);\n";
-					centralized_queries += table_string;
+					metadata_queries += table_string;
 				}
 			}
 
@@ -227,7 +253,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 			auto view_string = "insert into rdda_tables values('" + view_name + "', " +
 			                   to_string(static_cast<int32_t>(scope)) + ", '" +
 			                   CompilerExtension::EscapeSingleQuotes(view_query) + "', 1);\n";
-			centralized_queries += view_string;
+			metadata_queries += view_string;
 			if (scope == TableScope::replicated) {
 				// todo - do we need anything else here?
 				ParseExecuteQuery(con, query);
@@ -252,7 +278,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 					auto table_info = con.TableInfo(table);
 					if (!table_info) {
 						// we replace the view name with "rdda_centralized_table_" + view_name
-						query = regex_replace(query, std::regex(table), "rdda_centralized_table_" + table);
+						query = regex_replace(query, std::regex(table), "rdda_centralized_table_" + table) + "\n";
 					}
 				}
 				con.Rollback();
@@ -262,27 +288,28 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				    "insert into rdda_view_constraints values('" + view_name + "', " +
 				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
 				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ");\n";
-				centralized_queries += view_constraint_string;
+				metadata_queries += view_constraint_string;
 			} else if (scope == TableScope::decentralized) {
 				// todo - check that this is defined over decentralized tables/views
+				decentralized_queries += query;
+				secure_queries += ConstructTable(con, view_name, true);
 				auto view_constraint_string =
 				    "insert into rdda_view_constraints values('" + view_name + "', " +
 				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
 				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ");\n";
-				decentralized_queries += query;
-				secure_queries += ConstructTable(con, view_name, true);
+				metadata_queries += view_constraint_string;
 				view_string = "insert into rdda_tables values('rdda_centralized_view_" + view_name + "', " +
 				              to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 1);\n";
-				centralized_queries += view_string;
+				metadata_queries += view_string;
 				// we also need to create the respective centralized view
 				centralized_queries += ConstructTable(con, view_name, false);
 				view_string = "insert into rdda_tables values('rdda_centralized_table_" + view_name + "', " +
 				              to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 0);\n";
-				centralized_queries += view_string;
-				centralized_queries += view_constraint_string;
+				metadata_queries += view_string;
+
 				auto window_string =
 				    "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0);\n";
-				centralized_queries += window_string;
+				metadata_queries += window_string;
 			}
 		}
 	} else if (query.substr(0, 7) == "select") {
@@ -309,13 +336,16 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	SwitchBackToDatabase(con, db_name);
 	DetachParserDatabase(con);
 
-	// todo monday:
-	// implement 2 more dbs (client data and server data (in the settings)
-	// make sure that the queries are executes in the correct place
-	ExecuteAndWriteQueries(con, centralized_queries, path + "centralized_queries.sql", false);
+	DuckDB server_db(server_db_name);
+	Connection server_con(server_db);
+	DuckDB client_db(client_db_name);
+	Connection client_con(client_db);
+
+	ExecuteAndWriteQueries(server_con, centralized_queries, path + "centralized_queries.sql", false);
+	ExecuteAndWriteQueries(con, metadata_queries, path + "metadata_queries.sql", false);
 	WriteQueries(con, decentralized_queries, path + "decentralized_queries.sql", true);
-	// todo make the location of secure queries dynamic
-	ExecuteAndWriteQueries(con, secure_queries, path + "secure_queries.sql", false);
+	// todo make the location/execution of secure queries remote
+	ExecuteAndWriteQueries(client_con, secure_queries, path + "secure_queries.sql", false);
 
 	ParserExtensionPlanResult
 	    result; // register a function with a string as parameter and pass it here (in place of true)

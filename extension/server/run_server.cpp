@@ -170,11 +170,11 @@ void InsertNewClient(int32_t connfd, Connection &con, unordered_map<string, stri
 	Printer::Print("Sent queries to client!");
 }
 
-void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, string> &config) {
+void InsertNewResult(int32_t connfd, Connection &metadata_con, Connection &client_con, unordered_map<string, string> &config) {
 	uint64_t id;
 	read(connfd, &id, sizeof(uint64_t));
 
-	auto client_info = con.Query("SELECT * FROM rdda_clients WHERE id = " + to_string(id));
+	auto client_info = metadata_con.Query("SELECT * FROM rdda_clients WHERE id = " + to_string(id));
 	if (client_info->RowCount() == 0) {
 		int32_t error = error_non_existing_client;
 		send(connfd, &error, sizeof(int32_t), 0);
@@ -205,7 +205,7 @@ void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, stri
 	string centralized_view =
 	    (config["schema_name"] != "main" ? config["schema_name"] + "." : "") + "rdda_centralized_view_" + view_name_str;
 
-	auto view_info = con.TableInfo(centralized_view);
+	auto view_info = client_con.TableInfo(centralized_view);
 	if (!view_info) {
 		throw ParserException("Centralized view not found: " + centralized_view);
 	}
@@ -213,14 +213,14 @@ void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, stri
 	// we extract the window
 	auto window_query =
 	    "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name_str + "';";
-	auto r = con.Query(window_query);
+	auto r = metadata_con.Query(window_query);
 	if (r->HasError() || r->RowCount() == 0) {
 		throw ParserException("Error while querying window metadata: " + r->GetError());
 	}
 	auto window = std::stoi(r->GetValue(0, 0).ToString());
 
-	con.BeginTransaction();
-	Appender appender(con, centralized_view);
+	client_con.BeginTransaction();
+	Appender appender(client_con, centralized_view);
 
 	auto ts_gen = Timestamp::FromString(timestamp_str);
 	auto ts_arr = Timestamp::GetCurrentTimestamp();
@@ -251,27 +251,38 @@ void InsertNewResult(int32_t connfd, Connection &con, unordered_map<string, stri
 		}
 	}
 	appender.Close();
-	con.Commit();
-	Printer::Print("New result inserted for the view " + view_name_str);
+	client_con.Commit();
+	Printer::Print("New result inserted for the view: " + view_name_str + "...");
 }
 
 void InsertNewStatistics(int32_t connfd) {
 	// Placeholder for future logic
 }
 
-void HandleClientMessage(client_messages message, int32_t connfd, Connection &con,
-                         unordered_map<string, string> &config, vector<int32_t> &client_socket, int index) {
+void HandleClientMessage(client_messages message, int32_t connfd, unordered_map<string, string> &config,
+						vector<int32_t> &client_socket, int index) {
+
+	// here, we need multiple databases to avoid concurrency issues
+	// 1 - the metadata database, to update refresh information
+	// 2 - the client database, to store the centralized views data
+	string metadata_db_name = "rdda_parser.db";
+	string client_db_name = "rdda_client.db";
+	DuckDB metadata_db(metadata_db_name);
+	DuckDB client_db(client_db_name);
+	Connection metadata_con(metadata_db);
+	Connection client_con(client_db);
+
 	switch (message) {
 	case close_connection:
 		CloseConnection(connfd, client_socket, index);
 		break;
 
 	case new_client:
-		InsertNewClient(connfd, con, config);
+		InsertNewClient(connfd, metadata_con, config);
 		break;
 
 	case new_result:
-		InsertNewResult(connfd, con, config);
+		InsertNewResult(connfd, metadata_con, client_con, config);
 		break;
 
 	case new_statistics:
@@ -292,7 +303,6 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 	string config_path = "../extension/server/";
 	string config_file = "server.config";
 	auto config = ParseConfig(config_path, config_file);
-	Connection con(*context.db);
 
 	int32_t max_clients = std::stoi(config["max_clients"]);
 	int32_t server_port = std::stoi(config["server_port"]);
@@ -406,7 +416,7 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 				}
 
 				Printer::Print("Reading message: " + toString(message) + "...");
-				HandleClientMessage(message, connfd, con, config, client_socket, i);
+				HandleClientMessage(message, connfd, config, client_socket, i);
 			}
 		}
 	}

@@ -6,6 +6,7 @@
 #include <duckdb/planner/planner.hpp>
 #include "duckdb/planner/binder.hpp"
 
+#include <common.hpp>
 #include <compiler_extension.hpp>
 #include <logical_plan_to_string.hpp>
 #include <regex>
@@ -35,12 +36,25 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	 * where x.c1 = y.c1 and x.c2 = y.c2 and x.c3 = y.c3 and x.win = y.win;
 	 */
 
-	// we do not want to recompile the file every time
+	string config_path = "../extension/server/";
+	string config_file = "server.config";
+	auto config = ParseConfig(config_path, config_file);
+
+	string server_db_name = config["db_name"];
+	string client_catalog_name = "rdda_client";
+	string client_db_name = "rdda_client.db";
+	string metadata_db_name = "rdda_parser.db";
+	DuckDB server_db(server_db_name);
+	DuckDB client_db(client_db_name);
+	DuckDB metadata_db(metadata_db_name);
+	Connection server_con(server_db);
+	Connection client_con(client_db);
+	Connection metadata_con(metadata_db);
+
 	auto view_name = StringValue::Get(parameters.values[0]);
 	auto centralized_view_name = "rdda_centralized_view_" + view_name;
 	auto centralized_table_name = "rdda_centralized_table_" + view_name;
 
-	Connection con(*context.db);
 	LocalFileSystem fs;
 
 	string file_name = centralized_view_name + "_flush.sql";
@@ -53,7 +67,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// }
 	string min_agg_query =
 	    "select rdda_min_agg, rdda_window, rdda_ttl from rdda_view_constraints where view_name = '" + view_name + "';";
-	auto r = con.Query(min_agg_query);
+	auto r = metadata_con.Query(min_agg_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying columns metadata: " + r->GetError());
 	}
@@ -66,7 +80,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	string current_window_query =
 	    "select rdda_window from rdda_current_window where view_name = 'rdda_centralized_view_" + view_name + "';";
-	r = con.Query(current_window_query);
+	r = metadata_con.Query(current_window_query);
 	if (r->HasError()) {
 		throw ParserException("Error while querying window metadata: " + r->GetError());
 	}
@@ -76,13 +90,17 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	auto current_window = std::stoi(r->GetValue(0, 0).ToString());
 	int ttl_windows = ttl / window;
 
+	client_con.BeginTransaction();
 	auto centralized_view_catalog_entry =
-	    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, "test", "main", centralized_view_name,
+	    Catalog::GetEntry(*client_con.context, CatalogType::TABLE_ENTRY, client_catalog_name, "main", centralized_view_name,
 	                      OnEntryNotFound::RETURN_NULL, QueryErrorContext());
+	client_con.Rollback();
 
 	if (!centralized_view_catalog_entry) {
 		throw ParserException("Centralized view not found: " + centralized_view_name);
 	}
+	centralized_view_name = "rdda_client." + centralized_view_name; // since we are attaching the db
+	centralized_table_name = server_db_name.substr(0, server_db_name.size() - 3) + "." + centralized_table_name;
 	string update_query_1 = "update " + centralized_view_name + " x\nset action = 2 \nfrom (\n\tselect ";
 
 	string protected_column_names = "";
@@ -92,13 +110,14 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	// now we need to query the protected columns
 	string view_query = "select query from rdda_tables where name = '" + view_name + "';";
-	auto view_query_result = con.Query(view_query);
+	auto view_query_result = metadata_con.Query(view_query);
 	if (view_query_result->HasError()) {
 		throw ParserException("Error while querying view definition: " + view_query_result->GetError());
 	}
-	con.BeginTransaction();
-	auto table_names = con.GetTableNames(view_query_result->GetValue(0, 0).ToString());
-	con.Rollback();
+	// todo - should we not use parser internal here?
+	metadata_con.BeginTransaction();
+	auto table_names = metadata_con.GetTableNames(view_query_result->GetValue(0, 0).ToString());
+	metadata_con.Rollback();
 	// currently there is only one table name, but might be extended in the future
 	string in_table_names = "(";
 	for (auto &table : table_names) {
@@ -109,7 +128,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	auto protected_columns_query =
 	    "select column_name from rdda_table_constraints where rdda_protected = 1 and table_name in " + in_table_names +
 	    ";";
-	auto protected_columns = con.Query(protected_columns_query);
+	auto protected_columns = metadata_con.Query(protected_columns_query);
 	if (protected_columns->HasError()) {
 		throw ParserException("Error while querying protected columns: " + protected_columns->GetError());
 	}
@@ -141,6 +160,10 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation) + ") y \n";
 	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
 
+	// we have to attach the client to the server and not the other way around
+	// because the server database has to be the default for IVM pipelines
+	auto attach_query = "attach '" + client_db_name + "' as rdda_client;\n\n";
+	auto attach_query_read_only = "attach '" + client_db_name + "' as rdda_client (read_only);\n\n";
 	auto insert_query = "insert into " + centralized_table_name + " \nselect " + table_column_names + " \nfrom " +
 	                    centralized_view_name + " \nwhere action = 2;\n\n";
 	auto delete_query_1 = "delete from " + centralized_view_name + " \nwhere action = 2;\n\n";
@@ -167,12 +190,18 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	update_query_2 += "from x, y \n";
 	update_query_2 += "where " + join_names + join_names_cte +
 	                  "x.client_count + y.client_count >= " + to_string(minimum_aggregation) + ";\n\n";
+	string detach_query = "detach rdda_client;\n\n";
 	// lastly we remove stale tuples
 	string delete_query_2 = "delete from " + centralized_view_name +
 	                        " where rdda_window <= " + to_string(current_window - ttl_windows) + ";\n\n";
 
-	auto queries = update_query_1 + insert_query + delete_query_1 + update_query_2 + insert_query + delete_query_1 +
-	               delete_query_2;
-	ExecuteAndWriteQueries(con, queries, file_name, false);
+	// IVM delta propagation opens another connection to the client database
+	// to avoid concurrency issues, every time we might trigger IVM (insertion into a centralized table)
+	// we detach the client database and reattach it as read-only
+	auto queries = attach_query + update_query_1 + detach_query + attach_query_read_only + insert_query + detach_query
+		+ attach_query + delete_query_1 + update_query_2 + detach_query + attach_query_read_only + insert_query
+		+ detach_query + attach_query + delete_query_1 + delete_query_2 + detach_query;
+
+	ExecuteCommitAndWriteQueries(server_con, queries, file_name, false);
 }
 } // namespace duckdb

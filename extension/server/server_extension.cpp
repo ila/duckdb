@@ -72,40 +72,6 @@ void ParseJSON(Connection &con, std::unordered_map<string, string> &config, int3
 	appender.EndRow();
 }
 
-static vector<string> ExtractTables(string &query) {
-	vector<string> tables;
-
-	DuckDB parser_db("rdda_parser_internal.db");
-	Connection con(parser_db);
-	con.BeginTransaction();
-	Parser parser;
-	Planner planner(*con.context);
-
-	parser.ParseQuery(query);
-	auto statement = parser.statements[0].get();
-	planner.CreatePlan(statement->Copy());
-
-	// DFS
-	std::stack<LogicalOperator *> node_stack;
-	node_stack.push(planner.plan.get());
-	while (!node_stack.empty()) {
-		auto node = node_stack.top();
-		node_stack.pop();
-		if (node->type == LogicalOperatorType::LOGICAL_GET) {
-			auto scan = dynamic_cast<LogicalGet *>(node);
-			auto table_data = dynamic_cast<TableScanBindData *>(scan->bind_data.get());
-			tables.push_back(table_data->table.name);
-		}
-		for (auto &child : node->children) {
-			node_stack.push(child.get());
-		}
-	}
-
-	con.Rollback();
-
-	return tables;
-}
-
 static void LoadInternal(DatabaseInstance &instance) {
 	// todo:
 	// send statistics to the server
@@ -127,10 +93,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 		throw ParserException("Error while getting database name: ", db_name->GetError());
 	}
 	auto db_name_str = db_name->GetValue(0, 0).ToString();
-	// todo - double check this
 	if (!client_info && db_name_str == "rdda_parser") {
 		// table does not exist --> the database should be initialized
-		std::cout << "Initializing server!\n";
+		Printer::Print("Initializing server!");
 		InitializeServer(con, config_path, config);
 	}
 

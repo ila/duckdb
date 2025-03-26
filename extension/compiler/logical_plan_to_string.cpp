@@ -227,7 +227,8 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		auto ql_get_exp = make_uniq<DuckASTGet>();
 		ql_get_exp->name = node->GetName();
 		if (node->GetTable().get()) { // DuckDB table scan
-			ql_get_exp->table_name = node->GetTable().get()->name;
+			auto schema = node->GetTable()->schema.name;
+			ql_get_exp->table_name = schema + "." + node->GetTable().get()->name;
 		} else { // edge case where our base table is a postgres table (postgres scan)
 			// todo bug here where sometimes these settings are empty
 			// todo make this more generic - add schema and catalog

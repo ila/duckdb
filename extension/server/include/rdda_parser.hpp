@@ -7,6 +7,8 @@
 namespace duckdb {
 
 void ExecuteAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append);
+void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append);
+
 
 //===--------------------------------------------------------------------===//
 // Parser extension
