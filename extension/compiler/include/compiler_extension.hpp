@@ -12,6 +12,8 @@
 
 namespace duckdb {
 
+void GeneratePythonRefreshScript(ClientContext &context, const FunctionParameters &parameters);
+
 class CompilerExtension : public Extension {
 public:
 	// this extension does not do anything in practice; it is a collection of functions to parse/compile SQL strings
@@ -28,7 +30,6 @@ public:
 	static void ReplaceCount(string &query);
 	static void ReplaceSum(string &query);
 	static void RemoveRedundantWhitespaces(string &query);
-	static string GenerateDeltaTable(string &query);
-};
+	static string GenerateDeltaTable(string &query);};
 
 } // namespace duckdb

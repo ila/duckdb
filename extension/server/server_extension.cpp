@@ -1,6 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "server_extension.hpp"
+#include "../compiler/include/compiler_extension.hpp"
 
 #include "duckdb/common/serializer/buffered_file_reader.hpp"
 #include "duckdb/common/unordered_map.hpp"
@@ -109,6 +110,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	auto run_server = PragmaFunction::PragmaCall("run_server", RunServer, {});
 	ExtensionUtil::RegisterFunction(instance, run_server);
+
+	// auto generate_refresh_script = PragmaFunction::PragmaCall("generate_refresh_script", GeneratePythonRefreshScript, {});
+	// ExtensionUtil::RegisterFunction(instance, generate_refresh_script);
 }
 
 void ServerExtension::Load(DuckDB &db) {

@@ -102,6 +102,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 	CreateTableFunctionInfo lpts_func_info(lpts_func);
 	catalog.CreateTableFunction(*con.context, &lpts_func_info);
 	con.Commit();
+
+	auto generate_refresh_script = PragmaFunction::PragmaCall("generate_refresh_script", GeneratePythonRefreshScript, {});
+	ExtensionUtil::RegisterFunction(instance, generate_refresh_script);
 }
 
 void CompilerExtension::Load(DuckDB &db) {
