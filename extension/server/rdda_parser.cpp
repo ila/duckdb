@@ -287,7 +287,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				auto view_constraint_string =
 				    "insert into rdda_view_constraints values('" + view_name + "', " +
 				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
-				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ");\n";
+				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ", now());\n";
 				metadata_queries += view_constraint_string;
 			} else if (scope == TableScope::decentralized) {
 				// todo - check that this is defined over decentralized tables/views
@@ -296,7 +296,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				auto view_constraint_string =
 				    "insert into rdda_view_constraints values('" + view_name + "', " +
 				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
-				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ");\n";
+				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ", now());\n";
 				metadata_queries += view_constraint_string;
 				view_string = "insert into rdda_tables values('rdda_centralized_view_" + view_name + "', " +
 				              to_string(static_cast<int32_t>(TableScope::centralized)) + ", NULL , 1);\n";
@@ -308,7 +308,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				metadata_queries += view_string;
 
 				auto window_string =
-				    "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0);\n";
+				    "insert into rdda_current_window values('rdda_centralized_view_" + view_name + "', 0, now());\n";
 				metadata_queries += window_string;
 			}
 		}

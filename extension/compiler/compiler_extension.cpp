@@ -103,7 +103,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	catalog.CreateTableFunction(*con.context, &lpts_func_info);
 	con.Commit();
 
-	auto generate_refresh_script = PragmaFunction::PragmaCall("generate_refresh_script", GeneratePythonRefreshScript, {});
+	auto generate_refresh_script = PragmaFunction::PragmaCall("generate_server_refresh_script", GenerateServerRefreshScript, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, generate_refresh_script);
 }
 

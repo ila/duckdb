@@ -12,7 +12,7 @@
 
 namespace duckdb {
 
-void GeneratePythonRefreshScript(ClientContext &context, const FunctionParameters &parameters);
+void GenerateServerRefreshScript(ClientContext &context, const FunctionParameters &parameters);
 
 class CompilerExtension : public Extension {
 public:
