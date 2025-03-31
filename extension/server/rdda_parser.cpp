@@ -284,9 +284,10 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 				con.Rollback();
 				AttachParserDatabase(con);
 				centralized_queries += query;
+				// we set window = refresh, to ensure that the view is refreshed at the same rate
 				auto view_constraint_string =
 				    "insert into rdda_view_constraints values('" + view_name + "', " +
-				    to_string(view_constraints.window) + ", " + to_string(view_constraints.ttl) + ", " +
+				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.ttl) + ", " +
 				    to_string(view_constraints.refresh) + ", " + to_string(view_constraints.min_agg) + ", now());\n";
 				metadata_queries += view_constraint_string;
 			} else if (scope == TableScope::decentralized) {
