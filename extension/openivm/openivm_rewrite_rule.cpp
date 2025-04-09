@@ -606,11 +606,10 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// The size is "past the end" of the old get projection IDs, and thus the projection ID of the mul column.
 		if (!delta_get_node->projection_ids.empty()) {
 			delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
+			// The timestamp column is needed for LPTS purposes, but will be projected out further up the tree.
+			delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		}
-		// fixme [ila] - I have no idea what this code does
-		// we need to add 2 columns, timestamp and multiplicity
 		// how to make this code resilient?
-		delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		delta_get_node->ResolveOperatorTypes();
 #ifdef DEBUG
 		auto debug_bindings_2 = delta_get_node->GetColumnBindings();
