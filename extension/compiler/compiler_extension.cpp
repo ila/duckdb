@@ -6,6 +6,7 @@
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "include/logical_plan_to_string.hpp"
+#include "include/logical_plan_to_sql.hpp"
 
 #include <fstream>
 #include <regex>
@@ -55,6 +56,9 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContex
 	planner.CreatePlan(statement->Copy());
 	planner.plan->Print();
 
+	LogicalPlanToSql lpts_class = LogicalPlanToSql(context, planner.plan);
+	lpts_class.LogicalPlanToIR();
+	// TODO: Remove once logicalplantosql is finished.
 	string planString = LogicalPlanToString(context, planner.plan);
 	Printer::Print("String: " + planString);
 
