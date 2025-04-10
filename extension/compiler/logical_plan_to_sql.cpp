@@ -3,6 +3,24 @@
 //
 
 #include "include/logical_plan_to_sql.hpp"
+#include "duckdb/parser/tableref/basetableref.hpp"
+#include "duckdb/planner/expression.hpp"
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include "duckdb/planner/expression/bound_aggregate_expression.hpp"
+#include "duckdb/planner/operator/logical_aggregate.hpp"
+#include "duckdb/planner/operator/logical_filter.hpp"
+#include "duckdb/planner/operator/logical_get.hpp"
+#include "duckdb/planner/operator/logical_insert.hpp"
+#include "duckdb/planner/operator/logical_projection.hpp"
+#include "duckdb/planner/operator/logical_comparison_join.hpp"
+#include "duckdb/planner/operator/logical_set.hpp"
+#include "duckdb/planner/planner.hpp"
+#include "duckdb/planner/tableref/bound_basetableref.hpp"
+#include "duckdb/planner/operator/logical_join.hpp"
+#include "duckdb/planner/operator/logical_cross_product.hpp"
+#include "duckdb/planner/operator/logical_order.hpp"
+#include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
+#include "duckdb/planner/operator/logical_set_operation.hpp"
 
 
 namespace duckdb {
@@ -13,13 +31,108 @@ CteNode LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, co
 	switch (subplan->type) {
 		case LogicalOperatorType::LOGICAL_GET: {
 		    // We need: catalog, schema, table name.
+		    unique_ptr<LogicalGet> get_node = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(subplan));
+		    string table_name = get_node->GetTable().get()->name;
+		    string catalog_name = ""; // todo
+		    string schema_name = get_node->GetTable()->schema.name;
+		    vector<string> column_names;
+		    vector<string> filters;
+		    for (auto &c : get_node->names) {
+		        column_names.push_back(c);
+		    }
+		    // todo - test this logic
+			if (!get_node->table_filters.filters.empty()) {
+				for (auto &filter : get_node->table_filters.filters) {
+					filters.push_back(filter.second->ToString(get_node->names[filter.first]));
+				}
+			}
+		    GetNode get_operator;
+		    get_operator.idx = my_index;
+		    get_operator.cte_name = "scan_" + std::to_string(my_index);
+		    get_operator.catalog = catalog_name;
+		    get_operator.schema = schema_name;
+		    get_operator.table_name = table_name;
+		    get_operator.table_index = get_node->table_index;
+		    get_operator.column_names = column_names;
+
+		    return get_operator;
 		}
-		case LogicalOperatorType::LOGICAL_PROJECTION:
-		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
-		case LogicalOperatorType::LOGICAL_FILTER:
-		case LogicalOperatorType::LOGICAL_UNION:
+		case LogicalOperatorType::LOGICAL_PROJECTION: {
+			unique_ptr<LogicalProjection> projection_node = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
+			ProjectNode project_operator;
+			project_operator.idx = my_index;
+			project_operator.cte_name = "projection_" + std::to_string(my_index);
+			vector<string> column_names;
+		    for (auto &col : projection_node->expressions) {
+				column_names.emplace_back(col->GetName());
+			}
+			project_operator.table_index = projection_node->table_index;
+			return project_operator;
+		}
+		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
+		    unique_ptr<LogicalAggregate> aggregate_node = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(subplan));
+		    AggregateNode aggregate_operator;
+		    aggregate_operator.idx = my_index;
+		    aggregate_operator.cte_name = "aggregate_" + std::to_string(my_index);
+		    vector<string> aggregate_names;
+		    vector<string> group_names;
+		    // This logic will break with aliases
+		    for (auto &col : aggregate_node->groups) {
+		        group_names.emplace_back(col->GetName());
+		    }
+		    for (auto &exp : aggregate_node->expressions) {
+		        aggregate_names.emplace_back(exp->GetName());
+		    }
+		    aggregate_operator.group_names = group_names;
+		    aggregate_operator.aggregate_names = aggregate_names;
+		    return aggregate_operator;
+		}
+		case LogicalOperatorType::LOGICAL_FILTER: {
+		    unique_ptr<LogicalFilter> filter_node = unique_ptr_cast<LogicalOperator, LogicalFilter>(std::move(subplan));
+		    vector<string> conditions;
+			auto params = filter_node->ParamsToString();
+		    // Note: this is always one string regardless of how many expressions are in the filter.
+		    // Will it break cross-system compatibility?
+			for (auto &c : params) {
+				if (c.first == "Expressions") {
+				    conditions.emplace_back(c.second.c_str());
+			    }
+			}
+		    FilterNode filter_operator;
+		    filter_operator.idx = my_index;
+		    filter_operator.cte_name = "filter_" + std::to_string(my_index);
+		    filter_operator.conditions = conditions;
+		    return filter_operator;
+		}
+		case LogicalOperatorType::LOGICAL_UNION: {
+		    unique_ptr<LogicalSetOperation> union_node = unique_ptr_cast<LogicalOperator, LogicalSetOperation>(std::move(subplan));
+			UnionNode union_operator;
+			union_operator.idx = my_index;
+			union_operator.cte_name = "union_" + std::to_string(my_index);
+			union_operator.left_cte_name = cte_nodes[children_indices[0]].cte_name;
+			union_operator.right_cte_name = cte_nodes[children_indices[1]].cte_name;
+			union_operator.is_union_all = union_node->setop_all;
+			return union_operator;
+		}
 		// case LogicalOperatorType::LOGICAL_JOIN:
-		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
+		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
+		    unique_ptr<LogicalComparisonJoin> join_node = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
+			JoinNode join_operator;
+			join_operator.idx = my_index;
+			join_operator.cte_name = "join_" + std::to_string(my_index);
+			join_operator.left_cte_name = cte_nodes[children_indices[0]].cte_name;
+			join_operator.right_cte_name = cte_nodes[children_indices[1]].cte_name;
+			join_operator.join_type = "inner"; // todo - make this an enum
+		    vector<string> join_conditions;
+		    for (auto &cond : join_node->conditions) {
+			    auto left = cond.left->GetName();
+			    auto right = cond.right->GetName();
+			    auto comparison = ExpressionTypeToOperator(cond.comparison);
+			    join_conditions.emplace_back(left + " " + comparison + " " + right);
+			}
+		    join_operator.join_conditions = join_conditions;
+			return join_operator;
+		}
 		default: {
 			throw std::runtime_error("This logical operator is not implemented.");
 		}
@@ -27,20 +140,20 @@ CteNode LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, co
 };
 
 
-IRNode LogicalPlanToSql::RecursiveTraversal(unique_ptr<LogicalOperator> &subplan, const bool is_root) {
+CteNode LogicalPlanToSql::RecursiveTraversal(unique_ptr<LogicalOperator> &subplan, const bool is_root) {
 
 	// First run the recursive calls.
 	vector<size_t> children_indices;
 	for (auto& child: subplan-> children) {
 		// Get the child as node.
-		IRNode child_as_node = RecursiveTraversal(child, false);
+		CteNode child_as_node = RecursiveTraversal(child, false);
 		// Store the index, so that it can be used later.
 		// `idx` should always match the index inside the vector after insertion.
 		// Especially handy if there are multiple children.
 		children_indices.push_back(child_as_node.idx);
 		// A child node can never be a root node, so static cast it to a CteNode before inserting.
-		CteNode& child_as_cte = static_cast<CteNode&>(child_as_node);
-		cte_nodes.push_back(std::move(child_as_cte));
+		//CteNode& child_as_cte = static_cast<CteNode&>(child_as_node);
+		cte_nodes.push_back(std::move(child_as_node));
 	}
 	// Handle stuff separately for the final node.
 	if (is_root) {
@@ -59,25 +172,26 @@ IRNode LogicalPlanToSql::RecursiveTraversal(unique_ptr<LogicalOperator> &subplan
 			}
 			default: {
 			    // Handle it the same way as a CTE.
-			    IRNode to_return = CreateCteNode(subplan, children_indices);
+			    CteNode to_return = CreateCteNode(subplan, children_indices);
 			    return to_return;
 			}
 		}
 		throw std::runtime_error("This code should not be reached");
 	}
-	IRNode to_return = CreateCteNode(subplan, children_indices);
+	CteNode to_return = CreateCteNode(subplan, children_indices);
 	return to_return;
 }
 
 
 void LogicalPlanToSql::LogicalPlanToIR() {
 	// Ensure that this function is not called more than once, to avoid a weird state.
-	if (node_count == 0) {
+	if (node_count != 0) {
 		throw std::runtime_error("This function can only be called once.");
 	}
 	// Call the recursive traversal to go through the entire plan.
 	IRNode final_node = RecursiveTraversal(plan, true);
 	cte_vec = CteVec{cte_nodes, final_node};
+	int i = 0;
 }
 
 } // namespace duckdb

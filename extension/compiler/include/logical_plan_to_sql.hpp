@@ -36,6 +36,7 @@ struct GetNode: public CteNode {
 	std::string table_name;
 	size_t table_index;
 	vector<string> table_filters;
+	vector<string> column_names;
 };
 
 struct FilterNode: public CteNode {
@@ -48,8 +49,8 @@ struct ProjectNode: public CteNode {
 };
 
 struct AggregateNode: public CteNode {
-	vector<string> column_names; // If empty, is scalar aggregate.
-	vector<string> aggregate_column_names;
+	vector<string> group_names; // If empty, is scalar aggregate.
+	vector<string> aggregate_names;
 };
 
 struct JoinNode: public CteNode {
@@ -59,7 +60,8 @@ struct JoinNode: public CteNode {
 };
 
 struct UnionNode: public CteNode {
-	std::string left_cte_name, right_cte_name;
+	std::string left_cte_name;
+	std::string right_cte_name;
 	bool is_union_all; // Whether to use "UNION ALL" or just "UNION".
 };
 
@@ -76,7 +78,7 @@ private:
 	unique_ptr<LogicalOperator> &plan;
 
 	/// Used to enumerate the CTEs.
-	size_t node_count;
+	size_t node_count = 0;
 	// Used to eventually create the CteVec object needed for the IR.
 	vector<CteNode> cte_nodes;
 	CteVec cte_vec;
@@ -84,7 +86,7 @@ private:
 	/// Create a CTE from a LogicalOperator.
 	CteNode CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices);
 	/// Traverse the logical plan recursively
-	IRNode RecursiveTraversal(unique_ptr<LogicalOperator> &subplan, const bool is_root);
+	CteNode RecursiveTraversal(unique_ptr<LogicalOperator> &subplan, const bool is_root);
 
 public:
 	LogicalPlanToSql(ClientContext &_context, unique_ptr<LogicalOperator> &_plan)
