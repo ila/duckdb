@@ -1,4 +1,5 @@
-#pragma once
+#ifndef COMPILER_EXTENSION_HPP
+#define COMPILER_EXTENSION_HPP
 
 #include "duckdb.hpp"
 #include "duckdb/optimizer/optimizer_extension.hpp"
@@ -11,8 +12,6 @@
 #include <sys/types.h>
 
 namespace duckdb {
-
-void GenerateServerRefreshScript(ClientContext &context, const FunctionParameters &parameters);
 
 class CompilerExtension : public Extension {
 public:
@@ -33,3 +32,5 @@ public:
 	static string GenerateDeltaTable(string &query);};
 
 } // namespace duckdb
+
+#endif // COMPILER_EXTENSION_HPP

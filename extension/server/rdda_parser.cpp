@@ -348,6 +348,17 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 	// todo make the location/execution of secure queries remote
 	ExecuteAndWriteQueries(client_con, secure_queries, path + "secure_queries.sql", false);
 
+	// now we generate the server and client side python scripts
+	server_con.BeginTransaction();
+	auto r = server_con.Query("pragma generate_server_refresh_script('" + server_db_name + "');");
+	if (r->HasError()) {
+		throw ParserException("Error while generating server refresh script: " + r->GetError());
+	}
+	server_con.Commit();
+
+	// now client side
+	// todo
+
 	ParserExtensionPlanResult
 	    result; // register a function with a string as parameter and pass it here (in place of true)
 	result.function = RDDAFunction();

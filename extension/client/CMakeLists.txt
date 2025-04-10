@@ -7,11 +7,12 @@ add_extension_definitions()
 include_directories(include ../server/include)
 
 add_library(client_extension STATIC client_extension.cpp ../server/common.cpp
-                                    client_functions.cpp)
+                                    client_functions.cpp
+        generate_random_data_runs.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(client ${PARAMETERS} client_extension.cpp
-                         ../server/common.cpp)
+                         ../server/common.cpp generate_random_data_runs.cpp)
 
 # find_package(OpenSSL REQUIRED) target_link_libraries(httpfs_loadable_extension
 # ${OPENSSL_LIBRARIES})
