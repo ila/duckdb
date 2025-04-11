@@ -71,7 +71,8 @@ public:
 		const size_t _table_index,
 		vector<string> _table_filters,
 		vector<string> _column_names
-    ) : CteNode(index, "scan_" + std::to_string(index)),
+    ) :
+		CteNode(index, "scan_" + std::to_string(index)),
 		catalog(std::move(_catalog)),
 		schema(std::move(_schema)),
 		table_name(std::move(_table_name)),
@@ -79,49 +80,58 @@ public:
 		table_filters(std::move(_table_filters)),
 		column_names(std::move(_column_names)) {}
 	// Functions.
-	std::string ToQuery() override {return "todo: implement";};
+	std::string ToQuery() override;
 };
 
 class FilterNode: public CteNode {
 	// Attributes.
+	std::string child_cte_name;
 	vector<std::string> conditions;
 public:
 	~FilterNode() override = default;
 	// Constructor.
-	FilterNode(const size_t index, vector<std::string> _conditions) :
-		CteNode(index, "filter_" + std::to_string(index)), conditions(std::move(_conditions)) {}
+	FilterNode(const size_t index, std::string _child_cte_name, vector<std::string> _conditions) :
+		CteNode(index, "filter_" + std::to_string(index)),
+		child_cte_name(std::move(_child_cte_name)),
+		conditions(std::move(_conditions)) {}
 	// Functions.
-	std::string ToQuery() override {return "todo: implement";};
+	std::string ToQuery() override;
 };
 
 class ProjectNode: public CteNode {
 	// Attributes.
+	std::string child_cte_name;
 	vector<std::string> column_names;
 	size_t table_index;
 public:
 	~ProjectNode() override = default;
 	// Constructor.
-	ProjectNode(const size_t index, vector<std::string> _column_names, const size_t _table_index) :
+	ProjectNode(const size_t index, std::string _child_cte_name, vector<std::string> _column_names, const size_t _table_index) :
 		CteNode(index, "projection_" + std::to_string(index)),
+		child_cte_name(std::move(_child_cte_name)),
 		column_names(std::move(_column_names)),
 		table_index(_table_index) {}
 	// Functions.
-	std::string ToQuery() override {return "todo: implement";};
+	std::string ToQuery() override;
 };
 
 class AggregateNode: public CteNode {
 	// Attributes.
+	std::string child_cte_name;
 	vector<std::string> group_names; // If empty, is scalar aggregate.
 	vector<std::string> aggregate_names;
 public:
 	~AggregateNode() override = default;
 	// Constructor.
-	AggregateNode(const size_t index, vector<std::string> _group_names, vector<std::string> _aggregate_names) :
+	AggregateNode(
+		const size_t index, std::string _child_cte_name, vector<std::string> _group_names, vector<std::string> _aggregate_names
+	) :
 		CteNode(index, "aggregate_" + std::to_string(index)),
+		child_cte_name(std::move(_child_cte_name)),
 		group_names(std::move(_group_names)),
 		aggregate_names(std::move(_aggregate_names)) {}
 	// Functions.
-	std::string ToQuery() override {return "todo: implement";};
+	std::string ToQuery() override;
 };
 
 class JoinNode: public CteNode {
@@ -144,7 +154,7 @@ public:
 		join_type(std::move(_join_type)),
 		join_conditions(std::move(_join_conditions)) {}
 	// Functions.
-	std::string ToQuery() override {return "todo: implement";};
+	std::string ToQuery() override;
 };
 
 class UnionNode: public CteNode {
@@ -161,7 +171,7 @@ public:
 		right_cte_name(std::move(_right_cte_name)),
 		is_union_all(union_all) {}
 	// Functions.
-	std::string ToQuery() override {return "todo: implement";};
+	std::string ToQuery() override;
 };
 
 /// Intermediate representation (as a vector of CTEs along with a final node).
@@ -173,8 +183,9 @@ public:
 	// Constructor.
 	IRStruct(vector<unique_ptr<CteNode>> _nodes, unique_ptr<IRNode> _final_node) :
 		nodes(std::move(_nodes)), final_node(std::move(_final_node)) {}
-	// Function.
-	std::string ToQuery();
+	/// Create a DuckDB SQL query directly from the immediate representation.
+	/// If `use_newlines` is true, the string uses newlines between CTEs for readability.
+	std::string ToQuery(bool use_newlines);
 };
 
 class LogicalPlanToSql {
@@ -205,7 +216,6 @@ public:
 	void IRToAst(); // Not implemented.
 	/// Convert an AST into a DuckDB SQL query.
 	void AstToSql(); // Not implemented.
-	/// Create a DuckDB SQL query directly from the immediate representation (IRStruct).
 	static std::string IRToSql(unique_ptr<IRStruct> &ir_struct);
 };
 

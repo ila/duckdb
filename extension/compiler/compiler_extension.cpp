@@ -57,9 +57,8 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContex
 	planner.plan->Print();
 
 	LogicalPlanToSql lpts_class = LogicalPlanToSql(context, planner.plan);
-	lpts_class.LogicalPlanToIR();
-	// TODO: Remove once logicalplantosql is finished.
-	string planString = "SELECT success from lpts_class! (if you read this, LogicalPlanToIR finished without errors)";
+	unique_ptr<IRStruct> ir_struct = lpts_class.LogicalPlanToIR();
+	string planString = ir_struct->ToQuery(true);
 	Printer::Print("String: " + planString);
 
 	// create result set using column bindings returned by the planner

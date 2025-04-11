@@ -22,11 +22,142 @@
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/planner/operator/logical_set_operation.hpp"
 
+namespace {
+
+using duckdb::vector;
+
+/// Convert a vector of strings into a comma-separated list (i.e. "a, b, c, d., ...").
+std::string comma_separated_list(vector<std::string> input_list) {
+	std::ostringstream ret_str;
+	for (size_t i = 0; i < input_list.size(); ++i) {
+		ret_str << input_list[i];
+		if (i != input_list.size() - 1) {
+			ret_str << ", ";
+		}
+	}
+	return ret_str.str();
+}
+
+} // namespace
 
 namespace duckdb {
 
 std::string CteNode::ToCteQuery() {
-	return cte_name + " AS (" + this->ToQuery() + ")";
+	return cte_name + " as (" + this->ToQuery() + ")";
+}
+std::string GetNode::ToQuery() {
+	std::ostringstream get_str;
+	get_str << "select ";
+	if (column_names.empty()) {
+		get_str << "*";
+	} else {
+		get_str << comma_separated_list(column_names);
+	}
+	get_str << " from ";
+	get_str << table_name;
+	if (table_filters.empty()) {
+		// Add nothing.
+	} else {
+		get_str << " where ";
+		get_str << comma_separated_list(table_filters);
+	}
+	// Note: no semicolon at the end; this is handled by the IR function.
+	return get_str.str();
+}
+std::string FilterNode::ToQuery() {
+	std::ostringstream get_str;
+	get_str << "select * from ";
+	get_str << child_cte_name;
+	if (conditions.empty()) {
+		// Add nothing.
+	} else {
+		get_str << " where ";
+		get_str << comma_separated_list(conditions);
+	}
+	return get_str.str();
+}
+std::string ProjectNode::ToQuery() {
+	std::ostringstream project_str;
+	project_str << "select ";
+	if (column_names.empty()) {
+		project_str << "*";
+	} else {
+		project_str << comma_separated_list(column_names);
+	}
+	project_str << " from ";
+	project_str << child_cte_name;
+	return project_str.str();
+}
+
+std::string AggregateNode::ToQuery() {
+	std::ostringstream aggregate_str;
+	aggregate_str << "select ";
+	if (group_names.empty()) {
+		// Do nothing.
+	} else {
+		aggregate_str << comma_separated_list(group_names);
+		aggregate_str << ", "; // Needed for the aggregate names.
+	}
+	aggregate_str << comma_separated_list(aggregate_names);
+	aggregate_str << " from ";
+	aggregate_str << child_cte_name;
+	if (group_names.empty()) {
+		// Do nothing.
+	} else {
+		aggregate_str << " group by ";
+		aggregate_str << comma_separated_list(group_names);
+	}
+	return aggregate_str.str();
+}
+std::string JoinNode::ToQuery() {
+	std::ostringstream join_str;
+	join_str << "select * from ";
+	join_str << left_cte_name;
+	// FIXME: Logic here is a bit messy, because it heavily depends on the join type.
+	//  For an inner join, it should be "left_cte inner join right_cte" and then the condition.
+	//  But for other joins it may be something else.
+	//  Further: the join conditions (which specify a table name) also need to be modified.
+	//  This require a bit more effort to get right.
+	join_str << ", ";
+	join_str << right_cte_name;
+	return "todo: implement";
+}
+std::string UnionNode::ToQuery() {
+	std::ostringstream union_str;
+	union_str << "select * from ";
+	union_str << left_cte_name;
+	if (is_union_all) {
+		union_str << " union all ";
+	} else {
+		union_str << " union ";
+	}
+	union_str << "select * from ";
+	union_str << right_cte_name;
+	return union_str.str();
+}
+std::string IRStruct::ToQuery(const bool use_newlines) {
+	std::ostringstream sql_str;
+	// First add all CTEs...
+	if (nodes.empty()) {
+		// Do nothing.
+	} else {
+		sql_str << "with ";
+		for (size_t i = 0; i < nodes.size(); ++i) {
+			sql_str << nodes[i]->ToCteQuery();
+			if (i != nodes.size() - 1) {
+				sql_str << ", ";
+			} else if (!use_newlines) {
+				// Add extra space for main query (if newlines disabled).
+				sql_str << " ";
+			}
+			if (use_newlines) sql_str << "\n";
+		}
+	}
+	// Then add the final query.
+	sql_str << final_node->ToQuery();
+	// Finally, add a semicolon.
+	sql_str << ";";
+	return sql_str.str();
 }
 
 unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices) {
@@ -35,58 +166,30 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 	switch (subplan->type) {
 		case LogicalOperatorType::LOGICAL_GET: {
 		    // We need: catalog, schema, table name.
-		    unique_ptr<LogicalGet> get_node = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(subplan));
-		    string table_name = get_node->GetTable().get()->name;
+		    unique_ptr<LogicalGet> plan_as_get = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(subplan));
+		    string table_name = plan_as_get->GetTable().get()->name;
 		    string catalog_name = ""; // todo
-		    string schema_name = get_node->GetTable()->schema.name;
+		    string schema_name = plan_as_get->GetTable()->schema.name;
 		    vector<string> column_names;
 		    vector<string> filters;
-		    for (auto &c : get_node->names) {
+		    for (auto &c : plan_as_get->names) {
 		        column_names.push_back(c);
 		    }
 		    // todo - test this logic
-			if (!get_node->table_filters.filters.empty()) {
-				for (auto &filter : get_node->table_filters.filters) {
-					filters.push_back(filter.second->ToString(get_node->names[filter.first]));
+			if (!plan_as_get->table_filters.filters.empty()) {
+				for (auto &filter : plan_as_get->table_filters.filters) {
+					filters.push_back(filter.second->ToString(plan_as_get->names[filter.first]));
 				}
 			}
-		    unique_ptr<GetNode> get_operator = make_uniq<GetNode>(
+		    return make_uniq<GetNode>(
 		    	my_index,
 		    	std::move(catalog_name),
 		    	std::move(schema_name),
 		    	std::move(table_name),
-		    	get_node->table_index,
+		    	plan_as_get->table_index,
 		    	std::move(filters),
 		    	std::move(column_names)
 		    );
-		    return get_operator;
-		}
-		case LogicalOperatorType::LOGICAL_PROJECTION: {
-			unique_ptr<LogicalProjection> projection_node = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
-			vector<string> column_names;
-		    for (auto &col : projection_node->expressions) {
-				column_names.emplace_back(col->GetName());
-			}
-			auto project_operator = make_uniq<ProjectNode>(
-				my_index, std::move(column_names), projection_node->table_index
-			);
-			return project_operator;
-		}
-		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
-		    unique_ptr<LogicalAggregate> aggregate_node = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(subplan));
-		    vector<string> aggregate_names;
-		    vector<string> group_names;
-		    // This logic will break with aliases
-		    for (auto &col : aggregate_node->groups) {
-		        group_names.emplace_back(col->GetName());
-		    }
-		    for (auto &exp : aggregate_node->expressions) {
-		        aggregate_names.emplace_back(exp->GetName());
-		    }
-		    auto aggregate_operator = make_uniq<AggregateNode>(
-		    	my_index, std::move(aggregate_names), std::move(group_names)
-			);
-		    return aggregate_operator;
 		}
 		case LogicalOperatorType::LOGICAL_FILTER: {
 		    unique_ptr<LogicalFilter> filter_node = unique_ptr_cast<LogicalOperator, LogicalFilter>(std::move(subplan));
@@ -99,37 +202,60 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 				    conditions.emplace_back(c.second.c_str());
 			    }
 			}
-		    auto filter_operator = make_uniq<FilterNode>(my_index, std::move(conditions));
-		    return filter_operator;
+		    return make_uniq<FilterNode>(my_index, cte_nodes[children_indices[0]]->cte_name, std::move(conditions));
+		}
+		case LogicalOperatorType::LOGICAL_PROJECTION: {
+			unique_ptr<LogicalProjection> plan_as_projection = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
+			vector<string> column_names;
+		    for (auto &col : plan_as_projection->expressions) {
+				column_names.emplace_back(col->GetName());
+			}
+			return make_uniq<ProjectNode>(
+				my_index, cte_nodes[children_indices[0]]->cte_name, std::move(column_names), plan_as_projection->table_index
+
+			);
+		}
+		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
+		    unique_ptr<LogicalAggregate> plan_as_aggregate = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(subplan));
+		    vector<string> aggregate_names;
+		    vector<string> group_names;
+		    // Note: this logic will break with aliases.
+		    for (auto &col : plan_as_aggregate->groups) {
+		        group_names.emplace_back(col->GetName());
+		    }
+		    for (auto &exp : plan_as_aggregate->expressions) {
+		        aggregate_names.emplace_back(exp->GetName());
+		    }
+		    return make_uniq<AggregateNode>(
+		    	my_index, cte_nodes[children_indices[0]]->cte_name, std::move(aggregate_names), std::move(group_names)
+			);
 		}
 		case LogicalOperatorType::LOGICAL_UNION: {
-		    unique_ptr<LogicalSetOperation> union_node = unique_ptr_cast<LogicalOperator, LogicalSetOperation>(std::move(subplan));
-			unique_ptr<UnionNode> union_operator = make_uniq<UnionNode>(
+		    unique_ptr<LogicalSetOperation> plan_as_union = unique_ptr_cast<LogicalOperator, LogicalSetOperation>(std::move(subplan));
+			return make_uniq<UnionNode>(
 				my_index,
 				cte_nodes[children_indices[0]]->cte_name,
 				cte_nodes[children_indices[1]]->cte_name,
-				union_node->setop_all
+				plan_as_union->setop_all
 			);
-			return union_operator;
 		}
 		// case LogicalOperatorType::LOGICAL_JOIN:
 		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
-		    unique_ptr<LogicalComparisonJoin> join_node = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
+		    unique_ptr<LogicalComparisonJoin> plan_as_join = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
 		    vector<string> join_conditions;
-		    for (auto &cond : join_node->conditions) {
+		    for (auto &cond : plan_as_join->conditions) {
 			    auto left = cond.left->GetName();
 			    auto right = cond.right->GetName();
 			    auto comparison = ExpressionTypeToOperator(cond.comparison);
 			    join_conditions.emplace_back(left + " " + comparison + " " + right);
 			}
-			unique_ptr<JoinNode> join_operator = make_uniq<JoinNode>(
+			return make_uniq<JoinNode>(
 				my_index,
 				cte_nodes[children_indices[0]]->cte_name,
 				cte_nodes[children_indices[1]]->cte_name,
 				"inner",
 				std::move(join_conditions)
 			);
-			return join_operator;
 		}
 		default: {
 			throw std::runtime_error("This logical operator is not implemented.");
