@@ -45,8 +45,9 @@ public:
 	CteNode& operator=(const CteNode &) = delete;
 	// Constructor.
 	explicit CteNode(const size_t index, std::string name) : IRNode(index), cte_name(std::move(name)) {}
-	// To be implemented by derived classes.
-	virtual std::string ToCteQuery() = 0;
+	// Requires ToQuery() to be implemented by derived classes.
+	/// Create a CTE-like string for the Node (excluding the WITH keyword).
+	std::string ToCteQuery();
 	// Attributes.
 	std::string cte_name;
 };
@@ -79,7 +80,6 @@ public:
 		column_names(std::move(_column_names)) {}
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
-	std::string ToCteQuery() override {return "todo: implement";};
 };
 
 class FilterNode: public CteNode {
@@ -92,8 +92,6 @@ public:
 		CteNode(index, "filter_" + std::to_string(index)), conditions(std::move(_conditions)) {}
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
-	std::string ToCteQuery() override {return "todo: implement";};
-
 };
 
 class ProjectNode: public CteNode {
@@ -109,9 +107,6 @@ public:
 		table_index(_table_index) {}
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
-	std::string ToCteQuery() override {return "todo: implement";};
-
-
 };
 
 class AggregateNode: public CteNode {
@@ -127,8 +122,6 @@ public:
 		aggregate_names(std::move(_aggregate_names)) {}
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
-	std::string ToCteQuery() override {return "todo: implement";};
-
 };
 
 class JoinNode: public CteNode {
@@ -152,8 +145,6 @@ public:
 		join_conditions(std::move(_join_conditions)) {}
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
-	std::string ToCteQuery() override {return "todo: implement";};
-
 };
 
 class UnionNode: public CteNode {
@@ -171,8 +162,6 @@ public:
 		is_union_all(union_all) {}
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
-	std::string ToCteQuery() override {return "todo: implement";};
-
 };
 
 /// Intermediate representation (as a vector of CTEs along with a final node).
@@ -218,11 +207,7 @@ public:
 	void AstToSql(); // Not implemented.
 	/// Create a DuckDB SQL query directly from the immediate representation (IRStruct).
 	static std::string IRToSql(unique_ptr<IRStruct> &ir_struct);
-
 };
-
-
-
 
 } // namespace duckdb
 

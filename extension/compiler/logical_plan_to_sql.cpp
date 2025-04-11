@@ -25,6 +25,10 @@
 
 namespace duckdb {
 
+std::string CteNode::ToCteQuery() {
+	return cte_name + " AS (" + this->ToQuery() + ")";
+}
+
 unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices) {
 	const size_t my_index = node_count++;
 
