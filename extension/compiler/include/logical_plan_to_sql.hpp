@@ -9,67 +9,176 @@
 
 namespace duckdb {
 
-// TODO: Make the class abstract.
-struct IRNode {
+class IRNode {
+public:
     virtual ~IRNode() = default;
-	size_t idx;  // Number of the node used for giving it a name.
+	virtual std::string ToQuery() = 0;
+	// Constructor.
+	explicit IRNode(const size_t index ) : idx(index) {}
+	// virtual void ToAst() = 0;  // Will be needed for ASTs.
+	const size_t idx;  // Number of the node used for giving it a name.
 };
 
-struct InsertNode: public IRNode {
+class InsertNode: public IRNode {
+public:
+	~InsertNode() override = default;
 	std::string query;
 };
 
 // Not (yet) needed for IVM.
-struct UpdateNode: public IRNode {
+class UpdateNode: public IRNode {
+public:
+	~UpdateNode() override = default;
 };
 
 // Not (yet) needed for IVM.
-struct DeleteNode: public IRNode {
+class DeleteNode: public IRNode {
+public:
+	~DeleteNode() override = default;
 };
 
-struct CteNode: public IRNode {
+class CteNode: public IRNode {
+public:
+	~CteNode() override = default;
+	// Explicitly delete copy constructor to avoid issues.
+	CteNode(const CteNode &) = delete;
+	CteNode& operator=(const CteNode &) = delete;
+	// Constructor.
+	explicit CteNode(const size_t index, std::string name) : IRNode(index), cte_name(std::move(name)) {}
+	// To be implemented by derived classes.
+	virtual std::string ToCteQuery() = 0;
+	// Attributes.
 	std::string cte_name;
 };
 
-struct GetNode: public CteNode {
+class GetNode: public CteNode {
+public:
+	~GetNode() override = default;
+	// Constructor. TODO: Should be explicit or not?
+	GetNode(
+		const size_t index,
+		std::string _catalog,
+		std::string _schema,
+		std::string _table_name,
+		const size_t _table_index,
+		vector<string> _table_filters,
+		vector<string> _column_names
+    ) : CteNode(index, "scan_" + std::to_string(index)),
+		catalog(std::move(_catalog)),
+		schema(std::move(_schema)),
+		table_name(std::move(_table_name)),
+		table_index(_table_index),
+		table_filters(std::move(_table_filters)),
+		column_names(std::move(_column_names)) {}
+	// Functions.
+	std::string ToQuery() override {return "todo: implement";};
+	std::string ToCteQuery() override {return "todo: implement";};
+	// Attributes.
 	std::string catalog;
 	std::string schema;
 	std::string table_name;
 	size_t table_index;
-	vector<string> table_filters;
-	vector<string> column_names;
+	vector<std::string> table_filters;
+	vector<std::string> column_names;
 };
 
-struct FilterNode: public CteNode {
-	vector<string> conditions;
+class FilterNode: public CteNode {
+public:
+	~FilterNode() override = default;
+	// Constructor.
+	FilterNode(const size_t index, vector<std::string> _conditions) :
+		CteNode(index, "filter_" + std::to_string(index)), conditions(std::move(_conditions)) {}
+	// Functions.
+	std::string ToQuery() override {return "todo: implement";};
+	std::string ToCteQuery() override {return "todo: implement";};
+	// Attributes.
+	vector<std::string> conditions;
 };
 
-struct ProjectNode: public CteNode {
-	vector<string> column_names;
+class ProjectNode: public CteNode {
+public:
+	~ProjectNode() override = default;
+	// Constructor.
+	ProjectNode(const size_t index, vector<std::string> _column_names, const size_t _table_index) :
+		CteNode(index, "projection_" + std::to_string(index)),
+		column_names(std::move(_column_names)),
+		table_index(_table_index) {}
+	// Functions.
+	std::string ToQuery() override {return "todo: implement";};
+	std::string ToCteQuery() override {return "todo: implement";};
+	// Attributes.
+	vector<std::string> column_names;
 	size_t table_index;
+
 };
 
-struct AggregateNode: public CteNode {
-	vector<string> group_names; // If empty, is scalar aggregate.
-	vector<string> aggregate_names;
+class AggregateNode: public CteNode {
+public:
+	~AggregateNode() override = default;
+	// Constructor.
+	AggregateNode(const size_t index, vector<std::string> _group_names, vector<std::string> _aggregate_names) :
+		CteNode(index, "aggregate_" + std::to_string(index)),
+		group_names(std::move(_group_names)),
+		aggregate_names(std::move(_aggregate_names)) {}
+	// Functions.
+	std::string ToQuery() override {return "todo: implement";};
+	std::string ToCteQuery() override {return "todo: implement";};
+	// Attributes.
+	vector<std::string> group_names; // If empty, is scalar aggregate.
+	vector<std::string> aggregate_names;
 };
 
-struct JoinNode: public CteNode {
+class JoinNode: public CteNode {
+public:
+	~JoinNode() override = default;
+	// Constructor.
+	JoinNode(
+		const size_t index,
+		std::string _left_cte_name,
+		std::string _right_cte_name,
+		std::string _join_type,
+		vector<std::string> _join_conditions) :
+		CteNode(index, "join_" + std::to_string(index)),
+		left_cte_name(std::move(_left_cte_name)),
+		right_cte_name(std::move(_right_cte_name)),
+		join_type(std::move(_join_type)),
+		join_conditions(std::move(_join_conditions)) {}
+	// Functions.
+	std::string ToQuery() override {return "todo: implement";};
+	std::string ToCteQuery() override {return "todo: implement";};
+	// Attributes.
 	std::string left_cte_name, right_cte_name;
 	std::string join_type; // TODO: convert into Enum/whatever DuckDB uses.
 	vector<std::string> join_conditions;
 };
 
-struct UnionNode: public CteNode {
+class UnionNode: public CteNode {
+public:
+	~UnionNode() override = default;
+	// Constructor.
+	UnionNode(const size_t index, std::string _left_cte_name, std::string _right_cte_name, const bool union_all) :
+		CteNode(index, "union_" + std::to_string(index)),
+		left_cte_name(std::move(_left_cte_name)),
+		right_cte_name(std::move(_right_cte_name)),
+		is_union_all(union_all) {}
+	// Functions.
+	std::string ToQuery() override {return "todo: implement";};
+	std::string ToCteQuery() override {return "todo: implement";};
+	// Attributes.
 	std::string left_cte_name;
 	std::string right_cte_name;
 	bool is_union_all; // Whether to use "UNION ALL" or just "UNION".
 };
 
 /// Intermediate representation (as a vector of CTEs along with a final node).
-struct IRStruct {
-	vector<CteNode> nodes;
-	IRNode finial_node;
+class IRStruct {
+public:
+	// Constructor.
+	IRStruct(vector<unique_ptr<CteNode>> _nodes, unique_ptr<IRNode> _final_node) :
+		nodes(std::move(_nodes)), final_node(std::move(_final_node)) {}
+	// Attributes.
+	vector<unique_ptr<CteNode>> nodes;
+	unique_ptr<IRNode> final_node;
 };
 
 class LogicalPlanToSql {
@@ -82,20 +191,20 @@ private:
 	/// Used to enumerate the CTEs.
 	size_t node_count = 0;
 	// Used to eventually create the IRStruct object needed for the IR.
-	vector<CteNode> cte_nodes;
-	IRStruct cte_vec;
+	// Becomes a nullptr once LogicalPlanToIR has finished.
+	vector<unique_ptr<CteNode>> cte_nodes;
 
 	/// Create a CTE from a LogicalOperator.
-	CteNode CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices);
+	unique_ptr<CteNode> CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices);
 	/// Traverse the logical plan recursively, except for the root.
-	CteNode RecursiveTraversal(unique_ptr<LogicalOperator> &sub_plan);
+	unique_ptr<CteNode> RecursiveTraversal(unique_ptr<LogicalOperator> &sub_plan);
 
 public:
 	LogicalPlanToSql(ClientContext &_context, unique_ptr<LogicalOperator> &_plan)
 	  : context(_context), plan(_plan) {}
 
 	/// Convert the logical plan to an immediate representation (IRStruct).
-	void LogicalPlanToIR();
+	unique_ptr<IRStruct> LogicalPlanToIR();
 	void IRToAst();
 	void AstToSql();
 
