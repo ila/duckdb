@@ -52,6 +52,13 @@ public:
 };
 
 class GetNode: public CteNode {
+	// Attributes.
+	std::string catalog;
+	std::string schema;
+	std::string table_name;
+	size_t table_index;
+	vector<std::string> table_filters;
+	vector<std::string> column_names;
 public:
 	~GetNode() override = default;
 	// Constructor. TODO: Should be explicit or not?
@@ -73,16 +80,11 @@ public:
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
 	std::string ToCteQuery() override {return "todo: implement";};
-	// Attributes.
-	std::string catalog;
-	std::string schema;
-	std::string table_name;
-	size_t table_index;
-	vector<std::string> table_filters;
-	vector<std::string> column_names;
 };
 
 class FilterNode: public CteNode {
+	// Attributes.
+	vector<std::string> conditions;
 public:
 	~FilterNode() override = default;
 	// Constructor.
@@ -91,11 +93,13 @@ public:
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
 	std::string ToCteQuery() override {return "todo: implement";};
-	// Attributes.
-	vector<std::string> conditions;
+
 };
 
 class ProjectNode: public CteNode {
+	// Attributes.
+	vector<std::string> column_names;
+	size_t table_index;
 public:
 	~ProjectNode() override = default;
 	// Constructor.
@@ -106,13 +110,14 @@ public:
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
 	std::string ToCteQuery() override {return "todo: implement";};
-	// Attributes.
-	vector<std::string> column_names;
-	size_t table_index;
+
 
 };
 
 class AggregateNode: public CteNode {
+	// Attributes.
+	vector<std::string> group_names; // If empty, is scalar aggregate.
+	vector<std::string> aggregate_names;
 public:
 	~AggregateNode() override = default;
 	// Constructor.
@@ -123,12 +128,14 @@ public:
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
 	std::string ToCteQuery() override {return "todo: implement";};
-	// Attributes.
-	vector<std::string> group_names; // If empty, is scalar aggregate.
-	vector<std::string> aggregate_names;
+
 };
 
 class JoinNode: public CteNode {
+	// Attributes.
+	std::string left_cte_name, right_cte_name;
+	std::string join_type; // TODO: convert into Enum/whatever DuckDB uses.
+	vector<std::string> join_conditions;
 public:
 	~JoinNode() override = default;
 	// Constructor.
@@ -146,13 +153,14 @@ public:
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
 	std::string ToCteQuery() override {return "todo: implement";};
-	// Attributes.
-	std::string left_cte_name, right_cte_name;
-	std::string join_type; // TODO: convert into Enum/whatever DuckDB uses.
-	vector<std::string> join_conditions;
+
 };
 
 class UnionNode: public CteNode {
+	// Attributes.
+	std::string left_cte_name;
+	std::string right_cte_name;
+	const bool is_union_all; // Whether to use "UNION ALL" or just "UNION".
 public:
 	~UnionNode() override = default;
 	// Constructor.
@@ -164,21 +172,20 @@ public:
 	// Functions.
 	std::string ToQuery() override {return "todo: implement";};
 	std::string ToCteQuery() override {return "todo: implement";};
-	// Attributes.
-	std::string left_cte_name;
-	std::string right_cte_name;
-	bool is_union_all; // Whether to use "UNION ALL" or just "UNION".
+
 };
 
 /// Intermediate representation (as a vector of CTEs along with a final node).
 class IRStruct {
+	// Attributes.
+	vector<unique_ptr<CteNode>> nodes;
+	unique_ptr<IRNode> final_node;
 public:
 	// Constructor.
 	IRStruct(vector<unique_ptr<CteNode>> _nodes, unique_ptr<IRNode> _final_node) :
 		nodes(std::move(_nodes)), final_node(std::move(_final_node)) {}
-	// Attributes.
-	vector<unique_ptr<CteNode>> nodes;
-	unique_ptr<IRNode> final_node;
+	// Function.
+	std::string ToQuery();
 };
 
 class LogicalPlanToSql {
@@ -205,8 +212,12 @@ public:
 
 	/// Convert the logical plan to an immediate representation (IRStruct).
 	unique_ptr<IRStruct> LogicalPlanToIR();
-	void IRToAst();
-	void AstToSql();
+	/// Convert the IR into an AST (portable to other SQL dialects).
+	void IRToAst(); // Not implemented.
+	/// Convert an AST into a DuckDB SQL query.
+	void AstToSql(); // Not implemented.
+	/// Create a DuckDB SQL query directly from the immediate representation (IRStruct).
+	static std::string IRToSql(unique_ptr<IRStruct> &ir_struct);
 
 };
 
