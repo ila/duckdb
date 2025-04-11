@@ -113,14 +113,31 @@ std::string JoinNode::ToQuery() {
 	std::ostringstream join_str;
 	join_str << "select * from ";
 	join_str << left_cte_name;
-	// FIXME: Logic here is a bit messy, because it heavily depends on the join type.
-	//  For an inner join, it should be "left_cte inner join right_cte" and then the condition.
-	//  But for other joins it may be something else.
-	//  Further: the join conditions (which specify a table name) also need to be modified.
-	//  This require a bit more effort to get right.
-	join_str << ", ";
+	/* Assumption made: the LEFT side of a condition is always related to the *left* CTE,
+	 * Whereas the RIGHT side of a condition is always related to the *right* CTE.
+	 * If this condition turns out to not be true, the logic here will be significantly harder,
+	 *  as for every condition there would need to be a check on which side is which.
+	 */
+	join_str << " ";
+	switch (join_type) {
+		case JoinType::INNER:
+		case JoinType::LEFT:
+		case JoinType::RIGHT:
+		case JoinType::OUTER:
+			join_str << EnumUtil::ToString(join_type); break;
+	default:
+		throw NotImplementedException("JoinType::%s is not (yet) supported", EnumUtil::ToString(join_type));
+	}
+	join_str << " join ";
 	join_str << right_cte_name;
-	return "todo: implement";
+	join_str << " on ";
+	// FIXME: implement!!!
+	//  Logic here is a bit messy, because the join conditions need to be converted
+	//  into something that uses the CTEs.
+	//  Basically, something like: {left_cte}.{left_condition_column} = {right_cte}.{right_condition_column}.
+	//  This requires a bit more effort to get right.
+	join_str << "{todo: implement}";
+	return join_str.str();
 }
 std::string UnionNode::ToQuery() {
 	std::ostringstream union_str;
@@ -253,7 +270,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 				my_index,
 				cte_nodes[children_indices[0]]->cte_name,
 				cte_nodes[children_indices[1]]->cte_name,
-				"inner",
+				plan_as_join->join_type,
 				std::move(join_conditions)
 			);
 		}

@@ -137,7 +137,7 @@ public:
 class JoinNode: public CteNode {
 	// Attributes.
 	std::string left_cte_name, right_cte_name;
-	std::string join_type; // TODO: convert into Enum/whatever DuckDB uses.
+	JoinType join_type;
 	vector<std::string> join_conditions;
 public:
 	~JoinNode() override = default;
@@ -146,12 +146,12 @@ public:
 		const size_t index,
 		std::string _left_cte_name,
 		std::string _right_cte_name,
-		std::string _join_type,
+		JoinType _join_type,
 		vector<std::string> _join_conditions) :
 		CteNode(index, "join_" + std::to_string(index)),
 		left_cte_name(std::move(_left_cte_name)),
 		right_cte_name(std::move(_right_cte_name)),
-		join_type(std::move(_join_type)),
+		join_type(_join_type),
 		join_conditions(std::move(_join_conditions)) {}
 	// Functions.
 	std::string ToQuery() override;
