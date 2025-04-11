@@ -139,49 +139,21 @@ CteNode LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, co
 	}
 };
 
-
-CteNode LogicalPlanToSql::RecursiveTraversal(unique_ptr<LogicalOperator> &subplan, const bool is_root) {
-
+CteNode LogicalPlanToSql::RecursiveTraversal(unique_ptr<LogicalOperator> &sub_plan) {
 	// First run the recursive calls.
 	vector<size_t> children_indices;
-	for (auto& child: subplan-> children) {
+	for (auto& child: sub_plan-> children) {
 		// Get the child as node.
-		CteNode child_as_node = RecursiveTraversal(child, false);
+		CteNode child_as_node = RecursiveTraversal(child);
 		// Store the index, so that it can be used later.
 		// `idx` should always match the index inside the vector after insertion.
 		// Especially handy if there are multiple children.
 		children_indices.push_back(child_as_node.idx);
-		// A child node can never be a root node, so static cast it to a CteNode before inserting.
-		//CteNode& child_as_cte = static_cast<CteNode&>(child_as_node);
 		cte_nodes.push_back(std::move(child_as_node));
 	}
-	// Handle stuff separately for the final node.
-	if (is_root) {
-		// Create the final node (depending on type)...
-		switch (subplan->type) {
-			case LogicalOperatorType::LOGICAL_INSERT: {
-			    // Handle this separately.
-			    // FIXME: should be implemented!
-			    throw std::runtime_error("Not yet implemented.");
-			}
-			case LogicalOperatorType::LOGICAL_DELETE: {
-			    throw std::runtime_error("Not yet implemented.");
-			}
-			case LogicalOperatorType::LOGICAL_UPDATE: {
-			    throw std::runtime_error("Not yet implemented.");
-			}
-			default: {
-			    // Handle it the same way as a CTE.
-			    CteNode to_return = CreateCteNode(subplan, children_indices);
-			    return to_return;
-			}
-		}
-		throw std::runtime_error("This code should not be reached");
-	}
-	CteNode to_return = CreateCteNode(subplan, children_indices);
+	CteNode to_return = CreateCteNode(sub_plan, children_indices);
 	return to_return;
 }
-
 
 void LogicalPlanToSql::LogicalPlanToIR() {
 	// Ensure that this function is not called more than once, to avoid a weird state.
@@ -189,8 +161,35 @@ void LogicalPlanToSql::LogicalPlanToIR() {
 		throw std::runtime_error("This function can only be called once.");
 	}
 	// Call the recursive traversal to go through the entire plan.
-	IRNode final_node = RecursiveTraversal(plan, true);
-	cte_vec = CteVec{cte_nodes, final_node};
+	// Handle the final node here, so that the other nodes can all use CTEs.
+	// Same structure as in RecursiveTraversal.
+	vector<size_t> children_indices;
+	for (auto& child: plan-> children) {
+		CteNode child_as_node = RecursiveTraversal(child);
+		children_indices.push_back(child_as_node.idx);
+		cte_nodes.push_back(std::move(child_as_node));
+	}
+	// For the final node, a special case distinction is used.
+	// This is because it can have everything a CTE can have, plus INSERT/DELETE/UPDATE.
+	// Create the final node (depending on type)...
+	switch (plan->type) {
+		case LogicalOperatorType::LOGICAL_INSERT: {
+			// FIXME: should be implemented!
+			throw std::runtime_error("Not yet implemented.");
+		}
+		case LogicalOperatorType::LOGICAL_DELETE: {
+			throw std::runtime_error("Not yet implemented.");
+		}
+		case LogicalOperatorType::LOGICAL_UPDATE: {
+			throw std::runtime_error("Not yet implemented.");
+		}
+		default: {
+			// Handle it the same way as a CTE.
+			CteNode final_node = CreateCteNode(plan, children_indices);
+		    cte_vec = IRStruct{cte_nodes, final_node};
+		}
+	}
+	// TODO: delete (only here for debugging purposes.
 	int i = 0;
 }
 

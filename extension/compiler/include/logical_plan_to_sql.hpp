@@ -9,6 +9,7 @@
 
 namespace duckdb {
 
+// TODO: Make the class abstract.
 struct IRNode {
     virtual ~IRNode() = default;
 	size_t idx;  // Number of the node used for giving it a name.
@@ -65,7 +66,8 @@ struct UnionNode: public CteNode {
 	bool is_union_all; // Whether to use "UNION ALL" or just "UNION".
 };
 
-struct CteVec {
+/// Intermediate representation (as a vector of CTEs along with a final node).
+struct IRStruct {
 	vector<CteNode> nodes;
 	IRNode finial_node;
 };
@@ -79,19 +81,20 @@ private:
 
 	/// Used to enumerate the CTEs.
 	size_t node_count = 0;
-	// Used to eventually create the CteVec object needed for the IR.
+	// Used to eventually create the IRStruct object needed for the IR.
 	vector<CteNode> cte_nodes;
-	CteVec cte_vec;
+	IRStruct cte_vec;
 
 	/// Create a CTE from a LogicalOperator.
 	CteNode CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices);
-	/// Traverse the logical plan recursively
-	CteNode RecursiveTraversal(unique_ptr<LogicalOperator> &subplan, const bool is_root);
+	/// Traverse the logical plan recursively, except for the root.
+	CteNode RecursiveTraversal(unique_ptr<LogicalOperator> &sub_plan);
 
 public:
 	LogicalPlanToSql(ClientContext &_context, unique_ptr<LogicalOperator> &_plan)
 	  : context(_context), plan(_plan) {}
 
+	/// Convert the logical plan to an immediate representation (IRStruct).
 	void LogicalPlanToIR();
 	void IRToAst();
 	void AstToSql();
