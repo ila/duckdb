@@ -20,6 +20,8 @@
 #include "duckdb/planner/planner.hpp"
 #include "logical_plan_to_string.hpp"
 
+#include <logical_plan_to_sql.hpp>
+
 namespace duckdb {
 
 string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &parameters) {
@@ -141,7 +143,13 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 
 	con.Rollback();
 
-	ivm_query += LogicalPlanToString(context, plan); // we turn the plan into a string
+	auto lp_to_sql = LogicalPlanToSql(context, plan);
+	auto ir = lp_to_sql.LogicalPlanToIR();
+	ivm_query += ir->ToQuery(true);
+#ifdef DEBUG
+	std::cout << ivm_query << std::endl;
+#endif
+	// ivm_query += LogicalPlanToString(context, plan); // we turn the plan into a string
 
 	// we delete everything from the delta view (we don't need the data anymore, it will be inserted in the view)
 	string delete_from_view_query = "delete from delta_" + view_name + ";";

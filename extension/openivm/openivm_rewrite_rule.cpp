@@ -343,6 +343,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				                                              std::move(dl_r_projection_bindings));
 			}
 			dl_r_projected->children.emplace_back(std::move(dl_r));
+			dl_r_projected->ResolveOperatorTypes();
+			dl_r_projected->Verify(context);
 #ifdef DEBUG
 			auto projection_debug_bindings = dl_r_projected->GetColumnBindings();
 			printf("dL-R projection CB count: %zu\n", projection_debug_bindings.size());
@@ -373,10 +375,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				const vector<LogicalType> join_types = l_dr->types;
 				vector<unique_ptr<Expression>> l_dr_projection_bindings =
 				    bindings_to_expressions(join_bindings, join_types);
-				l_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
-				                                              std::move(l_dr_projection_bindings));
+				l_dr_projected = make_uniq<LogicalProjection>(
+					pw.input.optimizer.binder.GenerateTableIndex(), std::move(l_dr_projection_bindings)
+                );
 			}
 			l_dr_projected->children.emplace_back(std::move(l_dr));
+			l_dr_projected->ResolveOperatorTypes();
+			l_dr_projected->Verify(context);
 #ifdef DEBUG
 			auto projection_debug_bindings = l_dr_projected->GetColumnBindings();
 			printf("L-dR projection CB count: %zu\n", projection_debug_bindings.size());
@@ -427,10 +432,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				const ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
 				auto dl_dr_projection_bindings =
 				    project_out_duplicate_mul_column(join_bindings, join_types, dl_mul_binding);
-				dl_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
-				                                               std::move(dl_dr_projection_bindings));
+				dl_dr_projected = make_uniq<LogicalProjection>(
+					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_dr_projection_bindings)
+                );
 			}
 			dl_dr_projected->children.emplace_back(std::move(dl_dr));
+			dl_dr_projected->ResolveOperatorTypes();
+			dl_dr_projected->Verify(context);
 #ifdef DEBUG
 			auto projection_debug_bindings = dl_dr_projected->GetColumnBindings();
 			printf("dL-dR projection CB count: %zu\n", projection_debug_bindings.size());
