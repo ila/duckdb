@@ -27,12 +27,12 @@ namespace {
 using duckdb::vector;
 
 /// Convert a vector of strings into a comma-separated list (i.e. "a, b, c, d., ...").
-std::string comma_separated_list(vector<std::string> input_list) {
+std::string vec_to_separated_list(vector<std::string> input_list, const std::string_view separator = ", ") {
 	std::ostringstream ret_str;
 	for (size_t i = 0; i < input_list.size(); ++i) {
 		ret_str << input_list[i];
 		if (i != input_list.size() - 1) {
-			ret_str << ", ";
+			ret_str << separator;
 		}
 	}
 	return ret_str.str();
@@ -42,6 +42,28 @@ std::string comma_separated_list(vector<std::string> input_list) {
 
 namespace duckdb {
 
+std::string InsertNode::ToQuery() {
+	// Currently does not support the type with "INSERT ... VALUES.
+	std::stringstream insert_str;
+	insert_str << "insert ";
+	switch (action_type) {
+	case OnConflictAction::THROW:
+		break; // Nothing needs to be added
+	case OnConflictAction::REPLACE:  // Should not even occur.
+	case OnConflictAction::UPDATE:
+		insert_str << "or replace "; break;
+	case OnConflictAction::NOTHING:
+		insert_str << "or ignore "; break;
+	default:
+		throw NotImplementedException("OnConflictAction::%s is not (yet) supported", EnumUtil::ToString(action_type));
+	}
+	insert_str << " into ";
+	insert_str << target_table;
+	insert_str << "(select * from ";
+	insert_str << child_cte_name;
+	insert_str << ")";
+	return insert_str.str();
+}
 std::string CteNode::ToCteQuery() {
 	return cte_name + " as (" + this->ToQuery() + ")";
 }
@@ -51,7 +73,7 @@ std::string GetNode::ToQuery() {
 	if (column_names.empty()) {
 		get_str << "*";
 	} else {
-		get_str << comma_separated_list(column_names);
+		get_str << vec_to_separated_list(column_names);
 	}
 	get_str << " from ";
 	get_str << table_name;
@@ -59,7 +81,7 @@ std::string GetNode::ToQuery() {
 		// Add nothing.
 	} else {
 		get_str << " where ";
-		get_str << comma_separated_list(table_filters);
+		get_str << vec_to_separated_list(table_filters);
 	}
 	// Note: no semicolon at the end; this is handled by the IR function.
 	return get_str.str();
@@ -72,7 +94,7 @@ std::string FilterNode::ToQuery() {
 		// Add nothing.
 	} else {
 		get_str << " where ";
-		get_str << comma_separated_list(conditions);
+		get_str << vec_to_separated_list(conditions);
 	}
 	return get_str.str();
 }
@@ -82,7 +104,7 @@ std::string ProjectNode::ToQuery() {
 	if (column_names.empty()) {
 		project_str << "*";
 	} else {
-		project_str << comma_separated_list(column_names);
+		project_str << vec_to_separated_list(column_names);
 	}
 	project_str << " from ";
 	project_str << child_cte_name;
@@ -95,17 +117,17 @@ std::string AggregateNode::ToQuery() {
 	if (group_names.empty()) {
 		// Do nothing.
 	} else {
-		aggregate_str << comma_separated_list(group_names);
+		aggregate_str << vec_to_separated_list(group_names);
 		aggregate_str << ", "; // Needed for the aggregate names.
 	}
-	aggregate_str << comma_separated_list(aggregate_names);
+	aggregate_str << vec_to_separated_list(aggregate_names);
 	aggregate_str << " from ";
 	aggregate_str << child_cte_name;
 	if (group_names.empty()) {
 		// Do nothing.
 	} else {
 		aggregate_str << " group by ";
-		aggregate_str << comma_separated_list(group_names);
+		aggregate_str << vec_to_separated_list(group_names);
 	}
 	return aggregate_str.str();
 }
@@ -131,12 +153,9 @@ std::string JoinNode::ToQuery() {
 	join_str << " join ";
 	join_str << right_cte_name;
 	join_str << " on ";
-	// FIXME: implement!!!
-	//  Logic here is a bit messy, because the join conditions need to be converted
-	//  into something that uses the CTEs.
-	//  Basically, something like: {left_cte}.{left_condition_column} = {right_cte}.{right_condition_column}.
-	//  This requires a bit more effort to get right.
-	join_str << "{todo: implement}";
+	// Combine the join conditions using AND.
+	// In theory, OR should also be possible, but this is rare enough to not require support for now.
+	join_str << vec_to_separated_list(join_conditions, " AND ");
 	return join_str.str();
 }
 std::string UnionNode::ToQuery() {
@@ -224,6 +243,9 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		case LogicalOperatorType::LOGICAL_PROJECTION: {
 			unique_ptr<LogicalProjection> plan_as_projection = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
 			vector<string> column_names;
+			// FIXME: col->GetName() does not get column name if more than one table index exists.
+			//  Instead, it prints the column bindings. Example:
+			// `projection_3 as (select #[7.0], #[7.1], #[7.3], #[0.0], #[0.1], #[7.2] from join_2),`
 		    for (auto &col : plan_as_projection->expressions) {
 				column_names.emplace_back(col->GetName());
 			}
@@ -244,7 +266,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		        aggregate_names.emplace_back(exp->GetName());
 		    }
 		    return make_uniq<AggregateNode>(
-		    	my_index, cte_nodes[children_indices[0]]->cte_name, std::move(aggregate_names), std::move(group_names)
+		    	my_index, cte_nodes[children_indices[0]]->cte_name, std::move(group_names), std::move(aggregate_names)
 			);
 		}
 		case LogicalOperatorType::LOGICAL_UNION: {
@@ -260,16 +282,28 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
 		    unique_ptr<LogicalComparisonJoin> plan_as_join = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
 		    vector<string> join_conditions;
+            /*  The join conditions need to be converted into something that uses the CTEs.
+             *  In other words, the strings for `left` and `right` should contain the CTE names for either side.
+             *  Basically, something like: {left_cte}.{left_condition_column} = {right_cte}.{right_condition_column}.
+             *  This is to avoid conflicts in case both tables have a column with the same name.
+             *
+             *  IMPORTANT ASSUMPTION: the lhs of a join condition *always* corresponds to the left child,
+             *   and the rhs of a join condition *always* corresponds to the right child.
+             *  If this assumption turns out to not hold, this logic has to be revised (e.g. with table index checks).
+             */
+			std::string left_cte_name = cte_nodes[children_indices[0]]->cte_name;
+			std::string right_cte_name = cte_nodes[children_indices[1]]->cte_name;
 		    for (auto &cond : plan_as_join->conditions) {
-			    auto left = cond.left->GetName();
-			    auto right = cond.right->GetName();
+			    std::string condition_lhs = left_cte_name + "." + cond.left->GetName();
+			    std::string condition_rhs = right_cte_name + "." + cond.right->GetName();
 			    auto comparison = ExpressionTypeToOperator(cond.comparison);
-			    join_conditions.emplace_back(left + " " + comparison + " " + right);
+		    	// Put brackets around the join conditions to avoid incorrect queries if there are multiple conditions.
+			    join_conditions.emplace_back("(" + condition_lhs + " " + comparison + " " + condition_rhs + ")");
 			}
 			return make_uniq<JoinNode>(
 				my_index,
-				cte_nodes[children_indices[0]]->cte_name,
-				cte_nodes[children_indices[1]]->cte_name,
+				std::move(left_cte_name),
+				std::move(right_cte_name),
 				plan_as_join->join_type,
 				std::move(join_conditions)
 			);
@@ -316,8 +350,21 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 	unique_ptr<IRStruct> to_return;
 	switch (plan->type) {
 		case LogicalOperatorType::LOGICAL_INSERT: {
-			// FIXME: should be implemented!
-			throw std::runtime_error("Not yet implemented.");
+			// FIXME: Modify the unique_ptr_cast also as follows (to avoid ownership issues).
+			// Use a reinterpreted ref to the pointer (rather than a unique_ptr_cast) to keep `plan' ownership intact.
+			//  This is possible because this code does not modify the plan.
+			LogicalInsert& insert_ref = reinterpret_cast<LogicalInsert&>(*plan);
+			// auto plan_to_insert_node = unique_ptr_cast<LogicalOperator, LogicalInsert>(std::move(plan));
+			unique_ptr<InsertNode> insert_node = make_uniq<InsertNode>(
+				node_count++,
+				insert_ref.table.name,
+				cte_nodes[children_indices[0]]->cte_name,
+				insert_ref.action_type
+			);
+			to_return = make_uniq<IRStruct>(std::move(cte_nodes), std::move(insert_node));
+			// Finally, cast back the plan to a LogicalOperator to avoid issues when using the plan later on.
+			// plan = unique_ptr_cast<LogicalOperator, LogicalInsert>(std::move(plan_to_insert_node));
+			break;
 		}
 		case LogicalOperatorType::LOGICAL_DELETE: {
 			throw std::runtime_error("Not yet implemented.");

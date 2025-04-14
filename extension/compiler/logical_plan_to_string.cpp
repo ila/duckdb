@@ -344,14 +344,6 @@ void LogicalPlanToString(ClientContext &context, unique_ptr<LogicalOperator> &pl
 		ast_plan->Insert(move(ql_ins_exp), ast_plan, node_id, DuckASTOperatorType::INSERT);
 		return LogicalPlanToString(context, plan->children[0], ast_plan->children[0], column_names, column_aliases);
 	}
-	// TODO: Finish.
-	/*
-	case LogicalOperatorType::LOGICAL_UNION {
-		// Necessary for join support in IVM.
-		// Implement using common table expressions that are used at the beginning of a query.
-
-	}
-    */
 	default: {
 		throw NotImplementedException("We do not support this operator type yet: " + plan->GetName());
 	}

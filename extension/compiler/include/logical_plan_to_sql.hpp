@@ -9,6 +9,7 @@
 
 namespace duckdb {
 
+/// Base node for the intermediate representation (IR) of a SQL query. Virtual class.
 class IRNode {
 public:
     virtual ~IRNode() = default;
@@ -19,18 +20,35 @@ public:
 	const size_t idx;  // Number of the node used for giving it a name.
 };
 
+/// Node for insertion queries. Cannot be a CTE.
+// TODO: Create constructor, and implement support in LPTsql.
 class InsertNode: public IRNode {
+	// Attributes.
+	std::string target_table;
+	std::string child_cte_name;  // If "insert into t_name values (...)", not defined.
+	OnConflictAction action_type;
 public:
 	~InsertNode() override = default;
-	std::string query;
+	// Constructor.
+	InsertNode(
+		const size_t index, std::string _target_table, std::string _child_cte_name, const OnConflictAction conflict_action_type
+	) :
+		IRNode(index),
+		target_table(std::move(_target_table)),
+		child_cte_name(std::move(_child_cte_name)),
+		action_type(conflict_action_type) {}
+	// Functions.
+	std::string ToQuery() override;
 };
 
+/// Node for update queries. Cannot be a CTE.
 // Not (yet) needed for IVM.
 class UpdateNode: public IRNode {
 public:
 	~UpdateNode() override = default;
 };
 
+/// Node for deletion queries. Cannot be a CTE.
 // Not (yet) needed for IVM.
 class DeleteNode: public IRNode {
 public:
