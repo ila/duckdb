@@ -57,9 +57,9 @@ std::string InsertNode::ToQuery() {
 	default:
 		throw NotImplementedException("OnConflictAction::%s is not (yet) supported", EnumUtil::ToString(action_type));
 	}
-	insert_str << " into ";
+	insert_str << "into ";
 	insert_str << target_table;
-	insert_str << "(select * from ";
+	insert_str << " (select * from ";
 	insert_str << child_cte_name;
 	insert_str << ")";
 	return insert_str.str();
