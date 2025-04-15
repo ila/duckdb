@@ -65,7 +65,8 @@ std::string InsertNode::ToQuery() {
 	return insert_str.str();
 }
 std::string CteNode::ToCteQuery() {
-	return cte_name + " as (" + this->ToQuery() + ")";
+	// Format: "cte_name (col_a, col_b, col_c...) as (select ...)";
+	return cte_name + " (" + vec_to_separated_list(cte_column_list)  + ") as (" + this->ToQuery() + ")";
 }
 std::string GetNode::ToQuery() {
 	std::ostringstream get_str;
@@ -186,7 +187,8 @@ std::string IRStruct::ToQuery(const bool use_newlines) {
 				// Add extra space for main query (if newlines disabled).
 				sql_str << " ";
 			}
-			if (use_newlines) sql_str << "\n";
+			if (use_newlines)
+				sql_str << "\n";
 		}
 	}
 	// Then add the final query.
@@ -195,42 +197,65 @@ std::string IRStruct::ToQuery(const bool use_newlines) {
 	sql_str << ";";
 	return sql_str.str();
 }
+std::string LogicalPlanToSql::ColStruct::ToUniqueColumnName() const {
+	return "t" + std::to_string(table_index) + "_" + (alias.empty() ? column_name : alias);
+}
 
 unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices) {
 	const size_t my_index = node_count++;
 
 	switch (subplan->type) {
 		case LogicalOperatorType::LOGICAL_GET: {
+			// Preliminary data.
+		    //unique_ptr<LogicalGet> plan_as_get = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(subplan));
+			LogicalGet& plan_as_get = static_cast<LogicalGet&>(*subplan);
+			auto catalog_entry = plan_as_get.GetTable();
+			size_t table_index = plan_as_get.table_index;
 		    // We need: catalog, schema, table name.
-		    unique_ptr<LogicalGet> plan_as_get = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(subplan));
-		    string table_name = plan_as_get->GetTable().get()->name;
+		    string table_name = catalog_entry.get()->name;
 		    string catalog_name = ""; // todo
-		    string schema_name = plan_as_get->GetTable()->schema.name;
+		    string schema_name = catalog_entry->schema.name;
 		    vector<string> column_names;
 		    vector<string> filters;
-		    for (auto &c : plan_as_get->names) {
-		        column_names.push_back(c);
+
+			vector<std::string> cte_column_names;
+			// FIXME: col_ids (GetPrimaryIndex()) go 1, 2, 2, 3. So maybe debug to see what's wrong there.
+			// auto col_ids = plan_as_get.GetColumnIds();
+			const vector<ColumnBinding> col_binds = subplan->GetColumnBindings();
+			for (size_t i = 0; i < col_binds.size(); ++i) {
+				// Get using `i`.
+				std::string column_name = plan_as_get.names[i];
+				const ColumnBinding& cb = col_binds[i];
+				// Populate stuff.
+				column_names.push_back(column_name);
+				/* Some logic for the ColStruct. Alias is empty here (=""). */
+				auto col_struct = make_uniq<ColStruct>(table_index, column_name, "");
+				cte_column_names.push_back(col_struct->ToUniqueColumnName());
+		    	column_map[cb] = std::move(col_struct);
+				/* End of ColStruct logic */
 		    }
 		    // todo - test this logic
-			if (!plan_as_get->table_filters.filters.empty()) {
-				for (auto &filter : plan_as_get->table_filters.filters) {
-					filters.push_back(filter.second->ToString(plan_as_get->names[filter.first]));
+			if (!plan_as_get.table_filters.filters.empty()) {
+				for (auto &filter : plan_as_get.table_filters.filters) {
+					filters.push_back(filter.second->ToString(plan_as_get.names[filter.first]));
 				}
 			}
 		    return make_uniq<GetNode>(
 		    	my_index,
+		    	std::move(cte_column_names),
 		    	std::move(catalog_name),
 		    	std::move(schema_name),
 		    	std::move(table_name),
-		    	plan_as_get->table_index,
+		    	table_index,
 		    	std::move(filters),
 		    	std::move(column_names)
 		    );
 		}
 		case LogicalOperatorType::LOGICAL_FILTER: {
-		    unique_ptr<LogicalFilter> filter_node = unique_ptr_cast<LogicalOperator, LogicalFilter>(std::move(subplan));
+			// FIXME: Implement Filter for cte renaming scheme!
+			const LogicalFilter& plan_as_filter = static_cast<LogicalFilter&>(*subplan);
 		    vector<string> conditions;
-			auto params = filter_node->ParamsToString();
+			auto params = plan_as_filter.ParamsToString();
 		    // Note: this is always one string regardless of how many expressions are in the filter.
 		    // Will it break cross-system compatibility?
 			for (auto &c : params) {
@@ -238,54 +263,149 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 				    conditions.emplace_back(c.second.c_str());
 			    }
 			}
-		    return make_uniq<FilterNode>(my_index, cte_nodes[children_indices[0]]->cte_name, std::move(conditions));
+		    return make_uniq<FilterNode>(
+		    	my_index, vector<string>() /* fixme: fill*/, cte_nodes[children_indices[0]]->cte_name, std::move(conditions)
+            );
 		}
 		case LogicalOperatorType::LOGICAL_PROJECTION: {
-			unique_ptr<LogicalProjection> plan_as_projection = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
+			//unique_ptr<LogicalProjection> plan_as_projection = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
+			const LogicalProjection& plan_as_projection = static_cast<LogicalProjection&>(*subplan);
+			const size_t table_index = plan_as_projection.table_index;
+			/* Logical Projection defines its ColumnBindings using (table_index, expressions.size().
+			 * Thus, by looping over expressions.size(), we implicitly have the new column bindings!
+			 */
 			vector<string> column_names;
-			// FIXME: col->GetName() does not get column name if more than one table index exists.
-			//  Instead, it prints the column bindings. Example:
-			// `projection_3 as (select #[7.0], #[7.1], #[7.3], #[0.0], #[0.1], #[7.2] from join_2),`
-		    for (auto &col : plan_as_projection->expressions) {
-				column_names.emplace_back(col->GetName());
+			vector<string> cte_column_names;
+			for (size_t i = 0; i < plan_as_projection.expressions.size(); ++i) {
+				// Stuff.
+				const unique_ptr<Expression>& expression = plan_as_projection.expressions[i];
+				const ColumnBinding new_cb = ColumnBinding(table_index, i); // `i`: see note above.
+				if (expression->type == ExpressionType::BOUND_COLUMN_REF) {
+		    		// Cast to BCR expression, to then get column binding.
+		    		BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*expression);
+		    		// Using the CB, get the ColStruct, to then get the column name.
+		    		unique_ptr<ColStruct>& descendant_col_struct = column_map.at(bcr.binding);
+					column_names.push_back(descendant_col_struct->ToUniqueColumnName());
+					// Create a new ColStruct for this column.
+					auto new_col_struct = make_uniq<ColStruct>(
+						table_index, descendant_col_struct->column_name, descendant_col_struct->alias
+                    );
+					cte_column_names.push_back(new_col_struct->ToUniqueColumnName());
+					column_map[new_cb] = std::move(new_col_struct);
+				} else {
+					std::string expr_str = expression->GetName();
+                    column_names.emplace_back(expr_str);
+					// Create a bespoke name for this expression.
+					// TODO: A custom alias is introduced here. May not be fully desirable if it reaches output.
+					//  Instead of using custom alias, check if this code suffices.
+					std::string scalar_alias;
+					if (expression->HasAlias()) {
+						scalar_alias = expression->GetAlias();
+					} else {
+                        scalar_alias = "scalar_" + std::to_string(i);
+					}
+					column_map[new_cb] = make_uniq<ColStruct>(table_index, expr_str, scalar_alias);
+				}
 			}
 			return make_uniq<ProjectNode>(
-				my_index, cte_nodes[children_indices[0]]->cte_name, std::move(column_names), plan_as_projection->table_index
-
+				my_index, std::move(cte_column_names), cte_nodes[children_indices[0]]->cte_name, std::move(column_names), table_index
 			);
 		}
 		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
-		    unique_ptr<LogicalAggregate> plan_as_aggregate = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(subplan));
+			// Note: aggregate has several table indices!
+			const LogicalAggregate& plan_as_aggregate = static_cast<LogicalAggregate&>(*subplan);
+		    // unique_ptr<LogicalAggregate> plan_as_aggregate = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(subplan));
+			vector<std::string> cte_column_names;
+		    vector<std::string> group_names;
+			/* For LogicalAggregate, the function GetColumnBindings cannot be used in our use case,
+			/*  since the function combines the `groups`, `aggregate`, and `groupings` together.
+			 *  Therefore, we need to make our own enumeration starting from index 0.
+			 * If the enumeration scheme of logical aggregates changes, this code should be reviewed closely.
+			 * One scope for each of group/aggregate, to avoid mixing up variables.
+			 */
+			{
+				idx_t group_table_index = plan_as_aggregate.group_index;
+				const auto& agg_groups = plan_as_aggregate.groups;
+				for (size_t i = 0; i < agg_groups.size(); ++i) {
+					const unique_ptr<Expression> &col_as_expression = agg_groups[i];
+					// Groups should be columns. TODO: Verify that this may only be a BoundColumnRefExpression.
+					if (col_as_expression->type == ExpressionType::BOUND_COLUMN_REF) {
+						BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*col_as_expression);
+						unique_ptr<ColStruct>& descendant_col_struct = column_map.at(bcr.binding);
+						// Create new ColStruct *and* provide aggregate names.
+						group_names.push_back(descendant_col_struct->ToUniqueColumnName());
+						auto new_col_struct = make_uniq<ColStruct>(
+							group_table_index, descendant_col_struct->column_name, descendant_col_struct->alias
+						);
+						cte_column_names.push_back(new_col_struct->ToUniqueColumnName());
+						// TODO: Figure out what the new column binding is.
+						column_map[ColumnBinding(group_table_index, i)] = std::move(new_col_struct);
+					} else {
+						throw std::runtime_error("Size mismatch between column bindings!");
+					}
+					group_names.emplace_back();
+					group_names.emplace_back(col_as_expression->GetName());
+				}
+			}
 		    vector<string> aggregate_names;
-		    vector<string> group_names;
-		    // Note: this logic will break with aliases.
-		    for (auto &col : plan_as_aggregate->groups) {
-		        group_names.emplace_back(col->GetName());
-		    }
-		    for (auto &exp : plan_as_aggregate->expressions) {
-		        aggregate_names.emplace_back(exp->GetName());
-		    }
+			{
+				idx_t aggregate_table_idx = plan_as_aggregate.aggregate_index;
+				const auto& agg_groups = plan_as_aggregate.groups;
+				// TODO: Finish.
+				for (size_t i = 0; i < agg_groups.size(); ++i) {
+					const unique_ptr<Expression> &agg_expression = agg_groups[i];
+                    aggregate_names.emplace_back(agg_expression->GetName());
+				}
+			}
 		    return make_uniq<AggregateNode>(
-		    	my_index, cte_nodes[children_indices[0]]->cte_name, std::move(group_names), std::move(aggregate_names)
+		    	my_index,
+		    	cte_column_names,
+		    	cte_nodes[children_indices[0]]->cte_name,
+		    	std::move(group_names),
+		    	std::move(aggregate_names)
 			);
 		}
 		case LogicalOperatorType::LOGICAL_UNION: {
-		    unique_ptr<LogicalSetOperation> plan_as_union = unique_ptr_cast<LogicalOperator, LogicalSetOperation>(std::move(subplan));
+		    // unique_ptr<LogicalSetOperation> plan_as_union = unique_ptr_cast<LogicalOperator, LogicalSetOperation>(std::move(subplan));
+			LogicalSetOperation& plan_as_union = static_cast<LogicalSetOperation&>(*subplan);
+			const size_t table_index = plan_as_union.table_index;
+			// Get the column bindings of the left child. For that, we need to re-access the left child.
+			// Then, we can use those to create the new ColStructs for the union (as well as the cte column names).
+			vector<string> cte_column_names;
+			const auto& lhs_bindings = subplan->children[0]->GetColumnBindings();
+			const auto& union_bindings = subplan->GetColumnBindings();
+			if (lhs_bindings.size() != union_bindings.size()) {
+                throw std::runtime_error("Size mismatch between column bindings!");
+			}
+			for (size_t i = 0; i < lhs_bindings.size(); ++i) {
+				// Get the ColStruct of the child.
+				const unique_ptr<ColStruct>& lhs_col_struct = column_map.at(lhs_bindings[i]);
+				// Convert the ColStruct into a new ColStruct
+				unique_ptr<ColStruct> new_col_struct = make_uniq<ColStruct>(table_index, lhs_col_struct->column_name, lhs_col_struct->alias);
+				cte_column_names.push_back(new_col_struct->ToUniqueColumnName());
+                column_map[union_bindings[i]] = std::move(new_col_struct);
+			}
 			return make_uniq<UnionNode>(
 				my_index,
+				std::move(cte_column_names),
 				cte_nodes[children_indices[0]]->cte_name,
 				cte_nodes[children_indices[1]]->cte_name,
-				plan_as_union->setop_all
+				plan_as_union.setop_all
 			);
 		}
 		// case LogicalOperatorType::LOGICAL_JOIN:
 		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
-		    unique_ptr<LogicalComparisonJoin> plan_as_join = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
+		    // unique_ptr<LogicalComparisonJoin> plan_as_join = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
+			LogicalComparisonJoin& plan_as_join = static_cast<LogicalComparisonJoin&>(*subplan);
 		    vector<string> join_conditions;
             /*  The join conditions need to be converted into something that uses the CTEs.
-             *  In other words, the strings for `left` and `right` should contain the CTE names for either side.
-             *  Basically, something like: {left_cte}.{left_condition_column} = {right_cte}.{right_condition_column}.
-             *  This is to avoid conflicts in case both tables have a column with the same name.
+             *  For this, the join conditions are cast to BCR, to then obtain a column binding.
+             *  With that column binding, the "unique" column name can be retrieved.
+             *
+             *	This logic may be a bit complicated, but is necessary to avoid issues if both sides of the join
+             *	 use the same column names.
+             *	Doing it this way also avoids issue with the assumption below.
+             *  This assumption may still be relevant of a join condition does not use the type BOUND_COLUMN_REF.
              *
              *  IMPORTANT ASSUMPTION: the lhs of a join condition *always* corresponds to the left child,
              *   and the rhs of a join condition *always* corresponds to the right child.
@@ -293,18 +413,42 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
              */
 			std::string left_cte_name = cte_nodes[children_indices[0]]->cte_name;
 			std::string right_cte_name = cte_nodes[children_indices[1]]->cte_name;
-		    for (auto &cond : plan_as_join->conditions) {
-			    std::string condition_lhs = left_cte_name + "." + cond.left->GetName();
-			    std::string condition_rhs = right_cte_name + "." + cond.right->GetName();
+		    for (auto &cond : plan_as_join.conditions) {
+		    	std::string condition_lhs, condition_rhs;
+		    	if (cond.left->type == ExpressionType::BOUND_COLUMN_REF) {
+		    		// Cast to BCR expression, to then get column binding.
+		    		const BoundColumnRefExpression& l_ref = static_cast<BoundColumnRefExpression &>(*cond.left);
+		    		// Using the CB, get the ColStruct, to then get the column name.
+		    		unique_ptr<ColStruct>& l_col_struct = column_map.at(l_ref.binding);
+		    		condition_lhs = l_col_struct->ToUniqueColumnName();
+		    	} else {
+                    throw NotImplementedException("Join conditions currently only support BCR expressions.");
+		    	}
+		    	if (cond.right->type == ExpressionType::BOUND_COLUMN_REF) {
+		    		// Cast to BCR expression, to then get column binding.
+					const BoundColumnRefExpression& r_ref = static_cast<BoundColumnRefExpression &>(*cond.right);
+		    		// Using the CB, get the ColStruct, to then get the table name.
+		    		unique_ptr<ColStruct>& r_col_struct = column_map.at(r_ref.binding);
+		    		condition_rhs = r_col_struct->ToUniqueColumnName();
+		    	} else {
+                    throw NotImplementedException("Join conditions currently only support BCR expressions.");
+		    	}
 			    auto comparison = ExpressionTypeToOperator(cond.comparison);
 		    	// Put brackets around the join conditions to avoid incorrect queries if there are multiple conditions.
 			    join_conditions.emplace_back("(" + condition_lhs + " " + comparison + " " + condition_rhs + ")");
 			}
+			// Finally, get the column_names.
+			vector<std::string> cte_column_names;
+			for (const auto& binding : plan_as_join.GetColumnBindings()) {
+                unique_ptr<ColStruct>& col_struct = column_map.at(binding);
+				cte_column_names.push_back(col_struct->ToUniqueColumnName());
+			}
 			return make_uniq<JoinNode>(
 				my_index,
+				std::move(cte_column_names),
 				std::move(left_cte_name),
 				std::move(right_cte_name),
-				plan_as_join->join_type,
+				plan_as_join.join_type,
 				std::move(join_conditions)
 			);
 		}
@@ -351,10 +495,10 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 	switch (plan->type) {
 		case LogicalOperatorType::LOGICAL_INSERT: {
 			// FIXME: Modify the unique_ptr_cast also as follows (to avoid ownership issues).
-			// Use a reinterpreted ref to the pointer (rather than a unique_ptr_cast) to keep `plan' ownership intact.
+			// Use a cast ref to the pointer (rather than a unique_ptr_cast) to keep `plan' ownership intact.
 			//  This is possible because this code does not modify the plan.
-			LogicalInsert& insert_ref = reinterpret_cast<LogicalInsert&>(*plan);
-			// auto plan_to_insert_node = unique_ptr_cast<LogicalOperator, LogicalInsert>(std::move(plan));
+			const LogicalInsert& insert_ref = static_cast<LogicalInsert&>(*plan);
+			//auto plan_to_insert_node = unique_ptr_cast<LogicalOperator, LogicalInsert>(std::move(plan));
 			unique_ptr<InsertNode> insert_node = make_uniq<InsertNode>(
 				node_count++,
 				insert_ref.table.name,

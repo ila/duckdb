@@ -62,12 +62,16 @@ public:
 	CteNode(const CteNode &) = delete;
 	CteNode& operator=(const CteNode &) = delete;
 	// Constructor.
-	explicit CteNode(const size_t index, std::string name) : IRNode(index), cte_name(std::move(name)) {}
+	explicit CteNode(const size_t index, std::string name, vector<std::string> col_list)
+	: IRNode(index), cte_name(std::move(name)), cte_column_list(std::move(col_list)) {}
 	// Requires ToQuery() to be implemented by derived classes.
 	/// Create a CTE-like string for the Node (excluding the WITH keyword).
 	std::string ToCteQuery();
 	// Attributes.
+	/// The name of the CTE (so what comes after WITH).
 	std::string cte_name;
+	/// The "external" names of the CTE columns (the name ancestors need to access columns).
+	vector<std::string> cte_column_list;
 };
 
 class GetNode: public CteNode {
@@ -83,6 +87,7 @@ public:
 	// Constructor. TODO: Should be explicit or not?
 	GetNode(
 		const size_t index,
+		vector<std::string> cte_column_names,
 		std::string _catalog,
 		std::string _schema,
 		std::string _table_name,
@@ -90,7 +95,7 @@ public:
 		vector<string> _table_filters,
 		vector<string> _column_names
     ) :
-		CteNode(index, "scan_" + std::to_string(index)),
+		CteNode(index, "scan_" + std::to_string(index), std::move(cte_column_names)),
 		catalog(std::move(_catalog)),
 		schema(std::move(_schema)),
 		table_name(std::move(_table_name)),
@@ -108,8 +113,13 @@ class FilterNode: public CteNode {
 public:
 	~FilterNode() override = default;
 	// Constructor.
-	FilterNode(const size_t index, std::string _child_cte_name, vector<std::string> _conditions) :
-		CteNode(index, "filter_" + std::to_string(index)),
+	FilterNode(
+		const size_t index,
+		vector<std::string> cte_column_names,
+		std::string _child_cte_name,
+		vector<std::string> _conditions
+	) :
+		CteNode(index, "filter_" + std::to_string(index), std::move(cte_column_names)),
 		child_cte_name(std::move(_child_cte_name)),
 		conditions(std::move(_conditions)) {}
 	// Functions.
@@ -124,8 +134,14 @@ class ProjectNode: public CteNode {
 public:
 	~ProjectNode() override = default;
 	// Constructor.
-	ProjectNode(const size_t index, std::string _child_cte_name, vector<std::string> _column_names, const size_t _table_index) :
-		CteNode(index, "projection_" + std::to_string(index)),
+	ProjectNode(
+		const size_t index,
+		vector<std::string> cte_column_names,
+		std::string _child_cte_name,
+		vector<std::string> _column_names,
+		const size_t _table_index
+	) :
+		CteNode(index, "projection_" + std::to_string(index), std::move(cte_column_names)),
 		child_cte_name(std::move(_child_cte_name)),
 		column_names(std::move(_column_names)),
 		table_index(_table_index) {}
@@ -142,9 +158,13 @@ public:
 	~AggregateNode() override = default;
 	// Constructor.
 	AggregateNode(
-		const size_t index, std::string _child_cte_name, vector<std::string> _group_names, vector<std::string> _aggregate_names
+		const size_t index,
+		vector<std::string> cte_column_names,
+		std::string _child_cte_name,
+		vector<std::string> _group_names,
+		vector<std::string> _aggregate_names
 	) :
-		CteNode(index, "aggregate_" + std::to_string(index)),
+		CteNode(index, "aggregate_" + std::to_string(index), std::move(cte_column_names)),
 		child_cte_name(std::move(_child_cte_name)),
 		group_names(std::move(_group_names)),
 		aggregate_names(std::move(_aggregate_names)) {}
@@ -162,11 +182,12 @@ public:
 	// Constructor.
 	JoinNode(
 		const size_t index,
+		vector<std::string> cte_column_names,
 		std::string _left_cte_name,
 		std::string _right_cte_name,
 		JoinType _join_type,
 		vector<std::string> _join_conditions) :
-		CteNode(index, "join_" + std::to_string(index)),
+		CteNode(index, "join_" + std::to_string(index), std::move(cte_column_names)),
 		left_cte_name(std::move(_left_cte_name)),
 		right_cte_name(std::move(_right_cte_name)),
 		join_type(_join_type),
@@ -183,8 +204,14 @@ class UnionNode: public CteNode {
 public:
 	~UnionNode() override = default;
 	// Constructor.
-	UnionNode(const size_t index, std::string _left_cte_name, std::string _right_cte_name, const bool union_all) :
-		CteNode(index, "union_" + std::to_string(index)),
+	UnionNode(
+		const size_t index,
+		vector<std::string> cte_column_names,
+		std::string _left_cte_name,
+		std::string _right_cte_name,
+		const bool union_all
+	) :
+		CteNode(index, "union_" + std::to_string(index), std::move(cte_column_names)),
 		left_cte_name(std::move(_left_cte_name)),
 		right_cte_name(std::move(_right_cte_name)),
 		is_union_all(union_all) {}
@@ -208,6 +235,28 @@ public:
 
 class LogicalPlanToSql {
 private:
+	/// Struct with a ColumnBinding that implements `<`, such that using it in a map becomes possible.
+	/// Needed for `column_map`.
+	struct MappableColumnBinding {
+		ColumnBinding cb;
+		MappableColumnBinding(const ColumnBinding _column_binding) : cb(std::move(_column_binding)) {}
+
+		bool operator<(const MappableColumnBinding& other) const {
+			return std::tie(cb.table_index, cb.column_index) < std::tie(other.cb.table_index, other.cb.column_index);
+		}
+	};
+	struct ColStruct {
+		const idx_t table_index;
+		std::string column_name;
+		std::string alias; // Optional. Empty string if not defined.
+		// Constructor.
+		ColStruct(const idx_t _table_index, std::string _column_name, std::string _alias) :
+			table_index(_table_index), column_name(std::move(_column_name)), alias(std::move(_alias)) {}
+		/// Generate a column name for this ColStruct. Uses `alias` if defined; `column_name` otherwise.
+		/// Example format: t7_amount
+		std::string ToUniqueColumnName() const;
+	};
+
 	// Input to the class, used to traverse the query plan.
 	ClientContext &context;
 	/// The tree that should be converted to an AST.
@@ -215,9 +264,11 @@ private:
 
 	/// Used to enumerate the CTEs.
 	size_t node_count = 0;
-	// Used to eventually create the IRStruct object needed for the IR.
-	// Becomes a nullptr once LogicalPlanToIR has finished.
+	/// Used to eventually create the IRStruct object needed for the IR.
+	/// Becomes a nullptr once LogicalPlanToIR has finished.
 	vector<unique_ptr<CteNode>> cte_nodes;
+	/// Used for consistent column naming across all nodes.
+	std::map<MappableColumnBinding, unique_ptr<ColStruct>> column_map;
 
 	/// Create a CTE from a LogicalOperator.
 	unique_ptr<CteNode> CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices);
