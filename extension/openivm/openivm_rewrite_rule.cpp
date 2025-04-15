@@ -587,9 +587,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			timestamp_binding = ColumnBinding(old_get->table_index, timestamp_idx.GetPrimaryIndex());
 
 			// Finally, create the delta GET node.
-			delta_get_node = make_uniq<LogicalGet>(old_get->table_index, // Will get renumbered later.
-			                                       scan_function, std::move(bind_data), std::move(return_types),
-			                                       std::move(return_names));
+			delta_get_node = make_uniq<LogicalGet>(
+				old_get->table_index, // Will get renumbered later.
+				scan_function,
+				std::move(bind_data),
+				std::move(return_types),
+				std::move(return_names)
+			);
 			delta_get_node->SetColumnIds(std::move(column_ids));
 		}
 		delta_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
@@ -614,8 +618,9 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// The size is "past the end" of the old get projection IDs, and thus the projection ID of the mul column.
 		if (!delta_get_node->projection_ids.empty()) {
 			delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
-			// The timestamp column is needed for LPTS purposes, but will be projected out further up the tree.
-			delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
+			/* 2025-04-15 comment out. Timestamp column should NOT be passed up the tree.
+			 * It is not used beyond the scan's filter. Commended out here for future reference. */
+			// delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		}
 		// how to make this code resilient?
 		delta_get_node->ResolveOperatorTypes();
