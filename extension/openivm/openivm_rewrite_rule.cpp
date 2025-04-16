@@ -634,38 +634,36 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	 * END OF CASE.
 	 */
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
-
-		auto modified_node_logical_agg = dynamic_cast<LogicalAggregate *>(pw.plan.get());
+		LogicalAggregate& modified_node_logical_agg = static_cast<LogicalAggregate&>(*pw.plan);
 #ifdef DEBUG
-		for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
+		for (size_t i = 0; i < modified_node_logical_agg.GetColumnBindings().size(); i++) {
 			printf("aggregate node CB before %zu %s\n", i,
-			       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
+			       modified_node_logical_agg.GetColumnBindings()[i].ToString().c_str());
 		}
-		printf("Aggregate index: %zu Group index: %zu\n", modified_node_logical_agg->aggregate_index,
-		       modified_node_logical_agg->group_index);
+		printf("Aggregate index: %zu Group index: %zu\n", modified_node_logical_agg.aggregate_index,
+		       modified_node_logical_agg.group_index);
 #endif
 
-		ColumnBinding mod_mul_binding = child_mul_bindings[0];
-		mod_mul_binding.column_index = modified_node_logical_agg->groups.size();
 		auto mult_group_by =
-		    make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", pw.mul_type, mod_mul_binding);
-		modified_node_logical_agg->groups.emplace_back(std::move(mult_group_by));
+		    make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", pw.mul_type, child_mul_bindings[0]);
+		modified_node_logical_agg.groups.emplace_back(std::move(mult_group_by));
 
 		auto mult_group_by_stats = make_uniq<BaseStatistics>(BaseStatistics::CreateUnknown(pw.mul_type));
-		modified_node_logical_agg->group_stats.emplace_back(std::move(mult_group_by_stats));
+		modified_node_logical_agg.group_stats.emplace_back(std::move(mult_group_by_stats));
 
-		if (modified_node_logical_agg->grouping_sets.empty()) {
-			modified_node_logical_agg->grouping_sets = {{0}};
+		if (modified_node_logical_agg.grouping_sets.empty()) {
+			modified_node_logical_agg.grouping_sets = {{0}};
 		} else {
-			idx_t gr = modified_node_logical_agg->grouping_sets[0].size();
-			modified_node_logical_agg->grouping_sets[0].insert(gr);
+			idx_t gr = modified_node_logical_agg.grouping_sets[0].size();
+			modified_node_logical_agg.grouping_sets[0].insert(gr);
 		}
 
-		mod_mul_binding.table_index = modified_node_logical_agg->group_index;
+
+
 #ifdef DEBUG
-		for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
+		for (size_t i = 0; i < modified_node_logical_agg.GetColumnBindings().size(); i++) {
 			printf("aggregate node CB after %zu %s\n", i,
-			       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
+			       modified_node_logical_agg.GetColumnBindings()[i].ToString().c_str());
 		}
 		printf("Modified plan (aggregate/group by):\n%s\nParameters:", pw.plan->ToString().c_str());
 		// Output ParameterToString.
@@ -675,7 +673,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("\n---end of modified plan (aggregate/group by)---\n");
 #endif
 		// Return plan, along with the modified multiplicity binding.
+		pw.plan->ResolveOperatorTypes();
 		pw.plan->Verify(pw.input.context);
+		// Use group index (because mul is in GROUP BY).
+		// Column index is `groups.size() - 1`, because it is at the end (and already inserted, so -1 for index).
+		ColumnBinding mod_mul_binding = ColumnBinding(
+			modified_node_logical_agg.group_index, modified_node_logical_agg.groups.size() - 1
+		);
 		return {std::move(pw.plan), mod_mul_binding};
 	}
 	/*

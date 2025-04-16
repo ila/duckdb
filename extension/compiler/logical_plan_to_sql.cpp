@@ -27,7 +27,7 @@ namespace {
 using duckdb::vector;
 
 /// Convert a vector of strings into a comma-separated list (i.e. "a, b, c, d., ...").
-std::string vec_to_separated_list(vector<std::string> input_list, const std::string_view separator = ", ") {
+std::string vec_to_separated_list(vector<std::string> input_list, const std::string& separator = ", ") {
 	std::ostringstream ret_str;
 	for (size_t i = 0; i < input_list.size(); ++i) {
 		ret_str << input_list[i];
@@ -59,9 +59,9 @@ std::string InsertNode::ToQuery() {
 	}
 	insert_str << "into ";
 	insert_str << target_table;
-	insert_str << " (select * from ";
+	// Note: no parentheses needed here!
+	insert_str << " select * from ";
 	insert_str << child_cte_name;
-	insert_str << ")";
 	return insert_str.str();
 }
 std::string CteNode::ToCteQuery() {
@@ -115,20 +115,20 @@ std::string ProjectNode::ToQuery() {
 std::string AggregateNode::ToQuery() {
 	std::ostringstream aggregate_str;
 	aggregate_str << "select ";
-	if (group_names.empty()) {
+	if (group_by_columns.empty()) {
 		// Do nothing.
 	} else {
-		aggregate_str << vec_to_separated_list(group_names);
+		aggregate_str << vec_to_separated_list(group_by_columns);
 		aggregate_str << ", "; // Needed for the aggregate names.
 	}
-	aggregate_str << vec_to_separated_list(aggregate_names);
+	aggregate_str << vec_to_separated_list(aggregate_expressions);
 	aggregate_str << " from ";
 	aggregate_str << child_cte_name;
-	if (group_names.empty()) {
+	if (group_by_columns.empty()) {
 		// Do nothing.
 	} else {
 		aggregate_str << " group by ";
-		aggregate_str << vec_to_separated_list(group_names);
+		aggregate_str << vec_to_separated_list(group_by_columns);
 	}
 	return aggregate_str.str();
 }
@@ -187,8 +187,9 @@ std::string IRStruct::ToQuery(const bool use_newlines) {
 				// Add extra space for main query (if newlines disabled).
 				sql_str << " ";
 			}
-			if (use_newlines)
+			if (use_newlines) {
 				sql_str << "\n";
+			}
 		}
 	}
 	// Then add the final query.
@@ -318,43 +319,74 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 			vector<std::string> cte_column_names;
 		    vector<std::string> group_names;
 			/* For LogicalAggregate, the function GetColumnBindings cannot be used in our use case,
-			/*  since the function combines the `groups`, `aggregate`, and `groupings` together.
+			 *  since the function combines the `groups`, `aggregate`, and `groupings` together.
 			 *  Therefore, we need to make our own enumeration starting from index 0.
 			 * If the enumeration scheme of logical aggregates changes, this code should be reviewed closely.
 			 * One scope for each of group/aggregate, to avoid mixing up variables.
 			 */
 			{
-				idx_t group_table_index = plan_as_aggregate.group_index;
-				const auto& agg_groups = plan_as_aggregate.groups;
-				for (size_t i = 0; i < agg_groups.size(); ++i) {
-					const unique_ptr<Expression> &col_as_expression = agg_groups[i];
+				const idx_t group_table_index = plan_as_aggregate.group_index;
+				const auto& groups = plan_as_aggregate.groups;
+				for (size_t i = 0; i < groups.size(); ++i) {
+					const unique_ptr<Expression> &col_as_expression = groups[i];
 					// Groups should be columns. TODO: Verify that this may only be a BoundColumnRefExpression.
 					if (col_as_expression->type == ExpressionType::BOUND_COLUMN_REF) {
 						BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*col_as_expression);
 						unique_ptr<ColStruct>& descendant_col_struct = column_map.at(bcr.binding);
 						// Create new ColStruct *and* provide aggregate names.
-						group_names.push_back(descendant_col_struct->ToUniqueColumnName());
+						group_names.emplace_back(descendant_col_struct->ToUniqueColumnName());
 						auto new_col_struct = make_uniq<ColStruct>(
 							group_table_index, descendant_col_struct->column_name, descendant_col_struct->alias
 						);
-						cte_column_names.push_back(new_col_struct->ToUniqueColumnName());
-						// TODO: Figure out what the new column binding is.
+						cte_column_names.emplace_back(new_col_struct->ToUniqueColumnName());
+					    // `i` used, because of the comment above the scope.
 						column_map[ColumnBinding(group_table_index, i)] = std::move(new_col_struct);
-					} else {
-						throw std::runtime_error("Size mismatch between column bindings!");
-					}
-					group_names.emplace_back();
-					group_names.emplace_back(col_as_expression->GetName());
+					} else {throw NotImplementedException("Only supporting BoundColumnRef for now.");}
 				}
 			}
 		    vector<string> aggregate_names;
 			{
-				idx_t aggregate_table_idx = plan_as_aggregate.aggregate_index;
-				const auto& agg_groups = plan_as_aggregate.groups;
-				// TODO: Finish.
-				for (size_t i = 0; i < agg_groups.size(); ++i) {
-					const unique_ptr<Expression> &agg_expression = agg_groups[i];
-                    aggregate_names.emplace_back(agg_expression->GetName());
+				const idx_t aggregate_table_idx = plan_as_aggregate.aggregate_index;
+				const auto& agg_expressions = plan_as_aggregate.expressions;
+				// FIXME: Finish (and especially the logic for aggregate groups to see what is going on)
+			    unique_ptr<ColStruct> agg_col_struct;
+				for (size_t i = 0; i < agg_expressions.size(); ++i) {
+					const unique_ptr<Expression> &expr = agg_expressions[i];
+				    if (expr->type == ExpressionType::BOUND_AGGREGATE) {
+						BoundAggregateExpression& bound_agg = static_cast<BoundAggregateExpression &>(*expr);
+						std::ostringstream agg_str;
+						agg_str << bound_agg.function.name; // Add the function name (example: "sum" or "count").
+					    agg_str << "(";
+						// Then (inside parentheses) we need to know if it's distinct or not.
+					    if (bound_agg.IsDistinct()) {
+						    agg_str << "distinct ";
+					    }
+						// To complete `agg_str`, we need to know what columns are in the aggregate type.
+						// These are "child"-expressions to the aggregate expression.
+						vector<std::string> child_expressions;
+						for (const unique_ptr<Expression>& agg_child : bound_agg.children) {
+							if (agg_child->type == ExpressionType::BOUND_COLUMN_REF) {
+								BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*agg_child);
+								const unique_ptr<ColStruct>& child_col_struct = column_map.at(bcr.binding);
+								child_expressions.emplace_back(child_col_struct->ToUniqueColumnName());
+							} else {throw NotImplementedException("Only supporting BoundColumnRef for now.");}
+						}
+					    agg_str << vec_to_separated_list(child_expressions);
+						agg_str << ")"; // Don't forget to close the parenthesis!
+					    // Give the aggregation an alias so that this string above does not have to be repeated.
+					    std::string agg_alias = "aggregate_" + std::to_string(i);
+					    // Finally, Put it all into a ColStruct (which also handles the column vectors below).
+					    agg_col_struct = make_uniq<ColStruct>(
+					        aggregate_table_idx, agg_str.str(), std::move(agg_alias)
+						);
+				    } else {
+						throw NotImplementedException("Only supporting BoundAggregateExpression for now.");
+				    }
+				    // `column_name` is the string with the function name (e.g. "count(distinct age)").
+				    aggregate_names.emplace_back(agg_col_struct->column_name);
+				    cte_column_names.emplace_back(agg_col_struct->ToUniqueColumnName());
+					// `i` used, because of the comment above the scopes.
+					column_map[ColumnBinding(aggregate_table_idx, i)] = std::move(agg_col_struct);
 				}
 			}
 		    return make_uniq<AggregateNode>(

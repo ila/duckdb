@@ -152,8 +152,8 @@ public:
 class AggregateNode: public CteNode {
 	// Attributes.
 	std::string child_cte_name;
-	vector<std::string> group_names; // If empty, is scalar aggregate.
-	vector<std::string> aggregate_names;
+	vector<std::string> group_by_columns; // If empty, is scalar aggregate.
+	vector<std::string> aggregate_expressions;
 public:
 	~AggregateNode() override = default;
 	// Constructor.
@@ -165,9 +165,8 @@ public:
 		vector<std::string> _aggregate_names
 	) :
 		CteNode(index, "aggregate_" + std::to_string(index), std::move(cte_column_names)),
-		child_cte_name(std::move(_child_cte_name)),
-		group_names(std::move(_group_names)),
-		aggregate_names(std::move(_aggregate_names)) {}
+		child_cte_name(std::move(_child_cte_name)), group_by_columns(std::move(_group_names)),
+	      aggregate_expressions(std::move(_aggregate_names)) {}
 	// Functions.
 	std::string ToQuery() override;
 };
