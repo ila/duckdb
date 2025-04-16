@@ -269,11 +269,13 @@ private:
 	/// Used for consistent column naming across all nodes.
 	std::map<MappableColumnBinding, unique_ptr<ColStruct>> column_map;
 
+	/// Convert a filter expression into a string with table aliases. Contains some recursion.
+	/// Requires one expression, therefore do not call SplitPredicates() on the expression.
+	std::string FilterToString(const unique_ptr<Expression>& filter_expression) const;
 	/// Create a CTE from a LogicalOperator.
 	unique_ptr<CteNode> CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices);
 	/// Traverse the logical plan recursively, except for the root.
 	unique_ptr<CteNode> RecursiveTraversal(unique_ptr<LogicalOperator> &sub_plan);
-
 public:
 	LogicalPlanToSql(ClientContext &_context, unique_ptr<LogicalOperator> &_plan)
 	  : context(_context), plan(_plan) {}

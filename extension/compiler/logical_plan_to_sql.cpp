@@ -5,7 +5,10 @@
 #include "include/logical_plan_to_sql.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/planner/expression.hpp"
+#include "duckdb/planner/expression/bound_cast_expression.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
@@ -66,7 +69,18 @@ std::string InsertNode::ToQuery() {
 }
 std::string CteNode::ToCteQuery() {
 	// Format: "cte_name (col_a, col_b, col_c...) as (select ...)";
-	return cte_name + " (" + vec_to_separated_list(cte_column_list)  + ") as (" + this->ToQuery() + ")";
+	std::ostringstream cte_str;
+	cte_str << cte_name;
+	if (!cte_column_list.empty()) {
+		cte_str << " (";
+		cte_str << vec_to_separated_list(cte_column_list);
+		cte_str << ")";
+	}
+	cte_str << " as (";
+	cte_str << this->ToQuery();
+	cte_str << ")";
+	return cte_str.str();
+	// 	return cte_name + " (" + vec_to_separated_list(cte_column_list)  + ") as (" + this->ToQuery() + ")";
 }
 std::string GetNode::ToQuery() {
 	std::ostringstream get_str;
@@ -202,14 +216,76 @@ std::string LogicalPlanToSql::ColStruct::ToUniqueColumnName() const {
 	return "t" + std::to_string(table_index) + "_" + (alias.empty() ? column_name : alias);
 }
 
+std::string LogicalPlanToSql::FilterToString(const unique_ptr<Expression>& expression) const {
+	// Maybe needed for the specifics inside an operator.
+	const ExpressionClass e_class = expression->GetExpressionClass();
+	std::ostringstream expr_str;
+	switch (e_class) {
+	case (ExpressionClass::BOUND_COLUMN_REF): {
+		// Get the column ref and print the corresponding `ColStruct`'s unique column name.
+		const BoundColumnRefExpression& bcr = expression->Cast<BoundColumnRefExpression>();
+		const unique_ptr<ColStruct>& col_struct = column_map.at(bcr.binding);
+		expr_str << col_struct->ToUniqueColumnName();
+		break;
+	}
+	case (ExpressionClass::BOUND_CONSTANT): {
+		expr_str << expression->ToString(); // Constants can remain as-is.
+		break;
+	}
+	// Recursive calls.
+	case (ExpressionClass::BOUND_COMPARISON): {
+		// Attempt to cast to a BoundComparisonExpression.
+		const BoundComparisonExpression& expr_cast = expression->Cast<BoundComparisonExpression>();
+		/* A BoundComparisonExpression has a left and right side.
+			 * If those sides are BoundColumnRefExpressions, they can be converted to CTE table names.
+			 * Otherwise, the operators will be used as-is (i.e. with the default ToString() function).
+			 * In any case, make this a recursive call.
+		 */
+		expr_str << "(";
+		expr_str << FilterToString(expr_cast.left);
+		expr_str << ") ";
+		expr_str << ExpressionTypeToOperator(expr_cast.GetExpressionType());
+		expr_str << " (";
+		expr_str << FilterToString(expr_cast.right);
+		expr_str << ")";
+		break;
+	}
+	case (ExpressionClass::BOUND_CAST): {
+		const BoundCastExpression& expr_cast = expression->Cast<BoundCastExpression>();
+		// Based on BoundCastExpression::ToString().
+		expr_str << (expr_cast.try_cast ? "TRY_CAST(" : "CAST(");
+		expr_str << FilterToString(expr_cast.child);
+		expr_str <<  " AS " + expr_cast.return_type.ToString() + ")";
+		break;
+	}
+	case (ExpressionClass::BOUND_CONJUNCTION): {
+		// Attempt to cast to a BoundConjunctionExpression.
+		const BoundConjunctionExpression& conjunction_expr = expression->Cast<BoundConjunctionExpression>();
+		// A conjunction can currently be one of: AND, OR.
+		// Further, a conjunction has a left and right side, each of which are in the vector of children.
+		// In turn, these "children" can be arbitrary expressions, so call recursively to resolve those.
+		expr_str << "(";
+		expr_str << FilterToString(conjunction_expr.children[0]); // Left child.
+		expr_str << ") ";
+		expr_str << ExpressionTypeToOperator(conjunction_expr.GetExpressionType());
+		expr_str << " (";
+		expr_str << FilterToString(conjunction_expr.children[1]); // Right child.
+		expr_str << ")";
+		break;
+	} default: {
+		throw NotImplementedException("Unsupported expression for logical filter.");
+	}
+	}
+	return expr_str.str();
+}
+
 unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> &subplan, const vector<size_t>& children_indices) {
 	const size_t my_index = node_count++;
 
 	switch (subplan->type) {
 		case LogicalOperatorType::LOGICAL_GET: {
 			// Preliminary data.
-		    //unique_ptr<LogicalGet> plan_as_get = unique_ptr_cast<LogicalOperator, LogicalGet>(std::move(subplan));
-			LogicalGet& plan_as_get = static_cast<LogicalGet&>(*subplan);
+		    const LogicalGet& plan_as_get = subplan->Cast<LogicalGet>();
 			auto catalog_entry = plan_as_get.GetTable();
 			size_t table_index = plan_as_get.table_index;
 		    // We need: catalog, schema, table name.
@@ -254,23 +330,20 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		}
 		case LogicalOperatorType::LOGICAL_FILTER: {
 			// FIXME: Implement Filter for cte renaming scheme!
-			const LogicalFilter& plan_as_filter = static_cast<LogicalFilter&>(*subplan);
+			const LogicalFilter& plan_as_filter = subplan->Cast<LogicalFilter>();
 		    vector<string> conditions;
-			auto params = plan_as_filter.ParamsToString();
-		    // Note: this is always one string regardless of how many expressions are in the filter.
-		    // Will it break cross-system compatibility?
-			for (auto &c : params) {
-				if (c.first == "Expressions") {
-				    conditions.emplace_back(c.second.c_str());
-			    }
-			}
+		    // A LogicalFilter is constructed with only one expression.
+		    // Hence, we can assert that there is only one expression in the expression vector.
+		    // However, to be certain, this is not done here.
+		    for (const unique_ptr<Expression>& expression: plan_as_filter.expressions) {
+				conditions.emplace_back(FilterToString(expression));
+		    }
 		    return make_uniq<FilterNode>(
 		    	my_index, vector<string>() /* fixme: fill*/, cte_nodes[children_indices[0]]->cte_name, std::move(conditions)
             );
 		}
 		case LogicalOperatorType::LOGICAL_PROJECTION: {
-			//unique_ptr<LogicalProjection> plan_as_projection = unique_ptr_cast<LogicalOperator, LogicalProjection>(std::move(subplan));
-			const LogicalProjection& plan_as_projection = static_cast<LogicalProjection&>(*subplan);
+			const LogicalProjection& plan_as_projection = subplan->Cast<LogicalProjection>();
 			const size_t table_index = plan_as_projection.table_index;
 			/* Logical Projection defines its ColumnBindings using (table_index, expressions.size().
 			 * Thus, by looping over expressions.size(), we implicitly have the new column bindings!
@@ -283,7 +356,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 				const ColumnBinding new_cb = ColumnBinding(table_index, i); // `i`: see note above.
 				if (expression->type == ExpressionType::BOUND_COLUMN_REF) {
 		    		// Cast to BCR expression, to then get column binding.
-		    		BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*expression);
+		    		BoundColumnRefExpression& bcr = expression->Cast<BoundColumnRefExpression>();
 		    		// Using the CB, get the ColStruct, to then get the column name.
 		    		unique_ptr<ColStruct>& descendant_col_struct = column_map.at(bcr.binding);
 					column_names.push_back(descendant_col_struct->ToUniqueColumnName());
@@ -314,8 +387,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		}
 		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 			// Note: aggregate has several table indices!
-			const LogicalAggregate& plan_as_aggregate = static_cast<LogicalAggregate&>(*subplan);
-		    // unique_ptr<LogicalAggregate> plan_as_aggregate = unique_ptr_cast<LogicalOperator, LogicalAggregate>(std::move(subplan));
+			const LogicalAggregate& plan_as_aggregate = subplan->Cast<LogicalAggregate>();
 			vector<std::string> cte_column_names;
 		    vector<std::string> group_names;
 			/* For LogicalAggregate, the function GetColumnBindings cannot be used in our use case,
@@ -331,7 +403,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 					const unique_ptr<Expression> &col_as_expression = groups[i];
 					// Groups should be columns. TODO: Verify that this may only be a BoundColumnRefExpression.
 					if (col_as_expression->type == ExpressionType::BOUND_COLUMN_REF) {
-						BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*col_as_expression);
+						BoundColumnRefExpression& bcr = col_as_expression->Cast<BoundColumnRefExpression>();
 						unique_ptr<ColStruct>& descendant_col_struct = column_map.at(bcr.binding);
 						// Create new ColStruct *and* provide aggregate names.
 						group_names.emplace_back(descendant_col_struct->ToUniqueColumnName());
@@ -348,12 +420,11 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 			{
 				const idx_t aggregate_table_idx = plan_as_aggregate.aggregate_index;
 				const auto& agg_expressions = plan_as_aggregate.expressions;
-				// FIXME: Finish (and especially the logic for aggregate groups to see what is going on)
 			    unique_ptr<ColStruct> agg_col_struct;
 				for (size_t i = 0; i < agg_expressions.size(); ++i) {
 					const unique_ptr<Expression> &expr = agg_expressions[i];
 				    if (expr->type == ExpressionType::BOUND_AGGREGATE) {
-						BoundAggregateExpression& bound_agg = static_cast<BoundAggregateExpression &>(*expr);
+						BoundAggregateExpression& bound_agg = expr->Cast<BoundAggregateExpression>();
 						std::ostringstream agg_str;
 						agg_str << bound_agg.function.name; // Add the function name (example: "sum" or "count").
 					    agg_str << "(";
@@ -366,7 +437,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 						vector<std::string> child_expressions;
 						for (const unique_ptr<Expression>& agg_child : bound_agg.children) {
 							if (agg_child->type == ExpressionType::BOUND_COLUMN_REF) {
-								BoundColumnRefExpression& bcr = static_cast<BoundColumnRefExpression &>(*agg_child);
+								BoundColumnRefExpression& bcr = agg_child->Cast<BoundColumnRefExpression>();
 								const unique_ptr<ColStruct>& child_col_struct = column_map.at(bcr.binding);
 								child_expressions.emplace_back(child_col_struct->ToUniqueColumnName());
 							} else {throw NotImplementedException("Only supporting BoundColumnRef for now.");}
@@ -398,8 +469,8 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 			);
 		}
 		case LogicalOperatorType::LOGICAL_UNION: {
-		    // unique_ptr<LogicalSetOperation> plan_as_union = unique_ptr_cast<LogicalOperator, LogicalSetOperation>(std::move(subplan));
-			LogicalSetOperation& plan_as_union = static_cast<LogicalSetOperation&>(*subplan);
+		    // Cannot be const, since GetColumnBindings() is not const.
+			LogicalSetOperation& plan_as_union = subplan->Cast<LogicalSetOperation>();
 			const size_t table_index = plan_as_union.table_index;
 			// Get the column bindings of the left child. For that, we need to re-access the left child.
 			// Then, we can use those to create the new ColStructs for the union (as well as the cte column names).
@@ -427,8 +498,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		}
 		// case LogicalOperatorType::LOGICAL_JOIN:
 		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
-		    // unique_ptr<LogicalComparisonJoin> plan_as_join = unique_ptr_cast<LogicalOperator, LogicalComparisonJoin>(std::move(subplan));
-			LogicalComparisonJoin& plan_as_join = static_cast<LogicalComparisonJoin&>(*subplan);
+			LogicalComparisonJoin& plan_as_join = subplan->Cast<LogicalComparisonJoin>();
 		    vector<string> join_conditions;
             /*  The join conditions need to be converted into something that uses the CTEs.
              *  For this, the join conditions are cast to BCR, to then obtain a column binding.
@@ -449,7 +519,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		    	std::string condition_lhs, condition_rhs;
 		    	if (cond.left->type == ExpressionType::BOUND_COLUMN_REF) {
 		    		// Cast to BCR expression, to then get column binding.
-		    		const BoundColumnRefExpression& l_ref = static_cast<BoundColumnRefExpression &>(*cond.left);
+		    		const BoundColumnRefExpression& l_ref = cond.left->Cast<BoundColumnRefExpression>();
 		    		// Using the CB, get the ColStruct, to then get the column name.
 		    		unique_ptr<ColStruct>& l_col_struct = column_map.at(l_ref.binding);
 		    		condition_lhs = l_col_struct->ToUniqueColumnName();
@@ -458,7 +528,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		    	}
 		    	if (cond.right->type == ExpressionType::BOUND_COLUMN_REF) {
 		    		// Cast to BCR expression, to then get column binding.
-					const BoundColumnRefExpression& r_ref = static_cast<BoundColumnRefExpression &>(*cond.right);
+					const BoundColumnRefExpression& r_ref = cond.right->Cast<BoundColumnRefExpression>();
 		    		// Using the CB, get the ColStruct, to then get the table name.
 		    		unique_ptr<ColStruct>& r_col_struct = column_map.at(r_ref.binding);
 		    		condition_rhs = r_col_struct->ToUniqueColumnName();
@@ -526,10 +596,9 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 	unique_ptr<IRStruct> to_return;
 	switch (plan->type) {
 		case LogicalOperatorType::LOGICAL_INSERT: {
-			// FIXME: Modify the unique_ptr_cast also as follows (to avoid ownership issues).
-			// Use a cast ref to the pointer (rather than a unique_ptr_cast) to keep `plan' ownership intact.
+			// Use the non-unique Cast function to keep the `plan` ownership intact.
 			//  This is possible because this code does not modify the plan.
-			const LogicalInsert& insert_ref = static_cast<LogicalInsert&>(*plan);
+			const LogicalInsert& insert_ref = plan->Cast<LogicalInsert>();
 			//auto plan_to_insert_node = unique_ptr_cast<LogicalOperator, LogicalInsert>(std::move(plan));
 			unique_ptr<InsertNode> insert_node = make_uniq<InsertNode>(
 				node_count++,
@@ -549,6 +618,12 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 			throw std::runtime_error("Not yet implemented.");
 		}
 		default: {
+		    /* TODO: Change this code to properly support aliases! Plan of action:
+		     *  - add what is now "final_node" to the cte_nodes.
+		     *  - using the `plan`, get the ColumnBindings of the topmost node.
+		     *  - for each CB, get its ColStruct from which you extract the alias (or column name if no alias).
+		     *  - create a new node that uses *those* aliases in the select statement.
+		     */
 			// Handle it the same way as a CTE.
 			unique_ptr<CteNode> final_node = CreateCteNode(plan, children_indices);
 		    to_return = make_uniq<IRStruct>(std::move(cte_nodes), std::move(final_node));
@@ -556,5 +631,6 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 	}
 	return to_return;
 }
+
 
 } // namespace duckdb
