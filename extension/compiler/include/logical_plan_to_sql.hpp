@@ -20,9 +20,38 @@ public:
 	const size_t idx;  // Number of the node used for giving it a name.
 };
 
+/// Intermediate virtual class, used to distinguish from CteNode.
+class TopmostNode : public IRNode {
+public:
+	explicit TopmostNode(const size_t index) : IRNode(index) {}
+};
+
+/// Final node specifically for read-only queries,
+/// Used to convert back CTE column names to their intended alias or "original" name.
+class FinalReadNode: public TopmostNode {
+	// Attributes.
+	std::string child_cte_name;
+	vector<std::string> child_cte_column_list;
+	vector<std::string> final_column_list;
+public:
+	~FinalReadNode() override = default;
+	// Constructor.
+	FinalReadNode(
+	    const size_t index,
+	    std::string _child_cte_name,
+	    vector<std::string> _child_cte_column_list,
+		vector<std::string> _final_column_list
+	) :
+	      TopmostNode(index),
+	      child_cte_name(std::move(_child_cte_name)),
+	      child_cte_column_list(std::move(_child_cte_column_list)),
+		  final_column_list(std::move(_final_column_list)) {}
+	// Functions
+	std::string ToQuery() override;
+};
+
 /// Node for insertion queries. Cannot be a CTE.
-// TODO: Create constructor, and implement support in LPTsql.
-class InsertNode: public IRNode {
+class InsertNode: public TopmostNode {
 	// Attributes.
 	std::string target_table;
 	std::string child_cte_name;  // If "insert into t_name values (...)", not defined.
@@ -33,7 +62,7 @@ public:
 	InsertNode(
 		const size_t index, std::string _target_table, std::string _child_cte_name, const OnConflictAction conflict_action_type
 	) :
-		IRNode(index),
+		TopmostNode(index),
 		target_table(std::move(_target_table)),
 		child_cte_name(std::move(_child_cte_name)),
 		action_type(conflict_action_type) {}
@@ -43,14 +72,14 @@ public:
 
 /// Node for update queries. Cannot be a CTE.
 // Not (yet) needed for IVM.
-class UpdateNode: public IRNode {
+class UpdateNode: public TopmostNode {
 public:
 	~UpdateNode() override = default;
 };
 
 /// Node for deletion queries. Cannot be a CTE.
 // Not (yet) needed for IVM.
-class DeleteNode: public IRNode {
+class DeleteNode: public TopmostNode {
 public:
 	~DeleteNode() override = default;
 };
@@ -222,10 +251,10 @@ public:
 class IRStruct {
 	// Attributes.
 	vector<unique_ptr<CteNode>> nodes;
-	unique_ptr<IRNode> final_node;
+	unique_ptr<TopmostNode> final_node;
 public:
 	// Constructor.
-	IRStruct(vector<unique_ptr<CteNode>> _nodes, unique_ptr<IRNode> _final_node) :
+	IRStruct(vector<unique_ptr<CteNode>> _nodes, unique_ptr<TopmostNode> _final_node) :
 		nodes(std::move(_nodes)), final_node(std::move(_final_node)) {}
 	/// Create a DuckDB SQL query directly from the immediate representation.
 	/// If `use_newlines` is true, the string uses newlines between CTEs for readability.

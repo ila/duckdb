@@ -45,6 +45,25 @@ std::string vec_to_separated_list(vector<std::string> input_list, const std::str
 
 namespace duckdb {
 
+std::string FinalReadNode::ToQuery() {
+	const size_t col_count = final_column_list.size();
+	if (child_cte_column_list.size() != col_count) {
+		throw std::runtime_error("Size mismatch between column lists!");
+	}
+	vector<string> merged_list;
+	// Assign the final column names to the CTE column names. Format: "cte_col AS final_col".
+	merged_list.reserve(col_count);
+	for (size_t i = 0; i < final_column_list.size(); ++i) {
+		merged_list.emplace_back(child_cte_column_list[i] + " AS " + final_column_list[i]);
+	}
+	std::ostringstream sql_str;
+	sql_str << "SELECT ";
+	// Convert the vector above into a comma-separated column string.
+	sql_str << vec_to_separated_list(std::move(merged_list)); // Move; we don't need it anymore.
+	sql_str << " FROM ";
+	sql_str << child_cte_name;
+	return sql_str.str();
+}
 std::string InsertNode::ToQuery() {
 	// Currently does not support the type with "INSERT ... VALUES.
 	std::stringstream insert_str;
@@ -334,7 +353,6 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(
 		);
 	}
 	case LogicalOperatorType::LOGICAL_FILTER: {
-		// FIXME: Implement Filter for cte renaming scheme!
 		const LogicalFilter& plan_as_filter = subplan->Cast<LogicalFilter>();
 		vector<string> conditions;
 		// A LogicalFilter is constructed with only one expression.
@@ -345,7 +363,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(
 		}
 		return make_uniq<FilterNode>(
 			my_index,
-		    vector<string>() /* fixme: fill*/,
+		    vector<string>() /* TODO: fill. Not urgent, but would be consistent. */,
 		    cte_nodes[children_indices[0]]->cte_name,
 		    std::move(conditions)
 		);
@@ -519,6 +537,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(
 	}
 	// case LogicalOperatorType::LOGICAL_JOIN:
 	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN: {
+		// TODO: Also implement cross product! Should not be hard, but also not very useful atm.
 		const LogicalComparisonJoin& plan_as_join = subplan->Cast<LogicalComparisonJoin>();
 		vector<string> join_conditions;
 		/*  The join conditions need to be converted into something that uses the CTEs.
@@ -553,7 +572,9 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(
 		);
 	}
 	default: {
-		throw std::runtime_error("This logical operator is not implemented.");
+		throw NotImplementedException(
+		    "This logical operator is not implemented: %s.", LogicalOperatorToString(subplan->type)
+		);
 	}
 	}
 };
@@ -594,6 +615,10 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 	unique_ptr<IRStruct> to_return;
 	switch (plan->type) {
 	case LogicalOperatorType::LOGICAL_INSERT: {
+		/* TODO: support insert queries of the type "INSERT INTO t_name VALUES (42, 'Foo'), (123, 'Bar');". Needed:
+		 *  - DUMNY_SCAN
+		 *  - EXPRESSION_GET
+		 */
 		// Use the non-unique Cast function to keep the `plan` ownership intact.
 		//  This is possible because this code does not modify the plan.
 		const LogicalInsert& insert_ref = plan->Cast<LogicalInsert>();
@@ -605,8 +630,6 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 			insert_ref.action_type
 		);
 		to_return = make_uniq<IRStruct>(std::move(cte_nodes), std::move(insert_node));
-		// Finally, cast back the plan to a LogicalOperator to avoid issues when using the plan later on.
-		// plan = unique_ptr_cast<LogicalOperator, LogicalInsert>(std::move(plan_to_insert_node));
 		break;
 	}
 	case LogicalOperatorType::LOGICAL_DELETE: {
@@ -616,14 +639,21 @@ unique_ptr<IRStruct> LogicalPlanToSql::LogicalPlanToIR() {
 		throw std::runtime_error("Not yet implemented.");
 	}
 	default: {
-		/* TODO: Change this code to properly support aliases! Plan of action:
-		 *  - add what is now "final_node" to the cte_nodes.
-		 *  - using the `plan`, get the ColumnBindings of the topmost node.
-		 *  - for each CB, get its ColStruct from which you extract the alias (or column name if no alias).
-		 *  - create a new node that uses *those* aliases in the select statement.
-		 */
-		// Handle it the same way as a CTE.
-		unique_ptr<CteNode> final_node = CreateCteNode(plan, children_indices);
+		// Handle it the same way as a CTE, but reuse some of the CTE properties for a bespoke final node.
+		unique_ptr<CteNode> last_cte = CreateCteNode(plan, children_indices);
+		// Replace the `cte_column_list` using the column bindings in plan.
+		vector<string> final_column_list;
+		for (const auto& cb: plan->GetColumnBindings()) {
+			const unique_ptr<ColStruct>& col_struct = column_map.at(cb);
+			// Use alias (if available), else (original) column name.
+			final_column_list.emplace_back(col_struct->alias.empty() ? col_struct->column_name : col_struct->alias);
+		}
+		// Create the final node.
+		unique_ptr<FinalReadNode> final_node = make_uniq<FinalReadNode>(
+		    node_count++, last_cte->cte_name, last_cte->cte_column_list,
+		    std::move(final_column_list)
+		);
+		cte_nodes.emplace_back(std::move(last_cte));
 		to_return = make_uniq<IRStruct>(std::move(cte_nodes), std::move(final_node));
 	}
 	}
