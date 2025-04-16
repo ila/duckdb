@@ -1,7 +1,7 @@
 #ifndef DUCKDB_OPENIVM_INSERT_RULE_HPP
 #define DUCKDB_OPENIVM_INSERT_RULE_HPP
 
-#include "../../compiler/include/logical_plan_to_string.hpp"
+#include "../../compiler/include/logical_plan_to_sql.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/function/table/read_csv.hpp"
@@ -144,8 +144,10 @@ public:
 							// any other node -> subquery
 							insert_query += " by name ";
 							// this assumes no aliases in the SELECT statement
-							// we call LPTS on the projection
-							string subquery_string = LogicalPlanToString(*con.context, insert_node->children[0]);
+							// we call LPTsql on the projection
+							auto lptsql = LogicalPlanToSql(*con.context, insert_node->children[0]);
+							unique_ptr<IRStruct> ir = lptsql.LogicalPlanToIR();
+							string subquery_string = ir->ToQuery(true);
 							insert_query += subquery_string;
 						}
 						auto r = con.Query(insert_query);

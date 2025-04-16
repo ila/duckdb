@@ -1,17 +1,26 @@
 #include "openivm_rewrite_rule.hpp"
 
 // From DuckDB.
-#include "../../compiler/include/logical_plan_to_string.hpp"
 #include "../../postgres_scanner/include/postgres_scanner.hpp"
 #include "duckdb/planner/logical_operator.hpp"
-#include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb.hpp"
+#include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/optimizer/column_binding_replacer.hpp>
+#include <duckdb/optimizer/optimizer.hpp>
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include <duckdb/planner/operator/logical_aggregate.hpp>
 #include <duckdb/planner/operator/logical_comparison_join.hpp>
+#include <duckdb/planner/operator/logical_filter.hpp>
+#include <duckdb/planner/operator/logical_get.hpp>
+#include <duckdb/planner/operator/logical_insert.hpp>
+#include <duckdb/planner/operator/logical_projection.hpp>
+#include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "openivm_index_regen.hpp"
 
 // Std.
 #include "../../third_party/zstd/include/zstd/common/debug.h"
+#include "duckdb/planner/planner.hpp"
+#include "duckdb/parser/parser.hpp"
 #include <iostream>
 
 namespace {

@@ -1,4 +1,5 @@
 #include "include/openivm_upsert.hpp"
+#include <iostream>
 
 #include "../../compiler/include/compiler_extension.hpp"
 #include "../../compiler/include/openivm/openivm_compile_upsert.hpp"
@@ -9,6 +10,7 @@
 #include "duckdb/execution/index/art/art.hpp"
 #include "duckdb/function/pragma_function.hpp"
 #include "duckdb/main/connection.hpp"
+#include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parallel/thread_context.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parser/parser.hpp"
@@ -18,9 +20,7 @@
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
 #include "duckdb/planner/planner.hpp"
-#include "logical_plan_to_string.hpp"
-
-#include <logical_plan_to_sql.hpp>
+#include "logical_plan_to_sql.hpp"
 
 namespace duckdb {
 

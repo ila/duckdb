@@ -12,7 +12,7 @@
 
 #include <common.hpp>
 #include <compiler_extension.hpp>
-#include <logical_plan_to_string.hpp>
+/* #include <logical_plan_to_string.hpp> */ // TODO: Figure what to do with former LPTS include.
 #include <regex>
 #include <duckdb/common/serializer/binary_deserializer.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
