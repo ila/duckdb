@@ -1,4 +1,4 @@
-#include "include/compiler_extension.hpp"
+#include "include/rdda/generate_python_script.hpp"
 
 #include <fstream>
 #include <duckdb/common/local_file_system.hpp>
@@ -10,10 +10,12 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 	// dependencies: cmake, ninja, python development headers
 	// permissions need to be set for the python package to be built in its folder
 
+	// todo - wait 5 minutes if the database is locked
+
 	auto database_name = parameters.values[0].GetValue<string>();
 	// check if the database exists
 	LocalFileSystem fs;
-	if (!fs.FileExists(database_name + ".db")) {
+	if (!fs.FileExists(database_name)) {
 		throw ParserException("Database does not exist!");
 	}
 
@@ -114,6 +116,76 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 
 	file << "\ttime.sleep(600)\n";
 
+	file.close();
+}
+
+void GenerateClientRefreshScript(ClientContext &context, const FunctionParameters &parameters) {
+
+	// dependencies: cmake, ninja, python development headers
+	// permissions need to be set for the python package to be built in its folder
+
+	// todo - wait 5 minutes if the database is locked
+
+	auto database_name = parameters.values[0].GetValue<string>();
+	// check if the database exists
+	LocalFileSystem fs;
+	if (!fs.FileExists(database_name + ".db")) {
+		throw ParserException("Database does not exist!");
+	}
+
+	string file_name = "refresh_client_" + database_name + ".py";
+
+	std::ofstream file;
+	file.open(file_name);
+	file << "# this script is machine generated - do not edit!\n\n";
+	file << "#!/usr/bin/env python3\n";
+	file << "import importlib.util\n";
+	file << "import sys\n";
+	file << "import time\n";
+	file << "import os\n";
+	file << "from datetime import datetime, timedelta\n";
+	file << "import subprocess\n\n";
+	file << "current_dir = os.getcwd()\n";
+	file << "if importlib.util.find_spec('duckdb') is None:\n";
+	// we cannot install duckdb from pip, since it does not ship the server extension (containing the flush pragma)
+	// we build the duckdb package from source and install it
+	// file << "\tsubprocess.check_call([sys.executable, '-m', 'pip', 'install', 'duckdb'])\n\n";
+	// save current directory
+	file << "\ttry:\n";
+	file << "\t\tos.chdir('..')\n\n";
+
+	file << "\t\tenv = os.environ.copy()\n";
+	file << "\t\tenv[\"BUILD_PYTHON\"] = \"1\"\n";
+	file << "\t\tenv[\"GEN\"] = \"ninja\"\n\n";
+
+	file << "\t\tsubprocess.run([\"make\"], env=env, check=True)\n";
+	file << "\t\tsubprocess.run([\"python\", \"setup.py\", \"install\"], cwd=\"tools/pythonpkg\", check=True)\n\n";
+
+	file << "\texcept subprocess.CalledProcessError as e:\n";
+	file << "\t\tprint(f\"Command failed with exit code {e.returncode}: {e.cmd}\")\n";
+	file << "\t\tprint(f\"Error message: {e.output}\")\n";
+
+	file << "\texcept FileNotFoundError as e:\n";
+	file << "\t\tprint(f\"File not found: {e.filename}\")\n";
+
+	file << "\texcept Exception as e:\n";
+	file << "\t\tprint(f\"An unexpected error occurred: {e}\")\n\n";
+
+	file << "import duckdb\n\n";
+	file << "os.chdir(current_dir)\n\n";
+
+	// initializing variables
+	file << "views = []\n";
+	file << "windows = []\n";
+	file << "refreshes = []\n";
+	file << "last_refreshes = []\n";
+	file << "last_updates = []\n\n";
+
+	// todo
+	// todo - also send the refresh scripts to the client
+
+
+
 
 	file.close();
 }
@@ -121,3 +193,4 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 
 
 }
+

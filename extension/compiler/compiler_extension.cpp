@@ -6,6 +6,7 @@
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "include/logical_plan_to_sql.hpp"
+#include "include/rdda/generate_python_script.hpp"
 
 #include <fstream>
 #include <regex>
@@ -113,8 +114,11 @@ static void LoadInternal(DatabaseInstance &instance) {
 	catalog.CreateTableFunction(*con.context, &lpts_func_info);
 	con.Commit();
 
-	auto generate_refresh_script = PragmaFunction::PragmaCall("generate_server_refresh_script", GenerateServerRefreshScript, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, generate_refresh_script);
+	auto generate_server_refresh_script = PragmaFunction::PragmaCall("generate_server_refresh_script", GenerateServerRefreshScript, {LogicalType::VARCHAR});
+	ExtensionUtil::RegisterFunction(instance, generate_server_refresh_script);
+
+	auto generate_client_refresh_script = PragmaFunction::PragmaCall("generate_client_refresh_script", GenerateClientRefreshScript, {LogicalType::VARCHAR});
+	ExtensionUtil::RegisterFunction(instance, generate_client_refresh_script);
 }
 
 void CompilerExtension::Load(DuckDB &db) {

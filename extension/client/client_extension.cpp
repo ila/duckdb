@@ -2,6 +2,7 @@
 
 #include "client_extension.hpp"
 #include "client_functions.hpp"
+#include "generate_random_data_runs.hpp"
 
 #include "../server/include/common.hpp"
 #include "duckdb/common/serializer/binary_serializer.hpp"
@@ -109,7 +110,7 @@ void InitializeClient(ClientContext &context, const FunctionParameters &paramete
 	string config_file = "client.config";
 	auto config = ParseConfig(config_path, config_file);
 
-	DuckDB db(*context.db);
+	DuckDB db(config["db_name"]);
 	Connection con(db);
 
 	CreateSystemTables(config_path, con);
@@ -154,6 +155,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	auto refresh = PragmaFunction::PragmaCall("refresh", Refresh, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, refresh);
+
+	auto flush = PragmaFunction::PragmaCall("test_runs", StoreTestData, {});
+	ExtensionUtil::RegisterFunction(instance, flush);
 }
 
 void ClientExtension::Load(DuckDB &db) {

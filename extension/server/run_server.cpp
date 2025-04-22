@@ -297,6 +297,7 @@ void HandleClientMessage(client_messages message, int32_t connfd, unordered_map<
 
 // Main server function
 void RunServer(ClientContext &context, const FunctionParameters &parameters) {
+	// todo - extend this with one socket per thread
 	server_running = true;
 	SetupSignalHandling();
 
