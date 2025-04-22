@@ -92,8 +92,8 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	client_con.BeginTransaction();
 	auto centralized_view_catalog_entry =
-	    Catalog::GetEntry(*client_con.context, CatalogType::TABLE_ENTRY, client_catalog_name, "main", centralized_view_name,
-	                      OnEntryNotFound::RETURN_NULL, QueryErrorContext());
+	    Catalog::GetEntry(*client_con.context, CatalogType::TABLE_ENTRY, client_catalog_name, "main",
+	                      centralized_view_name, OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 	client_con.Rollback();
 
 	if (!centralized_view_catalog_entry) {
@@ -198,9 +198,9 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// IVM delta propagation opens another connection to the client database
 	// to avoid concurrency issues, every time we might trigger IVM (insertion into a centralized table)
 	// we detach the client database and reattach it as read-only
-	auto queries = attach_query + update_query_1 + detach_query + attach_query_read_only + insert_query + detach_query
-		+ attach_query + delete_query_1 + update_query_2 + detach_query + attach_query_read_only + insert_query
-		+ detach_query + attach_query + delete_query_1 + delete_query_2 + detach_query;
+	auto queries = attach_query + update_query_1 + detach_query + attach_query_read_only + insert_query + detach_query +
+	               attach_query + delete_query_1 + update_query_2 + detach_query + attach_query_read_only +
+	               insert_query + detach_query + attach_query + delete_query_1 + delete_query_2 + detach_query;
 
 	ExecuteCommitAndWriteQueries(server_con, queries, file_name, false);
 }

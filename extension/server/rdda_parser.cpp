@@ -86,7 +86,7 @@ void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const 
 			throw ParserException("Error while executing compiled queries: " + r->GetError());
 		}
 		con.Commit();
-    }
+	}
 }
 
 void WriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
@@ -167,7 +167,7 @@ ParserExtensionPlanResult RDDAParserExtension::RDDAPlanFunction(ParserExtensionI
 
 	string parser_db_name = path + "rdda_parser_internal.db";
 	string metadata_db_name = "rdda_parser.db"; // this holds the server metadata
-	string client_db_name = "rdda_client.db"; // this holds the centralized views
+	string client_db_name = "rdda_client.db";   // this holds the centralized views
 	string server_db_name = config["db_name"];
 	// we need a separate database only holding schema and metadata to minimize locks/write conflicts
 	DuckDB db(metadata_db_name);

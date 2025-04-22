@@ -384,9 +384,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				const vector<LogicalType> join_types = l_dr->types;
 				vector<unique_ptr<Expression>> l_dr_projection_bindings =
 				    bindings_to_expressions(join_bindings, join_types);
-				l_dr_projected = make_uniq<LogicalProjection>(
-					pw.input.optimizer.binder.GenerateTableIndex(), std::move(l_dr_projection_bindings)
-                );
+				l_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
+				                                              std::move(l_dr_projection_bindings));
 			}
 			l_dr_projected->children.emplace_back(std::move(l_dr));
 			l_dr_projected->ResolveOperatorTypes();
@@ -441,9 +440,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				const ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
 				auto dl_dr_projection_bindings =
 				    project_out_duplicate_mul_column(join_bindings, join_types, dl_mul_binding);
-				dl_dr_projected = make_uniq<LogicalProjection>(
-					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_dr_projection_bindings)
-                );
+				dl_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
+				                                               std::move(dl_dr_projection_bindings));
 			}
 			dl_dr_projected->children.emplace_back(std::move(dl_dr));
 			dl_dr_projected->ResolveOperatorTypes();
@@ -596,13 +594,9 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			timestamp_binding = ColumnBinding(old_get->table_index, timestamp_idx.GetPrimaryIndex());
 
 			// Finally, create the delta GET node.
-			delta_get_node = make_uniq<LogicalGet>(
-				old_get->table_index, // Will get renumbered later.
-				scan_function,
-				std::move(bind_data),
-				std::move(return_types),
-				std::move(return_names)
-			);
+			delta_get_node = make_uniq<LogicalGet>(old_get->table_index, // Will get renumbered later.
+			                                       scan_function, std::move(bind_data), std::move(return_types),
+			                                       std::move(return_names));
 			delta_get_node->SetColumnIds(std::move(column_ids));
 		}
 		delta_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
@@ -643,7 +637,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	 * END OF CASE.
 	 */
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
-		LogicalAggregate& modified_node_logical_agg = static_cast<LogicalAggregate&>(*pw.plan);
+		LogicalAggregate &modified_node_logical_agg = static_cast<LogicalAggregate &>(*pw.plan);
 #ifdef DEBUG
 		for (size_t i = 0; i < modified_node_logical_agg.GetColumnBindings().size(); i++) {
 			printf("aggregate node CB before %zu %s\n", i,
@@ -667,8 +661,6 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			modified_node_logical_agg.grouping_sets[0].insert(gr);
 		}
 
-
-
 #ifdef DEBUG
 		for (size_t i = 0; i < modified_node_logical_agg.GetColumnBindings().size(); i++) {
 			printf("aggregate node CB after %zu %s\n", i,
@@ -686,9 +678,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		pw.plan->Verify(pw.input.context);
 		// Use group index (because mul is in GROUP BY).
 		// Column index is `groups.size() - 1`, because it is at the end (and already inserted, so -1 for index).
-		ColumnBinding mod_mul_binding = ColumnBinding(
-			modified_node_logical_agg.group_index, modified_node_logical_agg.groups.size() - 1
-		);
+		ColumnBinding mod_mul_binding =
+		    ColumnBinding(modified_node_logical_agg.group_index, modified_node_logical_agg.groups.size() - 1);
 		return {std::move(pw.plan), mod_mul_binding};
 	}
 	/*

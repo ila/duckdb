@@ -170,7 +170,8 @@ void InsertNewClient(int32_t connfd, Connection &con, unordered_map<string, stri
 	Printer::Print("Sent queries to client!");
 }
 
-void InsertNewResult(int32_t connfd, Connection &metadata_con, Connection &client_con, unordered_map<string, string> &config) {
+void InsertNewResult(int32_t connfd, Connection &metadata_con, Connection &client_con,
+                     unordered_map<string, string> &config) {
 	uint64_t id;
 	read(connfd, &id, sizeof(uint64_t));
 
@@ -260,7 +261,7 @@ void InsertNewStatistics(int32_t connfd) {
 }
 
 void HandleClientMessage(client_messages message, int32_t connfd, unordered_map<string, string> &config,
-						vector<int32_t> &client_socket, int index) {
+                         vector<int32_t> &client_socket, int index) {
 
 	// here, we need multiple databases to avoid concurrency issues
 	// 1 - the metadata database, to update refresh information

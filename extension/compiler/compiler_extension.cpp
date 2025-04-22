@@ -23,9 +23,7 @@ struct LogicalPlanToSqlTestData : public GlobalTableFunctionState {
 	idx_t offset;
 };
 
-unique_ptr<GlobalTableFunctionState> LogicalPlanToSqlTestInit(
-    ClientContext &context, TableFunctionInitInput &input
-) {
+unique_ptr<GlobalTableFunctionState> LogicalPlanToSqlTestInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto result = make_uniq<LogicalPlanToSqlTestData>();
 	return std::move(result);
 }
@@ -39,12 +37,9 @@ struct LogicalPlanToSqlTestFunctionData : public TableFunctionData {
 	}
 };
 
-static duckdb::unique_ptr<FunctionData> LogicalPlanToSqlTestBind(
-    ClientContext &context,
-    TableFunctionBindInput &input,
-    vector<LogicalType> &return_types,
-    vector<string> &names
-) {
+static duckdb::unique_ptr<FunctionData> LogicalPlanToSqlTestBind(ClientContext &context, TableFunctionBindInput &input,
+                                                                 vector<LogicalType> &return_types,
+                                                                 vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -97,13 +92,8 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// db_config.parser_extensions.push_back(ivm_parser);
 	// db_config.optimizer_extensions.push_back(ivm_rewrite_rule);
 
-	TableFunction lpts_func(
-	    "LogicalPlanToSqlTest",
-	    {LogicalType::VARCHAR},
-	    LogicalPlanToSqlTestFunction,
-	    LogicalPlanToSqlTestBind,
-	    LogicalPlanToSqlTestInit
-	);
+	TableFunction lpts_func("LogicalPlanToSqlTest", {LogicalType::VARCHAR}, LogicalPlanToSqlTestFunction,
+	                        LogicalPlanToSqlTestBind, LogicalPlanToSqlTestInit);
 
 	con.BeginTransaction();
 	auto &catalog = Catalog::GetSystemCatalog(*con.context);
@@ -114,10 +104,12 @@ static void LoadInternal(DatabaseInstance &instance) {
 	catalog.CreateTableFunction(*con.context, &lpts_func_info);
 	con.Commit();
 
-	auto generate_server_refresh_script = PragmaFunction::PragmaCall("generate_server_refresh_script", GenerateServerRefreshScript, {LogicalType::VARCHAR});
+	auto generate_server_refresh_script = PragmaFunction::PragmaCall(
+	    "generate_server_refresh_script", GenerateServerRefreshScript, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, generate_server_refresh_script);
 
-	auto generate_client_refresh_script = PragmaFunction::PragmaCall("generate_client_refresh_script", GenerateClientRefreshScript, {LogicalType::VARCHAR});
+	auto generate_client_refresh_script = PragmaFunction::PragmaCall(
+	    "generate_client_refresh_script", GenerateClientRefreshScript, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, generate_client_refresh_script);
 }
 

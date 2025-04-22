@@ -73,7 +73,9 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 	// last refresh is the last refresh (flush) of the materialized view
 	// last update is the last metadata window update
 	// todo exception handling
-	file << "con.execute(\"select rdda_view_constraints.view_name, rdda_view_constraints.rdda_window, rdda_refresh, last_refresh, last_update from rdda_view_constraints left outer join rdda_current_window on rdda_current_window.view_name = concat('rdda_centralized_view_', rdda_view_constraints.view_name);\")\n";
+	file << "con.execute(\"select rdda_view_constraints.view_name, rdda_view_constraints.rdda_window, rdda_refresh, "
+	        "last_refresh, last_update from rdda_view_constraints left outer join rdda_current_window on "
+	        "rdda_current_window.view_name = concat('rdda_centralized_view_', rdda_view_constraints.view_name);\")\n";
 
 	file << "for view in con.fetchall():\n";
 	file << "\tviews.append(view[0])\n";
@@ -91,10 +93,12 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 	file << "\t\tif last_updates[i] is not None:\n";
 	file << "\t\t\tif current_time - last_updates[i] >= timedelta(hours=windows[i]):\n";
 	file << "\t\t\t\t# update the window metadata\n";
-	file << "\t\t\t\tprint(f'[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Updating window for view: {views[i]}')\n";
+	file << "\t\t\t\tprint(f'[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Updating window for view: "
+	        "{views[i]}')\n";
 	file << "\t\t\t\tcon = duckdb.connect(database = \"rdda_parser.db\")\n";
 	// todo exception
-	file << "\t\t\t\tupdate_window_query = f\"update rdda_current_window set rdda_window = rdda_window + 1, last_update = now() where view_name = 'rdda_centralized_view_{views[i]}';\"\n";
+	file << "\t\t\t\tupdate_window_query = f\"update rdda_current_window set rdda_window = rdda_window + 1, "
+	        "last_update = now() where view_name = 'rdda_centralized_view_{views[i]}';\"\n";
 	file << "\t\t\t\tcon.execute(update_window_query)\n";
 	file << "\t\t\t\tcon.close()\n";
 	file << "\t\t\t\tlast_updates[i] = current_time\n";
@@ -107,10 +111,12 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 	file << "\t\t\tcon.close()\n";
 	file << "\t\t\tprint(f'[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Refreshing view: {views[i]}')\n";
 	file << "\t\t\tcon = duckdb.connect(database = \"rdda_parser.db\")\n";
-	file << "\t\t\tupdate_refresh_query = f\"update rdda_view_constraints set last_refresh = now() where view_name = '{views[i]}';\"\n";
+	file << "\t\t\tupdate_refresh_query = f\"update rdda_view_constraints set last_refresh = now() where view_name = "
+	        "'{views[i]}';\"\n";
 	file << "\t\t\tcon.execute(update_refresh_query)\n";
 	file << "\t\t\tcon.close()\n";
-	file << "\t\t\tprint(f'[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Updating metadata for view: {views[i]}')\n";
+	file << "\t\t\tprint(f'[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Updating metadata for view: "
+	        "{views[i]}')\n";
 	file << "\t\t\tlast_refreshes[i] = current_time\n";
 	// every 10 minutes, we check if one of the timestamps elapsed
 
@@ -184,13 +190,7 @@ void GenerateClientRefreshScript(ClientContext &context, const FunctionParameter
 	// todo
 	// todo - also send the refresh scripts to the client
 
-
-
-
 	file.close();
 }
 
-
-
-}
-
+} // namespace duckdb

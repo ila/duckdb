@@ -14,4 +14,4 @@ void GenerateClientRefreshScript(ClientContext &context, const FunctionParameter
 
 } // namespace duckdb
 
-#endif //GENERATE_PYTHON_SCRIPT_HPP
+#endif // GENERATE_PYTHON_SCRIPT_HPP

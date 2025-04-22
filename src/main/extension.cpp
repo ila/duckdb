@@ -37,8 +37,8 @@ static string PrettyPrintString(const string &s) {
 }
 
 string ParsedExtensionMetaData::GetInvalidMetadataError() {
-	//const string engine_version = string(ExtensionHelper::GetVersionDirectoryName());
-//	const string engine_version = "v0.10.3";
+	// const string engine_version = string(ExtensionHelper::GetVersionDirectoryName());
+	//	const string engine_version = "v0.10.3";
 	const string engine_platform = string(DuckDB::Platform());
 
 	if (!AppearsValid()) {

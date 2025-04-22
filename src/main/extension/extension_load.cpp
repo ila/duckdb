@@ -240,7 +240,7 @@ ParsedExtensionMetaData ExtensionHelper::ParseExtensionMetaData(const char *meta
 }
 
 ParsedExtensionMetaData ExtensionHelper::ParseExtensionMetaData(FileHandle &handle) {
-	//const string engine_version = string(ExtensionHelper::GetVersionDirectoryName());
+	// const string engine_version = string(ExtensionHelper::GetVersionDirectoryName());
 	const string engine_version = "v0.10.3";
 	const string engine_platform = string(DuckDB::Platform());
 

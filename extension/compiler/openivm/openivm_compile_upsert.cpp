@@ -53,15 +53,13 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 		// now we sum the columns.
 		for (size_t i = 0; i < aggregates.size(); ++i) {
 			// TODO: Can actually just be made a vector of strings (to be in sync with aggregates()).
-			string& column = aggregates[i];
+			string &column = aggregates[i];
 			// Cannot use functions in alias names, so create a custom alias.
 			// Will also be used later whenever needed.
 			agg_alias_map[column] = "agg_alias_" + std::to_string(i);
 			// Note: all columns should be surrounded by double quotes. `\"column\"`.
-			cte_select_string = (
-			    cte_select_string + "\n  sum(case when _duckdb_ivm_multiplicity = false then -\"" +
-			    column + "\" else \"" + column + "\" end) as " + agg_alias_map.at(column) + ", "
-			);
+			cte_select_string = (cte_select_string + "\n  sum(case when _duckdb_ivm_multiplicity = false then -\"" +
+			                     column + "\" else \"" + column + "\" end) as " + agg_alias_map.at(column) + ", ");
 		}
 		// remove the last comma
 		cte_select_string.erase(cte_select_string.size() - 2, 2);
@@ -91,10 +89,8 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	// now we sum the columns
 	for (auto &column : aggregates) {
 		// we coalesce newly added groups (otherwise the sum would be null)
-		select_string = (
-		    select_string + "\n    sum(coalesce(" + view_name + ".\"" + column +
-		    "\", 0) + delta_" + view_name + "." + agg_alias_map.at(column) + "), "
-		);
+		select_string = (select_string + "\n    sum(coalesce(" + view_name + ".\"" + column + "\", 0) + delta_" +
+		                 view_name + "." + agg_alias_map.at(column) + "), ");
 	}
 	// remove the last comma
 	select_string.erase(select_string.size() - 2, 2);
@@ -159,11 +155,10 @@ string CompileSimpleAggregates(string &view_name, const vector<string> &column_n
 	for (auto &column : column_names) {
 		// Use 4 spaces instead of tab character.
 		if (column != "_duckdb_ivm_multiplicity") { // we don't need the multiplicity column
-			update_query += (
-			    column + " = \n    " + column + " \n        - coalesce((select " + column + " from delta_" +
-			    view_name + " where _duckdb_ivm_multiplicity = false), 0)\n        + coalesce((select " +
-			    column + " from delta_" + view_name + " where _duckdb_ivm_multiplicity = true), 0);\n"
-			);
+			update_query +=
+			    (column + " = \n    " + column + " \n        - coalesce((select " + column + " from delta_" +
+			     view_name + " where _duckdb_ivm_multiplicity = false), 0)\n        + coalesce((select " + column +
+			     " from delta_" + view_name + " where _duckdb_ivm_multiplicity = true), 0);\n");
 		}
 	}
 	// in this case, we choose not to delete from the main view if the final SUM or COUNT is 0

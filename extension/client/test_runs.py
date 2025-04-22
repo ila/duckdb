@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 SOURCE_EXECUTABLE = "/home/ubuntu/duckdb/cmake-build-debug/duckdb"
 SOURCE_CONFIG = "/home/ubuntu/duckdb/extension/client/client.config"
 
+
 def setup_client(client_id):
     folder_name = f"client_{client_id}"
     os.makedirs(folder_name, exist_ok=True)
@@ -35,11 +36,13 @@ def setup_client(client_id):
     except Exception as e:
         print(f"[{folder_name}] Exception: {e}")
 
+
 def run_cycle(n_clients):
     print(f"--- Running PRAGMA test for {n_clients} client(s) ---")
     with ThreadPoolExecutor() as executor:
-        executor.map(setup_client, range(n_clients)) # Spawns N threads
+        executor.map(setup_client, range(n_clients))  # Spawns N threads
     print("✔️  Cycle complete.\n")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Setup DuckDB clients and run PRAGMA test periodically.")
@@ -51,6 +54,7 @@ def main():
         run_cycle(args.N)
         print(f"Sleeping for {args.H} hour(s)...\n")
         time.sleep(args.H * 3600)
+
 
 if __name__ == "__main__":
     main()
