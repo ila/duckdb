@@ -13,8 +13,7 @@ add_library(
   rdda/rdda_parse_table.cpp
   rdda/rdda_parse_view.cpp
   rdda/rdda_parse_select.cpp
-  logical_plan_to_string.cpp
-  data_representation.cpp
+  logical_plan_to_sql.cpp
   generate_python_script.cpp)
 
 add_executable(
@@ -25,8 +24,7 @@ add_executable(
   rdda/rdda_parse_table.cpp
   rdda/rdda_parse_view.cpp
   rdda/rdda_parse_select.cpp
-  data_representation.cpp
-  logical_plan_to_string.cpp
+  logical_plan_to_sql.cpp
   generate_python_script.cpp)
 
 set(PARAMETERS "-warnings")
@@ -39,8 +37,7 @@ build_loadable_extension(
   rdda/rdda_parse_table.cpp
   rdda/rdda_parse_view.cpp
   rdda/rdda_parse_select.cpp
-  logical_plan_to_string.cpp
-  data_representation.cpp
+  logical_plan_to_sql.cpp
   generate_python_script.cpp)
 
 install(

@@ -1,17 +1,26 @@
 #include "openivm_rewrite_rule.hpp"
 
 // From DuckDB.
-#include "../../compiler/include/logical_plan_to_string.hpp"
 #include "../../postgres_scanner/include/postgres_scanner.hpp"
 #include "duckdb/planner/logical_operator.hpp"
-#include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb.hpp"
+#include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/optimizer/column_binding_replacer.hpp>
+#include <duckdb/optimizer/optimizer.hpp>
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include <duckdb/planner/operator/logical_aggregate.hpp>
 #include <duckdb/planner/operator/logical_comparison_join.hpp>
+#include <duckdb/planner/operator/logical_filter.hpp>
+#include <duckdb/planner/operator/logical_get.hpp>
+#include <duckdb/planner/operator/logical_insert.hpp>
+#include <duckdb/planner/operator/logical_projection.hpp>
+#include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "openivm_index_regen.hpp"
 
 // Std.
 #include "../../third_party/zstd/include/zstd/common/debug.h"
+#include "duckdb/planner/planner.hpp"
+#include "duckdb/parser/parser.hpp"
 #include <iostream>
 
 namespace {
@@ -343,6 +352,8 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				                                              std::move(dl_r_projection_bindings));
 			}
 			dl_r_projected->children.emplace_back(std::move(dl_r));
+			dl_r_projected->ResolveOperatorTypes();
+			dl_r_projected->Verify(context);
 #ifdef DEBUG
 			auto projection_debug_bindings = dl_r_projected->GetColumnBindings();
 			printf("dL-R projection CB count: %zu\n", projection_debug_bindings.size());
@@ -373,10 +384,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				const vector<LogicalType> join_types = l_dr->types;
 				vector<unique_ptr<Expression>> l_dr_projection_bindings =
 				    bindings_to_expressions(join_bindings, join_types);
-				l_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
-				                                              std::move(l_dr_projection_bindings));
+				l_dr_projected = make_uniq<LogicalProjection>(
+					pw.input.optimizer.binder.GenerateTableIndex(), std::move(l_dr_projection_bindings)
+                );
 			}
 			l_dr_projected->children.emplace_back(std::move(l_dr));
+			l_dr_projected->ResolveOperatorTypes();
+			l_dr_projected->Verify(context);
 #ifdef DEBUG
 			auto projection_debug_bindings = l_dr_projected->GetColumnBindings();
 			printf("L-dR projection CB count: %zu\n", projection_debug_bindings.size());
@@ -427,10 +441,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				const ColumnBinding dl_mul_binding = {dl_res.idx_map[org_dl_mul.table_index], org_dl_mul.column_index};
 				auto dl_dr_projection_bindings =
 				    project_out_duplicate_mul_column(join_bindings, join_types, dl_mul_binding);
-				dl_dr_projected = make_uniq<LogicalProjection>(pw.input.optimizer.binder.GenerateTableIndex(),
-				                                               std::move(dl_dr_projection_bindings));
+				dl_dr_projected = make_uniq<LogicalProjection>(
+					pw.input.optimizer.binder.GenerateTableIndex(), std::move(dl_dr_projection_bindings)
+                );
 			}
 			dl_dr_projected->children.emplace_back(std::move(dl_dr));
+			dl_dr_projected->ResolveOperatorTypes();
+			dl_dr_projected->Verify(context);
 #ifdef DEBUG
 			auto projection_debug_bindings = dl_dr_projected->GetColumnBindings();
 			printf("dL-dR projection CB count: %zu\n", projection_debug_bindings.size());
@@ -579,9 +596,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			timestamp_binding = ColumnBinding(old_get->table_index, timestamp_idx.GetPrimaryIndex());
 
 			// Finally, create the delta GET node.
-			delta_get_node = make_uniq<LogicalGet>(old_get->table_index, // Will get renumbered later.
-			                                       scan_function, std::move(bind_data), std::move(return_types),
-			                                       std::move(return_names));
+			delta_get_node = make_uniq<LogicalGet>(
+				old_get->table_index, // Will get renumbered later.
+				scan_function,
+				std::move(bind_data),
+				std::move(return_types),
+				std::move(return_names)
+			);
 			delta_get_node->SetColumnIds(std::move(column_ids));
 		}
 		delta_get_node->table_filters = std::move(old_get->table_filters); // this should be empty
@@ -606,11 +627,11 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		// The size is "past the end" of the old get projection IDs, and thus the projection ID of the mul column.
 		if (!delta_get_node->projection_ids.empty()) {
 			delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size());
+			/* 2025-04-15 comment out. Timestamp column should NOT be passed up the tree.
+			 * It is not used beyond the scan's filter. Commended out here for future reference. */
+			// delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		}
-		// fixme [ila] - I have no idea what this code does
-		// we need to add 2 columns, timestamp and multiplicity
 		// how to make this code resilient?
-		delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		delta_get_node->ResolveOperatorTypes();
 #ifdef DEBUG
 		auto debug_bindings_2 = delta_get_node->GetColumnBindings();
@@ -622,38 +643,36 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 	 * END OF CASE.
 	 */
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
-
-		auto modified_node_logical_agg = dynamic_cast<LogicalAggregate *>(pw.plan.get());
+		LogicalAggregate& modified_node_logical_agg = static_cast<LogicalAggregate&>(*pw.plan);
 #ifdef DEBUG
-		for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
+		for (size_t i = 0; i < modified_node_logical_agg.GetColumnBindings().size(); i++) {
 			printf("aggregate node CB before %zu %s\n", i,
-			       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
+			       modified_node_logical_agg.GetColumnBindings()[i].ToString().c_str());
 		}
-		printf("Aggregate index: %zu Group index: %zu\n", modified_node_logical_agg->aggregate_index,
-		       modified_node_logical_agg->group_index);
+		printf("Aggregate index: %zu Group index: %zu\n", modified_node_logical_agg.aggregate_index,
+		       modified_node_logical_agg.group_index);
 #endif
 
-		ColumnBinding mod_mul_binding = child_mul_bindings[0];
-		mod_mul_binding.column_index = modified_node_logical_agg->groups.size();
 		auto mult_group_by =
-		    make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", pw.mul_type, mod_mul_binding);
-		modified_node_logical_agg->groups.emplace_back(std::move(mult_group_by));
+		    make_uniq<BoundColumnRefExpression>("_duckdb_ivm_multiplicity", pw.mul_type, child_mul_bindings[0]);
+		modified_node_logical_agg.groups.emplace_back(std::move(mult_group_by));
 
 		auto mult_group_by_stats = make_uniq<BaseStatistics>(BaseStatistics::CreateUnknown(pw.mul_type));
-		modified_node_logical_agg->group_stats.emplace_back(std::move(mult_group_by_stats));
+		modified_node_logical_agg.group_stats.emplace_back(std::move(mult_group_by_stats));
 
-		if (modified_node_logical_agg->grouping_sets.empty()) {
-			modified_node_logical_agg->grouping_sets = {{0}};
+		if (modified_node_logical_agg.grouping_sets.empty()) {
+			modified_node_logical_agg.grouping_sets = {{0}};
 		} else {
-			idx_t gr = modified_node_logical_agg->grouping_sets[0].size();
-			modified_node_logical_agg->grouping_sets[0].insert(gr);
+			idx_t gr = modified_node_logical_agg.grouping_sets[0].size();
+			modified_node_logical_agg.grouping_sets[0].insert(gr);
 		}
 
-		mod_mul_binding.table_index = modified_node_logical_agg->group_index;
+
+
 #ifdef DEBUG
-		for (size_t i = 0; i < modified_node_logical_agg->GetColumnBindings().size(); i++) {
+		for (size_t i = 0; i < modified_node_logical_agg.GetColumnBindings().size(); i++) {
 			printf("aggregate node CB after %zu %s\n", i,
-			       modified_node_logical_agg->GetColumnBindings()[i].ToString().c_str());
+			       modified_node_logical_agg.GetColumnBindings()[i].ToString().c_str());
 		}
 		printf("Modified plan (aggregate/group by):\n%s\nParameters:", pw.plan->ToString().c_str());
 		// Output ParameterToString.
@@ -663,7 +682,13 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		printf("\n---end of modified plan (aggregate/group by)---\n");
 #endif
 		// Return plan, along with the modified multiplicity binding.
+		pw.plan->ResolveOperatorTypes();
 		pw.plan->Verify(pw.input.context);
+		// Use group index (because mul is in GROUP BY).
+		// Column index is `groups.size() - 1`, because it is at the end (and already inserted, so -1 for index).
+		ColumnBinding mod_mul_binding = ColumnBinding(
+			modified_node_logical_agg.group_index, modified_node_logical_agg.groups.size() - 1
+		);
 		return {std::move(pw.plan), mod_mul_binding};
 	}
 	/*

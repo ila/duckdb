@@ -11,14 +11,11 @@
 #include "duckdb.hpp"
 #include "postgres_version.hpp"
 
-#ifdef __linux__
+// Should work on both Linux and MacOS.
 #if __has_include(<postgresql/libpq-fe.h>)
 #include <postgresql/libpq-fe.h>
 #else
 #include <libpq-fe.h>
-#endif
-#else
-#error "Unsupported OS"
 #endif
 
 namespace duckdb {

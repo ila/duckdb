@@ -36,7 +36,7 @@ CREATE MATERIALIZED VIEW income AS
 
 
 -- Add another payment (this time to Apollo)
-INSERT INTO payments VALUES (3, 1, 30);
+INSERT INTO payments VALUES (3::INTEGER, 1::INTEGER, 30::INTEGER);
 
 -- Now, update the IVM and see what happens.
 PRAGMA ivm('named_payments');
