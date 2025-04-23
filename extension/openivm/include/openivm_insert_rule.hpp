@@ -217,18 +217,27 @@ public:
 					// todo 3 -- throw exception if the plan is too complicated
 					string insert_string =
 					    "insert into " + delta_delete_table + " select *, false, now() from " + delete_table_name;
+					string where_string;
 					// handling the potential filters
 					if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 						auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
-						// FIXME 2024-11-04 use ToString or do something with ParamsToString?
-						insert_string += " where " + filter->ToString();
+						auto conditions = filter->ParamsToString();
+						for (auto &c : conditions) {
+							if (c.first == "Expressions") {
+								where_string += c.second.c_str();
+							}
+						}
 					} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 						auto get = dynamic_cast<LogicalGet *>(plan->children[0].get());
 						// we only add WHERE if there are table filters
 						if (!get->table_filters.filters.empty()) {
-							// FIXME 2024-11-04 use ToString or do something with ParamsToString?
-							insert_string += " where " + get->ToString();
-							insert_string = insert_string.substr(0, insert_string.find('\n'));
+							where_string += " where ";
+							auto conditions = get->ParamsToString();
+							for (auto &c : conditions) {
+								if (c.first == "Filters") {
+									where_string += c.second.c_str();
+								}
+							}
 						}
 					} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
 						// do nothing?
