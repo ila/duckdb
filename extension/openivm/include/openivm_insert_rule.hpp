@@ -317,7 +317,7 @@ public:
 							where_string += " where ";
 							auto conditions = get->ParamsToString();
 							for (auto &c : conditions) {
-								if (c.first == "Expressions") {
+								if (c.first == "Filters") {
 									where_string += c.second.c_str();
 								}
 							}
