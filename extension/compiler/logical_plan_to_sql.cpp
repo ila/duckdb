@@ -112,7 +112,11 @@ std::string GetNode::ToQuery() {
 		get_str << vec_to_separated_list(column_names);
 	}
 	get_str << " FROM ";
-	// TODO: Could add catalog/schema name here.
+	// TODO: If a dummy scan (or similar) gets implemented, this logic may need to be changed.
+	get_str << catalog;
+	get_str << ".";
+	get_str << schema;
+	get_str << ".";
 	get_str << table_name;
 	if (table_filters.empty()) {
 		// Add nothing.
