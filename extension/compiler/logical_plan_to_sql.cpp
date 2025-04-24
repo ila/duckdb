@@ -112,6 +112,7 @@ std::string GetNode::ToQuery() {
 		get_str << vec_to_separated_list(column_names);
 	}
 	get_str << " FROM ";
+	// TODO: Could add catalog/schema name here.
 	get_str << table_name;
 	if (table_filters.empty()) {
 		// Add nothing.
@@ -316,7 +317,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		size_t table_index = plan_as_get.table_index;
 		// We need: catalog, schema, table name.
 		string table_name = catalog_entry.get()->name;
-		string catalog_name = ""; // todo
+		string catalog_name = plan_as_get.GetTable()->schema.ParentCatalog().GetName();
 		string schema_name = catalog_entry->schema.name;
 		vector<string> column_names;
 		vector<string> filters;
