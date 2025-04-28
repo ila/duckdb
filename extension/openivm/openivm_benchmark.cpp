@@ -108,8 +108,8 @@ vector<string> ReadQueries(const string &filename) {
 	return result;
 }
 
-int GetRandomValue() {
-	std::uniform_int_distribution<int> distribution(1, 100);
+int GetRandomValue(size_t max_value) {
+	std::uniform_int_distribution<int> distribution(1, static_cast<int>(max_value));
 	return distribution(generator);
 }
 

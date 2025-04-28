@@ -16,6 +16,7 @@ add_library(
   openivm_benchmark.cpp
   openivm_lineitem_benchmark.cpp
   openivm_groups_benchmark.cpp
+  openivm_joins_benchmark.cpp
   openivm_cross_system_benchmark.cpp
   openivm_cross_system_demo.cpp
   openivm_upsert.cpp
@@ -34,6 +35,7 @@ build_loadable_extension(
   openivm_benchmark.cpp
   openivm_lineitem_benchmark.cpp
   openivm_groups_benchmark.cpp
+  openivm_joins_benchmark.cpp
   openivm_cross_system_benchmark.cpp
   openivm_cross_system_demo.cpp
   openivm_upsert.cpp

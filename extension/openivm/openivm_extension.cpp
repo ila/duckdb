@@ -62,14 +62,28 @@ static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &contex
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
+	const size_t input_size = input.inputs.size();
 
-	if (input.inputs.size() == 2) {
+	if (input_size == 2) {
 		// lineitem benchmark
 		auto scale_factor = DoubleValue::Get(input.inputs[0]);
 		auto new_scale_factor = DoubleValue::Get(input.inputs[1]);
 		input.named_parameters["scale_factor"] = scale_factor;
 		input.named_parameters["new_scale_factor"] = new_scale_factor;
 		RunIVMLineitemBenchmark(scale_factor, new_scale_factor);
+	} else if (input_size == 3) {
+		auto scale_factor = DoubleValue::Get(input.inputs[0]);
+		auto insertions_left = IntegerValue::Get(input.inputs[1]);
+		auto insertions_right = IntegerValue::Get(input.inputs[2]);
+		input.named_parameters["scale_factor"] = scale_factor;
+		input.named_parameters["insertions_left"] = insertions_left;
+		input.named_parameters["insertions_right"] = insertions_right;
+		if (insertions_left < 100 && insertions_right < 100) {
+			throw NotImplementedException("Error: invalid benchmark parameters.");
+		}
+		int tuples = scale_factor; // casting
+		RunIVMJoinsBenchmark(tuples, insertions_left, insertions_right);
+
 	} else {
 		auto scale_factor = DoubleValue::Get(input.inputs[0]);
 		auto insertions = IntegerValue::Get(input.inputs[1]);
@@ -247,6 +261,11 @@ static void LoadInternal(DatabaseInstance &instance) {
 	    "IVMBenchmark", {LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
 	    DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
+	// Added for joins
+	TableFunction ivm_benchmark_joins_func(
+		"IVMBenchmark", {LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER},
+		DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
+
 	TableFunction ivm_benchmark_lineitem_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::DOUBLE},
 	                                          DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
@@ -279,6 +298,18 @@ static void LoadInternal(DatabaseInstance &instance) {
 	CreateTableFunctionInfo ivm_benchmark_groups_func_info(ivm_benchmark_groups_func);
 	catalog.CreateTableFunction(*con.context, &ivm_benchmark_groups_func_info);
 	con.Commit();
+
+	// Add for joins benchmark
+	con.BeginTransaction();
+	ivm_benchmark_joins_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMBenchmark);
+	ivm_benchmark_joins_func.name = "ivm_benchmark_joins";
+	ivm_benchmark_joins_func.named_parameters["scale_factor"];
+	ivm_benchmark_joins_func.named_parameters["insertions_left"];
+	ivm_benchmark_joins_func.named_parameters["insertions_right"];
+	CreateTableFunctionInfo ivm_benchmark_joins_func_info(ivm_benchmark_joins_func);
+	catalog.CreateTableFunction(*con.context, &ivm_benchmark_joins_func_info);
+	con.Commit();
+	// End of joins benchmark addition
 
 	con.BeginTransaction();
 	ivm_benchmark_lineitem_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(DoIVMBenchmark);
