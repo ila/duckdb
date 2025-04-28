@@ -119,7 +119,7 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 		// Load the joins.
 		auto start_time = std::chrono::high_resolution_clock::now();
 		// Left side.
-		con.Query("CREATE TABLE " + left_table_name + "(increment_id INTEGER, dummy_name VARCHAR, tid INTEGER);");
+	con.Query("CREATE TABLE " + left_table_name + "(increment_id INTEGER, dummy_name VARCHAR, tid_left INTEGER);");
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
 				  << "\n";
 
@@ -128,8 +128,8 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 			fs.RemoveFile(db_name);
 			throw InternalException("Failed to load joins data (left): %s", r_1->GetError().c_str());
 		}
-		// Right size.
-		con.Query("CREATE TABLE " + right_table_name + "(geo_id INTEGER, dummy_location VARCHAR, tid INTEGER);");
+		// Right side.
+		con.Query("CREATE TABLE " + right_table_name + "(geo_id INTEGER, dummy_location VARCHAR, tid_right INTEGER);");
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
 		          << "\n";
 
@@ -156,7 +156,7 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 
 	// Create a materialised view with a join.
 	string base_join_query = (
-	    "SELECT * FROM " + left_table_name + " INNER JOIN " + right_table_name + " ON left_side.tid = right_side.tid;"
+	    "SELECT * FROM " + left_table_name + " INNER JOIN " + right_table_name + " ON tid_left = tid_right;"
 	);
 	string materialized_view = "CREATE MATERIALIZED VIEW " + view_name + " AS " + base_join_query;
 	std::chrono::milliseconds materialized_view_time = std::chrono::milliseconds(0);
