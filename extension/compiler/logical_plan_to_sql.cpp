@@ -327,10 +327,21 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		vector<string> filters;
 
 		vector<std::string> cte_column_names;
+		/* IMPORTANT! Distinguish ColumnBindings from ColumnIDs:
+		 * -> ColumnBindings are the representation of the columns inside the logical plan
+		 * -> ColumnIds are the order of the columns in the physical table; needed to get the data out of the table.
+		 *
+		 * Each ColumnBinding should be tied to the name of the column inside the table,
+		 *  which is NOT the order that the `names` vector is in.
+		 * Rather, it is at the index of names as depicted in the ColumnIds vector.
+		 * The same holds for `types`; use the indices in the ColumnIds vector to obtain the proper type.
+		 */
 		const vector<ColumnBinding> col_binds = subplan->GetColumnBindings();
+		const auto col_ids = plan_as_get.GetColumnIds();
 		for (size_t i = 0; i < col_binds.size(); ++i) {
 			// Get using `i`.
-			std::string column_name = plan_as_get.names[i];
+			const idx_t idx = col_ids[i].GetPrimaryIndex();
+			std::string column_name = plan_as_get.names[idx]; // Using `idx`, see comment above!
 			const ColumnBinding &cb = col_binds[i];
 			// Populate stuff.
 			column_names.push_back(column_name);

@@ -558,24 +558,11 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			auto scan_function = table_entry.GetScanFunction(context, bind_data);
 
 			// Define the return names and types.
-			vector<LogicalType> return_types = {};
-			vector<string> return_names = {};
-			vector<ColumnIndex> column_ids = {};
-			/* Add the original GET column_ids using the logic as explained below.*/
-			// the delta table has the same columns and column names as the base table, in the same order
-			// therefore, we just need to add the columns that we need
-			// this is ugly, but needs to stay like this
-			// sometimes DuckDB likes to randomly invert columns, so we need to check all of them
-			// example: a SELECT * can be translated to 1, 0, 2, 3 rather than 0, 1, 2, 3
-			for (auto &id : old_get->GetColumnIds()) {
-				column_ids.push_back(id);
-				for (auto &col : table_entry.GetColumns().Logical()) {
-					if (col.Oid() == id.GetPrimaryIndex()) {
-						return_types.push_back(col.Type());
-						return_names.push_back(col.Name());
-					}
-				}
-			}
+			// Note (2025-04-30): do NOT shuffle names here; do that in LPTSql!
+			vector<LogicalType> return_types = old_get->types;
+			vector<string> return_names = old_get->names;
+			vector<ColumnIndex> column_ids = old_get->GetColumnIds();
+
 			// The column_ids, return_types, and return_names are now identical to the original GET.
 			// For the delta GET, the multiplicity column and timestamp should be added,
 			// as in theory they "can be returned by the table function".
