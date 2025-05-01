@@ -19,7 +19,7 @@ void GenerateLineitem(double scale_factor, double percentage_insertions);
 vector<string> ReadQueries(const string &filename);
 void RunIVMLineitemBenchmark(double scale_factor, double new_scale_factor);
 void RunIVMGroupsBenchmark(int scale_factor, int inserts, int updates, int deletes);
-void RunIVMJoinsBenchmark(int scale_factor, int inserts_left, int inserts_right);
+void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add_right, int pool);
 void RunIVMCrossSystemBenchmark(double scale_factor, int insert_pct, int update_pct, int delete_pct,
                                 BenchmarkType benchmark_type);
 

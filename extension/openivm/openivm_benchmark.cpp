@@ -68,7 +68,8 @@ string ExtractSelect(const string &input_query) {
 	return cte;
 }
 
-// Function to read a file and split its content into six strings
+// Function to read a file and split its content into one string per query (usually 6).
+// Queries are assumed to be separated using two consecutive newlines.
 vector<string> ReadQueries(const string &filename) {
 	std::ifstream file(filename);
 
@@ -76,7 +77,6 @@ vector<string> ReadQueries(const string &filename) {
 		throw std::runtime_error("Error opening file: " + filename);
 	}
 
-	vector<string> result;
 	std::stringstream buffer;
 	string line;
 
@@ -89,21 +89,22 @@ vector<string> ReadQueries(const string &filename) {
 	// get the content of the stringstream
 	std::string content = buffer.str();
 
-	// find the positions of '\n\n' to split the content
-	size_t pos1 = content.find("\n\n");
-	size_t pos2 = content.find("\n\n", pos1 + 1);
-	size_t pos3 = content.find("\n\n", pos2 + 1);
-	size_t pos4 = content.find("\n\n", pos3 + 1);
-	size_t pos5 = content.find("\n\n", pos4 + 1);
-	size_t pos6 = content.find("\n\n", pos5 + 1);
+	vector<string> result;
+	size_t offset = 0;
+	// TODO: Split delta_left/right into two separate queries.
+	//  For this: make delimiter ";\n" but add `;` to output.
+	while (true) {
+		size_t pos = content.find("\n\n", offset);
+		if (pos == std::string::npos) {
+			// No more delimiters; add the remaining part
+		    // result.push_back(content.substr(offset));
 
-	// Split the content into six strings
-	result.push_back(content.substr(0, pos1));
-	result.push_back(content.substr(pos1 + 2, pos2 - pos1 - 2));
-	result.push_back(content.substr(pos2 + 2, pos3 - pos2 - 2));
-	result.push_back(content.substr(pos3 + 2, pos4 - pos3 - 2));
-	result.push_back(content.substr(pos4 + 2, pos5 - pos4 - 2));
-	result.push_back(content.substr(pos5 + 2, pos6 - pos5 - 2));
+			break;
+		}
+		// TODO: Add +1 here to `n` when switching to ";\n" to include the semicolon
+		result.push_back(content.substr(offset, pos - offset));
+		offset = pos + 2; // Move past the delimiter
+	}
 
 	return result;
 }

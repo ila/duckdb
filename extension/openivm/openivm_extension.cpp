@@ -71,18 +71,21 @@ static duckdb::unique_ptr<FunctionData> DoIVMBenchmarkBind(ClientContext &contex
 		input.named_parameters["scale_factor"] = scale_factor;
 		input.named_parameters["new_scale_factor"] = new_scale_factor;
 		RunIVMLineitemBenchmark(scale_factor, new_scale_factor);
-	} else if (input_size == 3) {
-		auto scale_factor = DoubleValue::Get(input.inputs[0]);
-		auto insertions_left = IntegerValue::Get(input.inputs[1]);
-		auto insertions_right = IntegerValue::Get(input.inputs[2]);
-		input.named_parameters["scale_factor"] = scale_factor;
-		input.named_parameters["insertions_left"] = insertions_left;
-		input.named_parameters["insertions_right"] = insertions_right;
-		if (insertions_left < 100 && insertions_right < 100) {
+	} else if (input_size == 5) {
+		auto start_left = IntegerValue::Get(input.inputs[0]);
+		auto start_right = IntegerValue::Get(input.inputs[1]);
+		auto insertions_left = IntegerValue::Get(input.inputs[2]);
+		auto insertions_right = IntegerValue::Get(input.inputs[3]);
+		auto pool_size = IntegerValue::Get(input.inputs[4]);
+		input.named_parameters["left_base_table_size"] = start_left;
+		input.named_parameters["right_base_table_size"] = start_right;
+		input.named_parameters["left_additions"] = insertions_left;
+		input.named_parameters["right_additions"] = insertions_right;
+		input.named_parameters["id_pool_size"] = pool_size;
+		if (start_left < 100 && start_right < 100) {
 			throw NotImplementedException("Error: invalid benchmark parameters.");
 		}
-		int tuples = scale_factor; // casting
-		RunIVMJoinsBenchmark(tuples, insertions_left, insertions_right);
+		RunIVMJoinsBenchmark(start_left, start_right, insertions_left, insertions_right, pool_size);
 
 	} else {
 		auto scale_factor = DoubleValue::Get(input.inputs[0]);
@@ -263,7 +266,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	// Added for joins
 	TableFunction ivm_benchmark_joins_func(
-		"IVMBenchmark", {LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER},
+		"IVMBenchmark", {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
 		DoIVMBenchmarkFunction, DoIVMBenchmarkBind, DoIVMBenchmarkInit);
 
 	TableFunction ivm_benchmark_lineitem_func("IVMBenchmark", {LogicalType::DOUBLE, LogicalType::DOUBLE},

@@ -17,14 +17,16 @@
 namespace duckdb {
 
 
-void CreateJoinTable(int tuples, int insertions, bool is_right) {
+/// Create the join table, and return the dir it's in.
+string CreateJoinTable(const int start_records, const int delta_records, const int pool, bool is_right) {
 	string data_dir = "/tmp/data/";
-	string scale_dir = data_dir + "t" + DoubleToString(tuples) + "/";
+	// Add pool size to dir as well as it can change the output.
+	string scale_dir = data_dir + "t" + DoubleToString(start_records) + "p" + DoubleToString(pool) + "/";
 
 	string l_or_r = is_right ? "right" : "left";
 
 	auto joins_path = scale_dir + l_or_r + "_joins.tbl";
-	auto joins_path_new = scale_dir + l_or_r + "_joins_new_" + to_string(insertions) + ".tbl";
+	auto joins_path_new = scale_dir + l_or_r + "_joins_new_" + to_string(delta_records) + ".tbl";
 
 	LocalFileSystem fs;
 
@@ -40,18 +42,20 @@ void CreateJoinTable(int tuples, int insertions, bool is_right) {
 	if (!fs.FileExists(joins_path)) {
 		std::ofstream outfile(joins_path);
 
-		for (int i = 1; i <= tuples; ++i) {
-			// Format: `i,'left',random_id`
-			// Or:    `i,'right',random_id`
-			outfile << i << "," << l_or_r << "," << GetRandomValue(tuples) << '\n';
+		// Start at i=0 for better modulo logic
+		for (int i = 0; i < start_records; ++i) {
+			// Format: `i,'left_start',tid` (tid based on pool)
+			// Or:    `i,'right_start',tid` (tid based on pool)
+			outfile << i << "," << l_or_r << "_start," << i % pool << '\n';
 		}
 	}
 
 	if (!fs.FileExists(joins_path_new)) {
 		std::ofstream outfile(joins_path_new);
 
-		for (int i = 0; i < insertions - 100; ++i) {
-			outfile << tuples + i << "," << l_or_r << "," << GetRandomValue(insertions) << '\n';
+		for (int i = 0; i < delta_records; ++i) {
+			// Format: `i,'left_add',tid` or `i,'right_add',tid`.
+			outfile << start_records + i << "," << l_or_r << "_add," << i % pool << '\n';
 		}
 		// Is this for guaranteed mismatches or something? Probably not needed here.
 		/*
@@ -60,11 +64,8 @@ void CreateJoinTable(int tuples, int insertions, bool is_right) {
 		}
         */
 	}
+	return scale_dir;
 }
-
-
-
-
 
 /* Eventually, it would be good to have one value per insert/update/delete (no L/R distinction).
  * Then, automatically balance in this way:
@@ -78,9 +79,8 @@ void CreateJoinTable(int tuples, int insertions, bool is_right) {
 bool first_time = true;
 bool ivm_joins = true;
 
-// TODO: change input variables to: start_l, start_l, inserts_l, inserts_r, tid_pool (l=left, r=right)
-//  This allows for the RNG to explicitly have the join rate added.
-void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right) {
+// TODO: change input variables to: start_l, start_r, inserts_l, inserts_r, tid_pool (l=left, r=right)
+void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add_right, int tid_pool) {
 	// Usage: call ivm_benchmark_joins(10, 1000, 1000);
 
 	string db_name = "joins.db";
@@ -100,9 +100,9 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generating data..."
 	<< "\n";
 
-	// generating groups
-	CreateJoinTable(tuples, insertions_left, false);
-	CreateJoinTable(tuples, insertions_right, true);
+	// Generating tables. `scale_dir`s end with a '/'.
+	string left_scale_dir = CreateJoinTable(start_left, add_left, tid_pool, false);
+	string right_scale_dir = CreateJoinTable(start_right, add_right, tid_pool, true);
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Generated joins data..."
 	<< "\n";
 
@@ -119,11 +119,12 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 		// Load the joins.
 		auto start_time = std::chrono::high_resolution_clock::now();
 		// Left side.
-	con.Query("CREATE TABLE " + left_table_name + "(increment_id INTEGER, dummy_name VARCHAR, tid_left INTEGER);");
+		con.Query("CREATE TABLE " + left_table_name + "(increment_id INTEGER, dummy_name VARCHAR, tid_left INTEGER);");
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
 				  << "\n";
 
-		auto r_1 = con.Query("COPY " + left_table_name + " FROM '/tmp/data/t" + to_string(tuples) + "/left_joins.tbl' (DELIMITER ',');");
+		string left_query = "COPY " + left_table_name + " FROM '" + left_scale_dir + "left_joins.tbl' (DELIMITER ',');";
+		auto r_1 = con.Query(left_query);
 		if (r_1->HasError()) {
 			fs.RemoveFile(db_name);
 			throw InternalException("Failed to load joins data (left): %s", r_1->GetError().c_str());
@@ -131,9 +132,9 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 		// Right side.
 		con.Query("CREATE TABLE " + right_table_name + "(geo_id INTEGER, dummy_location VARCHAR, tid_right INTEGER);");
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
-		          << "\n";
+				  << "\n";
 
-		auto r_2 = con.Query("COPY " + right_table_name + " FROM '/tmp/data/t" + to_string(tuples) + "/right_joins.tbl' (DELIMITER ',');");
+		auto r_2 = con.Query("COPY " + right_table_name + " FROM '" + right_scale_dir + "right_joins.tbl' (DELIMITER ',');");
 		if (r_2->HasError()) {
 			fs.RemoveFile(db_name);
 			throw InternalException("Failed to load joins data (right): %s", r_2->GetError().c_str());
@@ -156,7 +157,8 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 
 	// Create a materialised view with a join.
 	string base_join_query = (
-	    "SELECT * FROM " + left_table_name + " INNER JOIN " + right_table_name + " ON tid_left = tid_right;"
+		"SELECT * FROM " + left_table_name + " INNER JOIN " + right_table_name + " ON tid_left = tid_right;"
+		// "SELECT * FROM " + left_table_name + ", " + right_table_name + " WHERE tid_left = tid_right;"
 	);
 	string materialized_view = "CREATE MATERIALIZED VIEW " + view_name + " AS " + base_join_query;
 	std::chrono::milliseconds materialized_view_time = std::chrono::milliseconds(0);
@@ -211,51 +213,55 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 
 	// inserting new data in the delta table
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Applying modifications to the base table..."
-	          << "\n";
-	auto start_time = std::chrono::high_resolution_clock::now();
-	auto r = con.Query("COPY " + left_table_name + " FROM '/tmp/data/t" + to_string(tuples) + "/left_joins_new_" +
-					   to_string(insertions_left) + ".tbl' (DELIMITER ',');");
-	if (r->HasError()) {
-		fs.RemoveFile(db_name);
-		throw InternalException("Failed to load new right table data: %s", r->GetError().c_str());
+			  << "\n";
+	std::chrono::milliseconds copy_time;
+	{
+		auto start_time = std::chrono::high_resolution_clock::now();
+		auto r = con.Query("COPY " + left_table_name + " FROM '" + left_scale_dir + "left_joins_new_" +
+						   to_string(add_left) + ".tbl' (DELIMITER ',');");
+		if (r->HasError()) {
+			fs.RemoveFile(db_name);
+			throw InternalException("Failed to load new left table data: %s", r->GetError().c_str());
+		}
+		r = con.Query("COPY " + right_table_name + " FROM '" + right_scale_dir + "right_joins_new_" +
+						   to_string(add_right) + ".tbl' (DELIMITER ',');");
+		if (r->HasError()) {
+			fs.RemoveFile(db_name);
+			throw InternalException("Failed to load new right table data: %s", r->GetError().c_str());
+		}
+		// Skipping updates/deletions...
+		auto end_time = std::chrono::high_resolution_clock::now();
+		copy_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	}
-	r = con.Query("COPY " + right_table_name + " FROM '/tmp/data/t" + to_string(tuples) + "/right_joins_new_" +
-					   to_string(insertions_left) + ".tbl' (DELIMITER ',');");
-	if (r->HasError()) {
-		fs.RemoveFile(db_name);
-		throw InternalException("Failed to load new right table data: %s", r->GetError().c_str());
-	}
-	// Skipping updates/deletions...
-	auto end_time = std::chrono::high_resolution_clock::now();
-	auto copy_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "New data inserted..."
-	          << "\n";
+			  << "\n";
 
-	r = con.Query("SELECT COUNT(*) FROM delta_" + view_name + ";");
+	auto r = con.Query("SELECT COUNT(*) FROM delta_" + view_name + ";");
 	if (r->HasError()) {
 		fs.RemoveFile(db_name);
 		throw InternalException("Failed to count delta simple_join: %s", r->GetError().c_str());
 	}
 	auto count_delta_groups = r->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
-	          << "Rows inserted in delta_simple_join: " << Format(count_delta_groups) << "\n";
+			  << "Rows inserted in delta_simple_join: " << Format(count_delta_groups) << "\n";
 
 
 	// we want to see each query time individually -> we save the result to a file and then parse it
-
-	start_time = std::chrono::high_resolution_clock::now();
-	if (ivm_joins) {
-		r = con.Query("PRAGMA ivm('simple_join');");
-		if (r->HasError()) {
-			fs.RemoveFile(db_name);
-			throw InternalException("Failed to run the query: %s", r->GetError().c_str());
+	std::chrono::milliseconds compile_time;
+	{
+		auto start_time = std::chrono::high_resolution_clock::now();
+		if (ivm_joins) {
+			r = con.Query("PRAGMA ivm('simple_join');");
+			if (r->HasError()) {
+				fs.RemoveFile(db_name);
+				throw InternalException("Failed to run the query: %s", r->GetError().c_str());
+			}
+			ivm_joins = false;
 		}
-		ivm_joins = false;
+		auto end_time = std::chrono::high_resolution_clock::now();
+		compile_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	}
-	end_time = std::chrono::high_resolution_clock::now();
-	auto compile_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "Queries compiled..."
 			  << "\n";
@@ -264,22 +270,23 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 	auto queries = ReadQueries("ivm_upsert_queries_" + view_name + ".sql");
 	const string& insert_query = queries[0];
 	const string& update_timestamp_query = queries[1];
-	/* // No update/delete currently.
-	auto upsert_query = queries[2];
-	auto delete_query_1 = queries[3];
-	auto delete_query_2 = queries[4];
-	auto delete_query_3 = queries[5];
-    */
+	const string& delete_mul_false = queries[2];
+	const string& insert_mul_true = queries[3];
+	const string& delete_query_2_join = queries[4];
+	const string& delete_query_3_sides = queries[5]; // TODO: Split into two queries.
 
 	// now we insert
-	start_time = std::chrono::high_resolution_clock::now();
-	r = con.Query(insert_query);
-	if (r->HasError()) {
-		fs.RemoveFile(db_name);
-		throw InternalException("Failed to insert data: %s", r->GetError().c_str());
+	std::chrono::milliseconds insert_time;
+	{
+		auto start_time = std::chrono::high_resolution_clock::now();
+		r = con.Query(insert_query);
+		if (r->HasError()) {
+			fs.RemoveFile(db_name);
+			throw InternalException("Failed to insert data: %s", r->GetError().c_str());
+		}
+		auto end_time = std::chrono::high_resolution_clock::now();
+		insert_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	}
-	end_time = std::chrono::high_resolution_clock::now();
-	auto insert_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM insertion performed..."
 	          << "\n";
@@ -292,9 +299,33 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 	// updating metadata
 	con.Query(update_timestamp_query);
 
-	/*
-	 * Skipping upsert and deletions...
-	 */
+	// performing the upsert
+	std::chrono::milliseconds maintain_time;
+	{
+		auto start_time = std::chrono::high_resolution_clock::now();
+		con.Query(delete_mul_false);
+		con.Query(insert_mul_true);
+		auto end_time = std::chrono::high_resolution_clock::now();
+		maintain_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM changes performed..."
+				  << "\n";
+	}
+	std::chrono::milliseconds delete_time;
+	{
+		auto start_time = std::chrono::high_resolution_clock::now();
+		con.Query(delete_query_2_join);
+		con.Query(delete_query_3_sides);
+		auto end_time = std::chrono::high_resolution_clock::now();
+		delete_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "IVM deletion performed..."
+				  << "\n";
+	}
+	auto new_count_simple_join = con.Query("SELECT COUNT(*) FROM " + view_name + ";")->GetValue(0, 0).ToString();
+	std::cout << std::put_time(std::localtime(&now), "%c ")
+			  << "Rows in the materialized view after the changes: " << Format(new_count_simple_join) << "\n";
+
 
 	// finally, we measure the time to run the query without IVM
 	auto count_left_new = con.Query("SELECT COUNT(*) FROM" + left_table_name + " ;")->GetValue(0, 0).ToString();
@@ -303,18 +334,20 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 
 	auto count_right_new = con.Query("SELECT COUNT(*) FROM " + right_table_name + " ;")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
-			  << "Total rows in the right base table: " << Format(right_table_name) << "\n";
+			  << "Total rows in the right base table: " << Format(count_right_new) << "\n";
 
-	start_time = std::chrono::high_resolution_clock::now();
-	con.Query(base_join_query);
-	end_time = std::chrono::high_resolution_clock::now();
-	auto query_groups_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-	now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	std::cout << std::put_time(std::localtime(&now), "%c ") << "Query executed..."
-	          << "\n";
+	std::chrono::milliseconds query_groups_time;
+	{
+		auto start_time = std::chrono::high_resolution_clock::now();
+		con.Query(base_join_query);
+		auto end_time = std::chrono::high_resolution_clock::now();
+		query_groups_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Query executed..." << "\n";
+	}
 
 	auto total_time =
-	    materialized_view_time + index_time + compile_time + insert_time /* + upsert_time + delete_time */ + (copy_time / 2);
+	    materialized_view_time + index_time + compile_time + insert_time + maintain_time + delete_time + (copy_time / 2);
 
 
 	// printing the benchmark results
@@ -335,12 +368,10 @@ void RunIVMJoinsBenchmark(int tuples, int insertions_left, int insertions_right)
 			  << "| " << std::setw(9) << compile_time.count() << " |" << '\n';
 	std::cout << "| " << std::left << std::setw(41) << "IVM insertion"
 			  << "| " << std::setw(9) << insert_time.count() << " |" << '\n';
-	/*
-	std::cout << "| " << std::left << std::setw(41) << "IVM upsert"
-			  << "| " << std::setw(9) << upsert_time.count() << " |" << '\n';
+	std::cout << "| " << std::left << std::setw(41) << "IVM changes"
+			  << "| " << std::setw(9) << maintain_time.count() << " |" << '\n';
 	std::cout << "| " << std::left << std::setw(41) << "IVM deletion"
 			  << "| " << std::setw(9) << delete_time.count() << " |" << '\n';
-*/
 	std::cout << "| " << std::left << std::setw(41) << "Total IVM time"
 			  << "| " << std::setw(9) << total_time.count() << " |" << '\n';
 	std::cout << "| " << std::left << std::setw(41) << "Query without IVM"
