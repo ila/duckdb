@@ -336,12 +336,12 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 	std::cout << std::put_time(std::localtime(&now), "%c ")
 			  << "Total rows in the right base table: " << Format(count_right_new) << "\n";
 
-	std::chrono::milliseconds query_groups_time;
+	std::chrono::milliseconds query_without_ivm;
 	{
 		auto start_time = std::chrono::high_resolution_clock::now();
 		con.Query(base_join_query);
 		auto end_time = std::chrono::high_resolution_clock::now();
-		query_groups_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+		query_without_ivm = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 		now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 		std::cout << std::put_time(std::localtime(&now), "%c ") << "Query executed..." << "\n";
 	}
@@ -375,7 +375,7 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 	std::cout << "| " << std::left << std::setw(41) << "Total IVM time"
 			  << "| " << std::setw(9) << total_time.count() << " |" << '\n';
 	std::cout << "| " << std::left << std::setw(41) << "Query without IVM"
-			  << "| " << std::setw(9) << query_groups_time.count() << " |" << '\n';
+			  << "| " << std::setw(9) << query_without_ivm.count() << " |" << '\n';
 	std::cout << std::setw(56) << std::setfill('-') << "" << '\n';
 }
 
