@@ -8,6 +8,8 @@ namespace duckdb {
 
 void ExecuteAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append);
 void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append);
+void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, const string &file_path, const string &view_name, bool append, int run);
+string HashQuery(const string &query);
 
 //===--------------------------------------------------------------------===//
 // Parser extension

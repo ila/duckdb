@@ -286,8 +286,6 @@ def update_timestamp(client_id, initialize, i):
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             timestamp_bytes = now.encode('utf-8')
             timestamp_size = len(timestamp_bytes)
-            print(f"Timestamp size: {timestamp_size}")
-            print(f"Client {client_id} timestamp: {now}")
 
             # Prepare messages
             if initialize:
@@ -305,8 +303,6 @@ def update_timestamp(client_id, initialize, i):
             sock.sendall(packed_size)
             sock.sendall(timestamp_bytes)
             sock.sendall(close_message)
-
-            print(f"Sent timestamp update for client {client_id}: {now}")
 
     except Exception as e:
         print(f"Error sending timestamp update for client {client_id}: {str(e)}")
@@ -445,27 +441,108 @@ def run_client(client_id):
         traceback.print_exc()
 
 
-def run_cycle(n_clients):
-    print(f"--- Setting up {n_clients} client(s) ---")
-    for i in range(n_clients):
+import json
+
+CLIENT_METADATA_DIR = os.path.join(TMP_DIR, "client_metadata")
+CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
+
+def load_metadata():
+    if not os.path.exists(CLIENT_METADATA_DIR):
+        os.makedirs(CLIENT_METADATA_DIR, exist_ok=True)
+
+    if not os.path.exists(CLIENT_METADATA_PATH):
+        return {"dead_clients": [], "late_clients": {}, "next_client_id": 0}
+
+    with open(CLIENT_METADATA_PATH, "r") as f:
+        return json.load(f)
+
+
+def save_metadata(metadata):
+    with open(CLIENT_METADATA_PATH, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+# Configurable parameters
+DEATH_RATE = 0.1   # Proportion of active clients that "die" each cycle
+LATE_RATE = 0.1    # Proportion of remaining alive clients that become late
+NEW_RATE = 0.1     # Proportion of total active clients that are new
+
+def run_cycle(n_active_clients):
+    metadata = load_metadata()
+
+    dead = set(metadata.get("dead_clients", []))
+    late = metadata.get("late_clients", {})
+    next_client_id = metadata.get("next_client_id", 0)
+
+    all_clients = list(range(next_client_id))
+    alive_clients = [cid for cid in all_clients if cid not in dead and cid not in late]
+
+    # Sample deaths
+    num_to_die = max(1, int(len(alive_clients) * DEATH_RATE))
+    dying_clients = random.sample(alive_clients, min(num_to_die, len(alive_clients)))
+    dead.update(dying_clients)
+
+    # Sample late
+    alive_after_death = [cid for cid in alive_clients if cid not in dying_clients]
+    num_late = max(1, int(len(alive_after_death) * LATE_RATE))
+    new_late_clients = random.sample(alive_after_death, min(num_late, len(alive_after_death)))
+    for cid in new_late_clients:
+        late[str(cid)] = random.randint(1, 10)
+
+    # Process late countdown
+    late_active = []
+    still_late = {}
+    for cid_str, delay in late.items():
+        delay -= 1
+        if delay <= 0:
+            late_active.append(int(cid_str))
+        else:
+            still_late[cid_str] = delay
+    late = still_late
+
+    # Determine number of new clients
+    num_new = max(1, int(n_active_clients * NEW_RATE))
+    new_clients = list(range(next_client_id, next_client_id + num_new))
+    next_client_id += num_new
+
+    # Select subset of existing alive clients to keep the total number fixed
+    remaining_slots = n_active_clients - len(new_clients)
+    old_clients = alive_after_death.copy()
+    random.shuffle(old_clients)
+    selected_existing = old_clients[:max(0, remaining_slots - len(late_active))]
+
+    active_clients = selected_existing + late_active + new_clients
+    active_clients.sort()
+
+    print(f"\n--- Simulating {len(active_clients)} client(s):")
+    print(f"Dead clients this run: {dying_clients}")
+    print(f"Late clients this run: {list(late.keys())}")
+    print(f"New clients this run: {new_clients}")
+
+    for cid in active_clients:
         try:
-            setup_client_folder(i)
+            setup_client_folder(cid)
         except Exception as e:
-            print(f"Failed to setup client {i}: {str(e)}")
+            print(f"Failed to setup client {cid}: {str(e)}")
 
     print("--- Generating and sending data ---")
     with ThreadPoolExecutor() as executor:
-        executor.map(run_client, range(n_clients))
+        executor.map(run_client, active_clients)
 
     print("--- Flushing data ---")
     flush()
+    print("✔️  Cycle complete.\n")
 
-    print("\u2714\ufe0f  Cycle complete.\n")
+    metadata["dead_clients"] = list(dead)
+    metadata["late_clients"] = late
+    metadata["next_client_id"] = next_client_id
+    save_metadata(metadata)
+
 
 
 def main():
     parser = argparse.ArgumentParser(description="Setup SQLite clients and push to Postgres periodically.")
-    parser.add_argument("N", type=int, help="Number of clients")
+    parser.add_argument("N", type=int, help="Number of active clients")
     parser.add_argument("H", type=int, help="Interval in hours between runs")
     args = parser.parse_args()
 

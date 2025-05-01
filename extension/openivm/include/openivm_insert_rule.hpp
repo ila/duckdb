@@ -74,10 +74,9 @@ public:
 				return;
 			}
 			auto delta_insert_table = "delta_" + insert_node->table.name;
-			EntryLookupInfo table_lookup(CatalogType::TABLE_ENTRY, delta_insert_table);
 			auto delta_table_catalog_entry =
-			    Catalog::GetEntry(input.context, insert_node->table.catalog.GetName(), insert_node->table.schema.name,
-			                      table_lookup, OnEntryNotFound::RETURN_NULL);
+			    Catalog::GetEntry<TableCatalogEntry>(input.context, insert_node->table.catalog.GetName(), insert_node->table.schema.name,
+			                      delta_insert_table, OnEntryNotFound::RETURN_NULL);
 
 			if (delta_table_catalog_entry) { // if it exists, we can append
 				                             // check if already done
@@ -170,13 +169,14 @@ public:
 					} else if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 						// this is a COPY
 						auto get = dynamic_cast<LogicalGet *>(insert_node->children[0].get());
-						auto files = dynamic_cast<MultiFileBindData *>(get->bind_data.get())->file_list->GetAllFiles(); // vector
+						auto files = dynamic_cast<ReadCSVData *>(get->bind_data.get())->files; // vector
+						//auto files = dynamic_cast<MultiFileBindData *>(get->bind_data.get())->file_list->GetAllFiles(); // vector
 						for (auto &file : files) {
 							// we cannot just copy; we need to hardcode the multiplicity and timestamp
 							// insert into delta_table select *, true, now() from read_csv(path);
 							// the performance is the same, since COPY is an insertion
 							auto query = "insert into delta_" + insert_node->table.name +
-							             " select *, true, now() from read_csv('" + file.path + "');";
+							             " select *, true, now() from read_csv('" + file + "');";
 							auto r = con.Query(query);
 							if (r->HasError()) {
 								throw InternalException("Cannot insert in delta table! " + r->GetError());
@@ -198,10 +198,9 @@ public:
 				return;
 			}
 			auto delta_delete_table = "delta_" + delete_node->table.name;
-			EntryLookupInfo table_lookup(CatalogType::TABLE_ENTRY, delta_delete_table);
 			auto delta_table_catalog_entry =
-			    Catalog::GetEntry(input.context, delete_node->table.catalog.GetName(), delete_node->table.schema.name,
-			                      table_lookup, OnEntryNotFound::RETURN_NULL);
+			    Catalog::GetEntry<TableCatalogEntry>(input.context, delete_node->table.catalog.GetName(), delete_node->table.schema.name,
+			                      delta_delete_table, OnEntryNotFound::RETURN_NULL);
 
 			if (delta_table_catalog_entry) { // if it exists, we can append
 				                             // check if already done
@@ -264,10 +263,9 @@ public:
 				return;
 			}
 			auto delta_update_table = "delta_" + update_node->table.name;
-			EntryLookupInfo table_lookup(CatalogType::TABLE_ENTRY, delta_update_table);
 			auto delta_table_catalog_entry =
-			    Catalog::GetEntry(input.context, update_node->table.catalog.GetName(), update_node->table.schema.name,
-			                      table_lookup, OnEntryNotFound::RETURN_NULL);
+			    Catalog::GetEntry<TableCatalogEntry>(input.context, update_node->table.catalog.GetName(), update_node->table.schema.name,
+			                      delta_update_table, OnEntryNotFound::RETURN_NULL);
 
 			if (delta_table_catalog_entry) { // if it exists, we can append
 				                             // check if already done

@@ -18,6 +18,8 @@
 
 namespace duckdb {
 
+int run = 0; // benchmark run (only for benchmarking purposes)
+
 void FlushFunction(ClientContext &context, const FunctionParameters &parameters) {
 
 	// for flush, we need to:
@@ -208,7 +210,8 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		          update_responsiveness + update_completeness + delete_query_2 + update_buffer_size + detach_query;
 	}
 
-	ExecuteCommitAndWriteQueries(server_con, queries, file_name, false);
+	// ExecuteCommitAndWriteQueries(server_con, queries, file_name, false);
+	ExecuteCommitLogAndWriteQueries(server_con, queries, file_name, view_name, false, run);
 }
 
 void OldFlushFunction(ClientContext &context, const FunctionParameters &parameters) {
