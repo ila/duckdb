@@ -119,8 +119,9 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 		// Load the joins.
 		auto start_time = std::chrono::high_resolution_clock::now();
 		// Left side.
+//		con.Query("CREATE TABLE " + left_table_name + "(increment_id INTEGER PRIMARY KEY, dummy_name VARCHAR, tid_left INTEGER);");
 		con.Query("CREATE TABLE " + left_table_name + "(increment_id INTEGER, dummy_name VARCHAR, tid_left INTEGER);");
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data (left)..."
 				  << "\n";
 
 		string left_query = "COPY " + left_table_name + " FROM '" + left_scale_dir + "left_joins.tbl' (DELIMITER ',');";
@@ -130,8 +131,9 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 			throw InternalException("Failed to load joins data (left): %s", r_1->GetError().c_str());
 		}
 		// Right side.
+//		con.Query("CREATE TABLE " + right_table_name + "(geo_id INTEGER PRIMARY KEY, dummy_location VARCHAR, tid_right INTEGER);");
 		con.Query("CREATE TABLE " + right_table_name + "(geo_id INTEGER, dummy_location VARCHAR, tid_right INTEGER);");
-		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data..."
+		std::cout << std::put_time(std::localtime(&now), "%c ") << "Loading data (right)..."
 				  << "\n";
 
 		auto r_2 = con.Query("COPY " + right_table_name + " FROM '" + right_scale_dir + "right_joins.tbl' (DELIMITER ',');");
@@ -207,7 +209,7 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 
 		first_time = false;  // TODO: Is this really needed?
 	}
-	auto count_matches = con.Query("SELECT COUNT(*) FROM" + view_name + ";")->GetValue(0, 0).ToString();
+	auto count_matches = con.Query("SELECT COUNT(*) FROM " + view_name + ";")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
 			  << "Rows inserted in the materialized view: " << Format(count_matches) << "\n";
 
@@ -217,17 +219,21 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 	std::chrono::milliseconds copy_time;
 	{
 		auto start_time = std::chrono::high_resolution_clock::now();
-		auto r = con.Query("COPY " + left_table_name + " FROM '" + left_scale_dir + "left_joins_new_" +
-						   to_string(add_left) + ".tbl' (DELIMITER ',');");
-		if (r->HasError()) {
-			fs.RemoveFile(db_name);
-			throw InternalException("Failed to load new left table data: %s", r->GetError().c_str());
+		if (add_left < 0) {
+			auto r = con.Query("COPY " + left_table_name + " FROM '" + left_scale_dir + "left_joins_new_" +
+			                   to_string(add_left) + ".tbl' (DELIMITER ',');");
+			if (r->HasError()) {
+				fs.RemoveFile(db_name);
+				throw InternalException("Failed to load new left table data: %s", r->GetError().c_str());
+			}
 		}
-		r = con.Query("COPY " + right_table_name + " FROM '" + right_scale_dir + "right_joins_new_" +
-						   to_string(add_right) + ".tbl' (DELIMITER ',');");
-		if (r->HasError()) {
-			fs.RemoveFile(db_name);
-			throw InternalException("Failed to load new right table data: %s", r->GetError().c_str());
+		if (add_right > 0) {
+			auto r = con.Query("COPY " + right_table_name + " FROM '" + right_scale_dir + "right_joins_new_" +
+			              to_string(add_right) + ".tbl' (DELIMITER ',');");
+			if (r->HasError()) {
+				fs.RemoveFile(db_name);
+				throw InternalException("Failed to load new right table data: %s", r->GetError().c_str());
+			}
 		}
 		// Skipping updates/deletions...
 		auto end_time = std::chrono::high_resolution_clock::now();
@@ -303,6 +309,7 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 	std::chrono::milliseconds maintain_time;
 	{
 		auto start_time = std::chrono::high_resolution_clock::now();
+		// Causes issues with the `exists` clause (correlated subquery).
 		con.Query(delete_mul_false);
 		con.Query(insert_mul_true);
 		auto end_time = std::chrono::high_resolution_clock::now();
@@ -328,7 +335,7 @@ void RunIVMJoinsBenchmark(int start_left, int start_right, int add_left, int add
 
 
 	// finally, we measure the time to run the query without IVM
-	auto count_left_new = con.Query("SELECT COUNT(*) FROM" + left_table_name + " ;")->GetValue(0, 0).ToString();
+	auto count_left_new = con.Query("SELECT COUNT(*) FROM " + left_table_name + " ;")->GetValue(0, 0).ToString();
 	std::cout << std::put_time(std::localtime(&now), "%c ")
 	          << "Total rows in the left base table: " << Format(count_left_new) << "\n";
 
