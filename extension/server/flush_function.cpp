@@ -167,7 +167,10 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	update_query_1 += "count(distinct client_id)\n\t";
 	update_query_1 += "from " + centralized_view_name + " \n\t";
 	update_query_1 += "group by " + protected_column_names + "\n\t";
-	update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation) + ") y \n";
+	if (minimum_aggregation > 1) {
+		update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation);
+	}
+	update_query_1 += ") y\n";
 	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
 
 	// we have to attach the client to the server and not the other way around
