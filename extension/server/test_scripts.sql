@@ -14,8 +14,8 @@ CREATE DECENTRALIZED MATERIALIZED VIEW daily_runs_city AS
     GROUP BY nickname, city, date
     WINDOW 24
     TTL 48
-    MINIMUM AGGREGATION 2
-    REFRESH 4;
+    MINIMUM AGGREGATION 3
+    REFRESH 24;
 
 -- todo incrementalize this kind of query
 CREATE CENTRALIZED MATERIALIZED VIEW weekly_runs_city AS

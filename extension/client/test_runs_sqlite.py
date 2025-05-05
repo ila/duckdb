@@ -81,7 +81,12 @@ CITIES = [
 # Set reference time for RDDA windows (change this to a fixed datetime if needed)
 # REFERENCE_TIME = datetime(2024, 1, 1)
 REFERENCE_TIME = datetime.now()
-WINDOW_DURATION_HOURS = 4
+WINDOW_DURATION_HOURS = 24
+# Configurable parameters
+DEATH_RATE = 0.1   # Proportion of active clients that "die" each cycle
+LATE_RATE = 0.1    # Proportion of remaining alive clients that become late
+NEW_RATE = 0.2     # Proportion of total active clients that are new
+MAX_CLIENTS = 20   # Maximum number of clients to simulate at once
 
 
 def get_random_city():
@@ -309,11 +314,6 @@ def update_timestamp(client_id, initialize, i):
         traceback.print_exc()
 
 
-def compute_window():
-    delta = datetime.now() - REFERENCE_TIME
-    return int(delta.total_seconds() // (WINDOW_DURATION_HOURS * 3600))
-
-
 def create_postgres_table_if_not_exists():
     try:
         with psycopg2.connect(SOURCE_POSTGRES_DSN) as pg_conn:
@@ -339,7 +339,7 @@ def create_postgres_table_if_not_exists():
         traceback.print_exc()
 
 
-def send_to_postgres(i):
+def send_to_postgres(i, run):
     try:
         folder = os.path.join(TMP_DIR, f"client_{i}")
         db_path = os.path.join(folder, "runs.db")
@@ -351,12 +351,12 @@ def send_to_postgres(i):
             return
 
         now = datetime.now()
-        window = compute_window()
         client_id = 0
 
         enriched = []
         for row in rows:
             nickname, city, date, start, end, steps, _ = row
+            window = run
             client_id = int(nickname.split("_")[1])
             enriched.append(
                 (nickname, city, date, steps, now, now, window, client_id, 1)  # generation  # arrival  # action
@@ -387,8 +387,6 @@ def send_to_postgres(i):
     except Exception as e:
         print(f"Error sending data to Postgres for client {client_id}: {str(e)}")
         traceback.print_exc()
-
-# Add this function to the script
 
 def flush():
     try:
@@ -433,9 +431,45 @@ def flush():
         traceback.print_exc()
 
 
-def run_client(client_id):
+def update_window():
     try:
-        send_to_postgres(client_id)
+        folder = os.path.join(TMP_DIR, f"client_0")
+
+        # Parse config
+        config = parse_client_config(folder)
+        server_addr = config.get('server_addr')
+        server_port = int(config.get('server_port'))
+
+        if not server_addr or not server_port:
+            print(f"Missing server_addr or server_port in client.config for client")
+            return
+
+        # Create socket connection
+        with socket.create_connection((server_addr, server_port), timeout=10) as sock:
+
+            view = "daily_runs_city"
+            view_len = len(view)
+
+            message_type = struct.pack('i', 9)
+            packed_view_len = struct.pack('Q', view_len)
+            packed_view = view.encode('utf-8')
+            packed_close = struct.pack('i', 0)  # close message
+
+            # Send all in order
+            sock.sendall(message_type)
+            sock.sendall(packed_view_len)
+            sock.sendall(packed_view)
+            sock.sendall(packed_close)
+
+            print(f"Updated window")
+
+    except Exception as e:
+        print(f"Error updating window")
+        traceback.print_exc()
+
+def run_client(client_id, run):
+    try:
+        send_to_postgres(client_id, run)
     except Exception as e:
         print(f"Error running client {client_id}: {str(e)}")
         traceback.print_exc()
@@ -461,13 +495,7 @@ def save_metadata(metadata):
     with open(CLIENT_METADATA_PATH, "w") as f:
         json.dump(metadata, f, indent=2)
 
-
-# Configurable parameters
-DEATH_RATE = 0.1   # Proportion of active clients that "die" each cycle
-LATE_RATE = 0.1    # Proportion of remaining alive clients that become late
-NEW_RATE = 0.1     # Proportion of total active clients that are new
-
-def run_cycle(n_active_clients):
+def run_cycle(initial_clients, run):
     metadata = load_metadata()
 
     dead = set(metadata.get("dead_clients", []))
@@ -477,53 +505,71 @@ def run_cycle(n_active_clients):
     all_clients = list(range(next_client_id))
     alive_clients = [cid for cid in all_clients if cid not in dead and cid not in late]
 
+    # Dynamically increase target active clients, capped at MAX_CLIENTS
+    target_clients = int(min(MAX_CLIENTS, initial_clients * ((1 + NEW_RATE) ** run)))
+
     # Sample deaths
-    num_to_die = max(1, int(len(alive_clients) * DEATH_RATE))
+    num_to_die = max(1, int(len(alive_clients) * DEATH_RATE)) if alive_clients else 0
     dying_clients = random.sample(alive_clients, min(num_to_die, len(alive_clients)))
     dead.update(dying_clients)
 
-    # Sample late
+    # Sample new late clients
     alive_after_death = [cid for cid in alive_clients if cid not in dying_clients]
-    num_late = max(1, int(len(alive_after_death) * LATE_RATE))
+    num_late = max(1, int(len(alive_after_death) * LATE_RATE)) if alive_after_death else 0
     new_late_clients = random.sample(alive_after_death, min(num_late, len(alive_after_death)))
     for cid in new_late_clients:
-        late[str(cid)] = random.randint(1, 10)
+        cid_str = str(cid)
+        if cid_str not in late:
+            late[cid_str] = random.randint(1, 5)
 
     # Process late countdown
     late_active = []
     still_late = {}
+    old_late_info = {}
     for cid_str, delay in late.items():
         delay -= 1
         if delay <= 0:
             late_active.append(int(cid_str))
         else:
             still_late[cid_str] = delay
+            old_late_info[int(cid_str)] = delay
     late = still_late
 
-    # Determine number of new clients
-    num_new = max(1, int(n_active_clients * NEW_RATE))
+    # Determine how many new clients we can add
+    current_total_clients = next_client_id
+    available_slots = MAX_CLIENTS - current_total_clients
+    if run == 0:
+        num_new = min(target_clients, available_slots)
+    else:
+        num_new = min(max(1, int(target_clients * NEW_RATE)), available_slots)
     new_clients = list(range(next_client_id, next_client_id + num_new))
     next_client_id += num_new
 
-    # Select subset of existing alive clients to keep the total number fixed
-    remaining_slots = n_active_clients - len(new_clients)
+    # Select old clients to meet target client count
+    remaining_slots = target_clients - len(new_clients)
     old_clients = alive_after_death.copy()
     random.shuffle(old_clients)
     selected_existing = old_clients[:max(0, remaining_slots - len(late_active))]
 
-    active_clients = selected_existing + late_active + new_clients
-    active_clients.sort()
+    # Final list of active clients
+    active_clients = sorted(selected_existing + late_active + new_clients)
 
-    print(f"\n--- Simulating {len(active_clients)} client(s):")
-    print(f"Dead clients this run: {dying_clients}")
-    print(f"Late clients this run: {list(late.keys())}")
-    print(f"New clients this run: {new_clients}")
+    # 📊 DEBUG INFO
+    print("\n=== 🌀 Cycle Summary ===")
+    print(f"▶️  Run number: {run}")
+    print(f"👥 Active clients ({len(active_clients)}): {active_clients}")
+    print(f"🆕 New clients ({len(new_clients)}): {new_clients}")
+    print(f"🐌 New late clients ({len(new_late_clients)}): {new_late_clients}")
+    print(f"🕰️ Late clients still pending ({len(old_late_info)}): {old_late_info}")
+    print(f"💀 Dead clients this run ({len(dying_clients)}): {dying_clients}")
+    print("========================\n")
 
+    # Generate and send data
     for cid in active_clients:
         try:
             setup_client_folder(cid)
         except Exception as e:
-            print(f"Failed to setup client {cid}: {str(e)}")
+            print(f"❌ Failed to setup client {cid}: {str(e)}")
 
     print("--- Generating and sending data ---")
     with ThreadPoolExecutor() as executor:
@@ -533,26 +579,31 @@ def run_cycle(n_active_clients):
     flush()
     print("✔️  Cycle complete.\n")
 
+    # Save metadata
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late
     metadata["next_client_id"] = next_client_id
     save_metadata(metadata)
 
-
-
 def main():
     parser = argparse.ArgumentParser(description="Setup SQLite clients and push to Postgres periodically.")
     parser.add_argument("N", type=int, help="Number of active clients")
-    parser.add_argument("H", type=int, help="Interval in hours between runs")
+    parser.add_argument("H", type=int, help="Interval in minutes between runs")
     args = parser.parse_args()
 
     create_postgres_table_if_not_exists()
 
+    run = 0
+
     while True:
         try:
-            run_cycle(args.N)
-            print(f"Sleeping for {args.H} hour(s)...\n")
-            time.sleep(args.H * 3600)
+            print(f"\n--- Starting cycle {run} ---")
+            run_cycle(args.N, run)
+            run += 1
+            update_window()
+            print(f"Sleeping for {args.H} minute(s)...\n")
+            # time.sleep(args.H * 3600)
+            time.sleep(args.H * 60)
         except KeyboardInterrupt:
             print("\nShutting down...")
             break

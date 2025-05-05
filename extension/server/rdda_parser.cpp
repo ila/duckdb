@@ -134,6 +134,7 @@ void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, con
 		csv_file << run << "," << hash << "," << elapsed_ms << "\n";
 		query_log << "[" << hash << "]\n" << query << "\n\n";
 	}
+	Printer::Print("Finished run " + std::to_string(run) + "...");
 }
 
 

@@ -18,6 +18,7 @@ enum client_messages {
 	ok = 6,
 	update_timestamp_client = 7,
 	flush = 8, // to schedule flushes remotely
+	update_window = 9,
 };
 
 inline string ToString(client_messages msg) {
@@ -40,6 +41,8 @@ inline string ToString(client_messages msg) {
 		return "Update timestamp client";
 	case flush:
 		return "Flush";
+	case update_window:
+		return "Update window";
 	default:
 		return "Unknown message";
 	}

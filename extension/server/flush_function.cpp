@@ -177,8 +177,9 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		attach_query = "attach '" + client_db_name + "' as rdda_client;\n\n";
 	} else if (database == "postgres") {
 		// todo - extend config to support postgres
+		// with postgres, we do not detach the database (it is slow to attach, and the db supports concurrency)
 		string postgres_credentials = "'dbname=rdda_client user=ubuntu password=test host=localhost'";
-		attach_query = "attach " + postgres_credentials + " as rdda_client (type postgres);\n\n";
+		attach_query = "attach if not exists " + postgres_credentials + " as rdda_client (type postgres);\n\n";
 	}
 	auto attach_query_read_only = "attach '" + client_db_name + "' as rdda_client (read_only);\n\n";
 	auto insert_query = "insert into " + centralized_table_name + " by name\nselect " + table_column_names +
@@ -207,11 +208,16 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	} else if (database == "postgres") {
 		queries = attach_query + update_query_1 + insert_query + delete_query_1 + cleanup_expired_clients +
-		          update_responsiveness + update_completeness + delete_query_2 + update_buffer_size + detach_query;
+		          update_responsiveness + update_completeness + delete_query_2 + update_buffer_size;
 	}
 
 	// ExecuteCommitAndWriteQueries(server_con, queries, file_name, false);
-	ExecuteCommitLogAndWriteQueries(server_con, queries, file_name, view_name, false, run);
+	bool append = false;
+	if (run > 0) {
+        append = true;
+    }
+	ExecuteCommitLogAndWriteQueries(server_con, queries, file_name, view_name, append, run);
+	run++; // todo - log responsiveness, completeness and buffer size
 }
 
 void OldFlushFunction(ClientContext &context, const FunctionParameters &parameters) {
