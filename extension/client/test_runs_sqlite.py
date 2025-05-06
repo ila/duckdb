@@ -513,14 +513,14 @@ def run_cycle(initial_clients, run):
     dying_clients = random.sample(alive_clients, min(num_to_die, len(alive_clients)))
     dead.update(dying_clients)
 
-    # Sample new late clients
+    # Sample new late clients (exclude already-late ones)
     alive_after_death = [cid for cid in alive_clients if cid not in dying_clients]
-    num_late = max(1, int(len(alive_after_death) * LATE_RATE)) if alive_after_death else 0
-    new_late_clients = random.sample(alive_after_death, min(num_late, len(alive_after_death)))
+    eligible_for_new_late = [cid for cid in alive_after_death if str(cid) not in late]
+    num_late = max(1, int(len(eligible_for_new_late) * LATE_RATE)) if eligible_for_new_late else 0
+    new_late_clients = random.sample(eligible_for_new_late, min(num_late, len(eligible_for_new_late)))
     for cid in new_late_clients:
-        cid_str = str(cid)
-        if cid_str not in late:
-            late[cid_str] = random.randint(1, 5)
+        late[str(cid)] = random.randint(1, 5)
+
 
     # Process late countdown
     late_active = []
@@ -551,8 +551,8 @@ def run_cycle(initial_clients, run):
     random.shuffle(old_clients)
     selected_existing = old_clients[:max(0, remaining_slots - len(late_active))]
 
-    # Final list of active clients
-    active_clients = sorted(selected_existing + late_active + new_clients)
+    # Final list of active clients (deduplicated to prevent repeats)
+    active_clients = sorted(set(selected_existing + late_active + new_clients))
 
     # 📊 DEBUG INFO
     print("\n=== 🌀 Cycle Summary ===")

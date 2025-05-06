@@ -96,7 +96,7 @@ void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, con
 	string log_path = "log_" + view_name + ".log";
 
 	// Optional: write original queries to .sql
-	CompilerExtension::WriteFile(file_path, append, queries);
+	CompilerExtension::WriteFile(file_path, false, queries);
 
 	std::ofstream csv_file(csv_path, run != 0 ? std::ios::app : std::ios::trunc);
 	std::ofstream query_log(log_path, std::ios::app); // Always append to log
