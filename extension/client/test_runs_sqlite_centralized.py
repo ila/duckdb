@@ -13,84 +13,16 @@ import traceback
 import socket
 import struct
 
+import test_runs_sqlite_parameters as params
+
 # note: this requires postgres installed, role and database created ("ubuntu" in this case)
 # setting postgresql.conf with 100 max clients and listening on all addresses
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
 # the database is rdda_client
 
-TMP_DIR = "/home/tmp_duckdb/"
-SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
-CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
-
-SOURCE_POSTGRES_DSN = os.environ.get(
-    "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-18-159-115-118.eu-central-1.compute.amazonaws.com"
-)
-
-CITIES = [
-    "New York",
-    "Los Angeles",
-    "Chicago",
-    "Houston",
-    "Phoenix",
-    "Philadelphia",
-    "San Antonio",
-    "San Diego",
-    "Dallas",
-    "San Jose",
-    "Austin",
-    "Jacksonville",
-    "Fort Worth",
-    "Columbus",
-    "Charlotte",
-    "San Francisco",
-    "Indianapolis",
-    "Seattle",
-    "Denver",
-    "Washington",
-    "Boston",
-    "El Paso",
-    "Nashville",
-    "Detroit",
-    "Oklahoma City",
-    "Portland",
-    "Las Vegas",
-    "Memphis",
-    "Louisville",
-    "Baltimore",
-    "Milwaukee",
-    "Albuquerque",
-    "Tucson",
-    "Fresno",
-    "Sacramento",
-    "Mesa",
-    "Kansas City",
-    "Atlanta",
-    "Omaha",
-    "Colorado Springs",
-    "Raleigh",
-    "Miami",
-    "Long Beach",
-    "Virginia Beach",
-    "Oakland",
-    "Minneapolis",
-    "Tulsa",
-    "Arlington",
-    "Wichita",
-]
-
-# Set reference time for RDDA windows (change this to a fixed datetime if needed)
-# REFERENCE_TIME = datetime(2024, 1, 1)
-REFERENCE_TIME = datetime.now()
-WINDOW_DURATION_HOURS = 24
-# Configurable parameters
-DEATH_RATE = 0.1   # Proportion of active clients that "die" each cycle
-LATE_RATE = 0.1    # Proportion of remaining alive clients that become late
-NEW_RATE = 0.2     # Proportion of total active clients that are new
-MAX_CLIENTS = 20   # Maximum number of clients to simulate at once
-
 
 def get_random_city():
-    return random.choice(CITIES)
+    return random.choice(params.CITIES)
 
 
 def format_date(offset_days):
@@ -196,15 +128,15 @@ def execute_sql_file(conn, db_path, sql_file):
 
 
 def setup_client_folder(i):
-    folder = os.path.join(TMP_DIR, f"client_c_{i}")
+    folder = os.path.join(params.TMP_DIR, f"client_c_{i}")
     try:
         os.makedirs(folder, exist_ok=True)
-        shutil.copy2(os.path.join(CLIENT_CONFIG, "client.config"), os.path.join(folder, "client.config"))
+        shutil.copy2(os.path.join(params.CLIENT_CONFIG, "client.config"), os.path.join(folder, "client.config"))
 
         for sql in [
             "ivm_compiled_queries_runs.sql",
         ]:
-            src_path = os.path.join(SOURCE_SQLITE_SCRIPTS, sql)
+            src_path = os.path.join(params.SOURCE_SQLITE_SCRIPTS, sql)
             dst_path = os.path.join(folder, sql)
             try:
                 shutil.copy2(src_path, dst_path)
@@ -259,7 +191,7 @@ def setup_client_folder(i):
 
 def update_timestamp(client_id, initialize, i):
     try:
-        folder = os.path.join(TMP_DIR, f"client_c_{i}")
+        folder = os.path.join(params.TMP_DIR, f"client_c_{i}")
 
         # Parse config
         config = parse_client_config(folder)
@@ -300,7 +232,7 @@ def update_timestamp(client_id, initialize, i):
 
 def create_postgres_table_if_not_exists():
     try:
-        with psycopg2.connect(SOURCE_POSTGRES_DSN) as pg_conn:
+        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
             with pg_conn.cursor() as cur:
                 cur.execute(
                     """
@@ -327,7 +259,7 @@ def create_postgres_table_if_not_exists():
 
 def send_to_postgres(i, run):
     try:
-        folder = os.path.join(TMP_DIR, f"client_c_{i}")
+        folder = os.path.join(params.TMP_DIR, f"client_c_{i}")
         db_path = os.path.join(folder, "runs.db")
 
         with sqlite3.connect(db_path) as sqlite_conn:
@@ -348,7 +280,7 @@ def send_to_postgres(i, run):
                 (nickname, city, date, start, end, steps, heartbeat, now, now, window, client_id, 1)  # generation  # arrival  # action
             )
 
-        with psycopg2.connect(SOURCE_POSTGRES_DSN) as pg_conn:
+        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
             with pg_conn.cursor() as cur:
                 cur.executemany(
                     """
@@ -376,7 +308,7 @@ def send_to_postgres(i, run):
 
 def flush():
     try:
-        folder = os.path.join(TMP_DIR, f"client_c_0")
+        folder = os.path.join(params.TMP_DIR, f"client_c_0")
 
         # Parse config
         config = parse_client_config(folder)
@@ -419,7 +351,7 @@ def flush():
 
 def update_window():
     try:
-        folder = os.path.join(TMP_DIR, f"client_c_0")
+        folder = os.path.join(params.TMP_DIR, f"client_c_0")
 
         # Parse config
         config = parse_client_config(folder)
@@ -463,7 +395,7 @@ def run_client(client_id, run):
 
 import json
 
-CLIENT_METADATA_DIR = os.path.join(TMP_DIR, "client_c_metadata")
+CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_c_metadata")
 CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
 def load_metadata():
@@ -492,17 +424,17 @@ def run_cycle(initial_clients, run):
     alive_clients = [cid for cid in all_clients if cid not in dead and cid not in late]
 
     # Dynamically increase target active clients, capped at MAX_CLIENTS
-    target_clients = int(min(MAX_CLIENTS, initial_clients * ((1 + NEW_RATE) ** run)))
+    target_clients = int(min(params.MAX_CLIENTS, initial_clients * ((1 + params.NEW_RATE) ** run)))
 
     # Sample deaths
-    num_to_die = max(1, int(len(alive_clients) * DEATH_RATE)) if alive_clients else 0
+    num_to_die = max(1, int(len(alive_clients) * params.DEATH_RATE)) if alive_clients else 0
     dying_clients = random.sample(alive_clients, min(num_to_die, len(alive_clients)))
     dead.update(dying_clients)
 
     # Sample new late clients (exclude already-late ones)
     alive_after_death = [cid for cid in alive_clients if cid not in dying_clients]
     eligible_for_new_late = [cid for cid in alive_after_death if str(cid) not in late]
-    num_late = max(1, int(len(eligible_for_new_late) * LATE_RATE)) if eligible_for_new_late else 0
+    num_late = max(1, int(len(eligible_for_new_late) * params.LATE_RATE)) if eligible_for_new_late else 0
     new_late_clients = random.sample(eligible_for_new_late, min(num_late, len(eligible_for_new_late)))
     for cid in new_late_clients:
         late[str(cid)] = random.randint(1, 5)
@@ -523,11 +455,11 @@ def run_cycle(initial_clients, run):
 
     # Determine how many new clients we can add
     current_total_clients = next_client_id
-    available_slots = MAX_CLIENTS - current_total_clients
+    available_slots = params.MAX_CLIENTS - current_total_clients
     if run == 0:
         num_new = min(target_clients, available_slots)
     else:
-        num_new = min(max(1, int(target_clients * NEW_RATE)), available_slots)
+        num_new = min(max(1, int(target_clients * params.NEW_RATE)), available_slots)
     new_clients = list(range(next_client_id, next_client_id + num_new))
     next_client_id += num_new
 
@@ -558,7 +490,7 @@ def run_cycle(initial_clients, run):
             print(f"❌ Failed to setup client {cid}: {str(e)}")
 
     print("--- Generating and sending data ---")
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
         executor.map(run_client, active_clients)
 
     print("--- Flushing data ---")
