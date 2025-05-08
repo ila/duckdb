@@ -97,14 +97,14 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string table_column_names = ""; // column names of the centralized table (without metadata)
 
 	string extract_metadata = "WITH stats AS (\n"
-						      "\tSELECT rdda_ttl FROM rdda_parser.rdda_view_constraints"
-	                          "\tWHERE view_name = 'mv_daily_runs_city'),\n"
-							  "current_window AS \n("
+						      "\tSELECT rdda_ttl FROM rdda_parser.rdda_view_constraints\n"
+	                          "\tWHERE view_name = '" + view_name + "'),\n"
+							  "current_window AS (\n"
 							  "\tSELECT rdda_window FROM rdda_parser.rdda_current_window\n"
-							  "\tWHERE view_name = 'mv_daily_runs_city'),\n"
-					          "threshold_window AS (\n"
-	                          "SELECT (cw.rdda_window - s.rdda_ttl) AS expired_window\n"
-							  "FROM current_window cw, stats s)\n";
+							  "\tWHERE view_name = '" + view_name + "'),\n"
+					          "\tthreshold_window AS (\n"
+	                          "\tSELECT (cw.rdda_window - s.rdda_ttl) AS expired_window\n"
+							  "\tFROM current_window cw, stats s)";
 
 	string min_agg_query =
 		"select rdda_min_agg from rdda_view_constraints where view_name = '" + view_name + "';";
@@ -175,6 +175,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// we have to attach the client to the server and not the other way around
 	// because the server database has to be the default for IVM pipelines
 	string attach_query;
+	string attach_parser_read_only = "attach 'rdda_parser.db' as rdda_parser (read_only);\n\n";
 	if (database == "duckdb") {
 		attach_query = "attach '" + client_db_name + "' as rdda_client;\n\n";
 	} else if (database == "postgres") {
@@ -190,12 +191,12 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	string detach_query = "detach rdda_client;\n\n";
 	// lastly we remove stale tuples
-	string delete_query_2 = extract_metadata + "delete from " + centralized_view_name +
+	string delete_query_2 = extract_metadata + "\ndelete from " + centralized_view_name +
 	                        " where rdda_window <= (SELECT expired_window FROM threshold_window);\n\n";
 
 	// now generating the queries to update the metadata
 	string update_responsiveness = UpdateResponsiveness(view_name);
-	string update_completeness = extract_metadata + UpdateCompleteness(view_name);
+	string update_completeness = attach_parser_read_only + extract_metadata + UpdateCompleteness(view_name);
 	string update_buffer_size = UpdateBufferSize(view_name);
 	string cleanup_expired_clients = CleanupExpiredClients(config);
 

@@ -194,6 +194,8 @@ public:
 			auto delete_node = dynamic_cast<LogicalDelete *>(root);
 			// we need to check whether the table isn't the delta table already
 			auto delete_table_name = delete_node->table.name;
+			auto delete_table_schema = delete_node->table.schema.name;
+			auto delete_table_catalog = delete_node->table.catalog.GetName();
 			if (delete_table_name.substr(0, 6) == "delta_") {
 				return;
 			}
@@ -214,7 +216,7 @@ public:
 					// todo 2 -- implement this in LPTS
 					// todo 3 -- throw exception if the plan is too complicated
 					string insert_string =
-					    "insert into " + delta_delete_table + " select *, false, now() from " + delete_table_name;
+					    "insert into " + delta_delete_table + " select *, false, now() from " + delete_table_catalog + "." + delete_table_schema + "." + delete_table_name;
 					// handling the potential filters
 					if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 						auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
@@ -259,6 +261,8 @@ public:
 			// updates consist in update + projection (+ filter) + scan
 			auto update_node = dynamic_cast<LogicalUpdate *>(root);
 			auto update_table_name = update_node->table.name;
+			auto update_table_schema = update_node->table.schema.name;
+			auto update_table_catalog = update_node->table.catalog.GetName();
 			if (update_table_name.substr(0, 6) == "delta_") {
 				return;
 			}
@@ -276,7 +280,7 @@ public:
 					// here we also assume simple queries with at most a filter
 					// this is for the rows to delete
 					string insert_old =
-					    "insert into " + delta_update_table + " select *, false, now() from " + update_table_name;
+					    "insert into " + delta_update_table + " select *, false, now() from " + update_table_catalog + "." + update_table_schema + "." + update_table_name;
 					// this is for the new rows to be added
 					string insert_new = "insert into " + delta_update_table + " ";
 					// we assume a projection with either a filter or a scan
@@ -350,7 +354,7 @@ public:
 						}
 					}
 					// we add the multiplicity flag
-					insert_new += "true, now() from " + update_table_name + where_string;
+					insert_new += "true, now() from " + update_table_catalog + "." + update_table_schema + "." + update_table_name + where_string;
 					insert_old += where_string;
 
 					auto r = con.Query(insert_old);

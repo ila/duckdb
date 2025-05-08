@@ -42,7 +42,8 @@ string UpdateResponsiveness(string &view_name) {
 string UpdateCompleteness(string &view_name) {
 
 	// completeness is defined as the percentage of tuples that have been discarded compared to the total
-	string discard_query = "to_discard AS (\n"
+	string discard_query = ",\n"; // to join with the cte
+	discard_query += "to_discard AS (\n"
 	                       "\tSELECT rdda_window, COUNT(*) AS discarded_count\n"
 	                       "\tFROM  rdda_client.rdda_centralized_view_" +
 	                       view_name +
@@ -80,7 +81,8 @@ string UpdateCompleteness(string &view_name) {
 
 string UpdateBufferSize(string &view_name) {
 
-	string buffer_query = "WITH buffer_counts AS (\n"
+	string buffer_query = "detach rdda_parser;\n\n";
+	buffer_query += "WITH buffer_counts AS (\n"
 	                      "\tSELECT rdda_window, COUNT(*) AS buffer_count\n"
 	                      "\tFROM  rdda_client.rdda_centralized_view_" +
 	                      view_name +
@@ -124,7 +126,6 @@ string CleanupExpiredClients(std::unordered_map<string, string> &config) {
 	         std::to_string(keep_alive_days) + " day;\n\n";
 	// todo - do we need to delete anything else? refresh history?
 	query += "detach rdda_parser;\n\n";
-
 	return query;
 }
 
