@@ -322,7 +322,12 @@ void UpdateWindowRemotely(int32_t connfd, Connection &con) {
 	    view_name_str + "';";
 	auto r = con.Query(window_query);
 	if (r->HasError()) {
-		throw ParserException("Error while updating window metadata: " + r->GetError());
+		// try inserting
+		r = con.Query(
+            "insert into rdda_current_window values('rdda_centralized_view_" + view_name_str + "', 0, now());");
+		if (r->HasError()) {
+			throw ParserException("Error while updating window metadata: " + r->GetError());
+		}
 	}
 	Printer::Print("Updated window for view: " + view_name_str + "...");
 

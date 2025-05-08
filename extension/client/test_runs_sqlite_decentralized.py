@@ -196,7 +196,7 @@ def execute_sql_file(conn, db_path, sql_file):
 
 
 def setup_client_folder(i):
-    folder = os.path.join(TMP_DIR, f"client_{i}")
+    folder = os.path.join(TMP_DIR, f"client_d_{i}")
     try:
         os.makedirs(folder, exist_ok=True)
         shutil.copy2(os.path.join(CLIENT_CONFIG, "client.config"), os.path.join(folder, "client.config"))
@@ -216,7 +216,7 @@ def setup_client_folder(i):
                 traceback.print_exc()
 
         db_path = os.path.join(folder, "runs.db")
-        client_info_path = os.path.join(folder, "client_info.csv")
+        client_info_path = os.path.join(folder, "client_d_info.csv")
         csv_path = os.path.join(folder, "test_data.csv")
 
         if os.path.exists(csv_path):
@@ -275,7 +275,7 @@ def setup_client_folder(i):
 
 def update_timestamp(client_id, initialize, i):
     try:
-        folder = os.path.join(TMP_DIR, f"client_{i}")
+        folder = os.path.join(TMP_DIR, f"client_d_{i}")
 
         # Parse config
         config = parse_client_config(folder)
@@ -341,11 +341,11 @@ def create_postgres_table_if_not_exists():
 
 def send_to_postgres(i, run):
     try:
-        folder = os.path.join(TMP_DIR, f"client_{i}")
+        folder = os.path.join(TMP_DIR, f"client_d_{i}")
         db_path = os.path.join(folder, "runs.db")
 
         with sqlite3.connect(db_path) as sqlite_conn:
-            rows = sqlite_conn.execute("SELECT * FROM runs").fetchall()
+            rows = sqlite_conn.execute("SELECT * FROM daily_runs_city").fetchall()
 
         if not rows:
             return
@@ -355,7 +355,7 @@ def send_to_postgres(i, run):
 
         enriched = []
         for row in rows:
-            nickname, city, date, start, end, steps, _ = row
+            nickname, city, date, steps, _ = row
             window = run
             client_id = int(nickname.split("_")[1])
             enriched.append(
@@ -390,7 +390,7 @@ def send_to_postgres(i, run):
 
 def flush():
     try:
-        folder = os.path.join(TMP_DIR, f"client_0")
+        folder = os.path.join(TMP_DIR, f"client_d_0")
 
         # Parse config
         config = parse_client_config(folder)
@@ -433,7 +433,7 @@ def flush():
 
 def update_window():
     try:
-        folder = os.path.join(TMP_DIR, f"client_0")
+        folder = os.path.join(TMP_DIR, f"client_d_0")
 
         # Parse config
         config = parse_client_config(folder)
@@ -477,7 +477,7 @@ def run_client(client_id, run):
 
 import json
 
-CLIENT_METADATA_DIR = os.path.join(TMP_DIR, "client_metadata")
+CLIENT_METADATA_DIR = os.path.join(TMP_DIR, "client_d_metadata")
 CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
 def load_metadata():

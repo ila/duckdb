@@ -39,17 +39,15 @@ string UpdateResponsiveness(string &view_name) {
 	return query;
 }
 
-string UpdateCompleteness(int current_window, int ttl_windows, string &view_name) {
+string UpdateCompleteness(string &view_name) {
 
 	// completeness is defined as the percentage of tuples that have been discarded compared to the total
-	string discard_query = "WITH to_discard AS (\n"
+	string discard_query = "to_discard AS (\n"
 	                       "\tSELECT rdda_window, COUNT(*) AS discarded_count\n"
 	                       "\tFROM  rdda_client.rdda_centralized_view_" +
 	                       view_name +
 	                       "\n"
-	                       "\tWHERE rdda_window <= " +
-	                       to_string(current_window - ttl_windows) +
-	                       "\n"
+	                       "\tWHERE rdda_window <= (SELECT expired_window FROM threshold_window)\n"
 	                       "\tGROUP BY rdda_window),\n"
 	                       "to_keep AS (\n"
 	                       "\tSELECT rdda_window, COUNT(*) AS kept_count\n"

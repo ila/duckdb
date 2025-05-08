@@ -87,7 +87,7 @@ string HashQuery(const string &query) {
 }
 
 
-void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, const string &file_path, const string &view_name, bool append, int run) {
+void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, const string &file_path, const string &view_name, bool append, int run, bool write) {
 	if (queries.empty()) {
 		return;
 	}
@@ -96,8 +96,9 @@ void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, con
 	string log_path = "log_" + view_name + ".log";
 
 	// Optional: write original queries to .sql
-	CompilerExtension::WriteFile(file_path, false, queries);
-
+	if (write) {
+		CompilerExtension::WriteFile(file_path, false, queries);
+    }
 	std::ofstream csv_file(csv_path, run != 0 ? std::ios::app : std::ios::trunc);
 	std::ofstream query_log(log_path, std::ios::app); // Always append to log
 
@@ -138,9 +139,9 @@ void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, con
 }
 
 
-void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
+void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append, bool write) {
 	// wrapping each query in a transaction to avoid concurrency issues
-	if (!queries.empty()) {
+	if (!queries.empty() && write) {
 		CompilerExtension::WriteFile(file_path, append, queries);
 	}
 	// splitting each query by ;
