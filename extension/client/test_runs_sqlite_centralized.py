@@ -506,15 +506,19 @@ def run_cycle(initial_clients, run):
 def main():
 
     create_postgres_table_if_not_exists()
-
     run = 0
+    hostname = subprocess.check_output("hostnamectl --static", shell=True).decode("utf-8").strip()
 
     while True:
         try:
             print(f"\n--- Starting cycle {run} ---")
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
-            update_window()
+            if hostname == "client-instance-0":
+                update_window()
+                time.sleep(params.MINUTE_INTERVAL * 30)
+                print("--- Flushing data ---")
+                flush()
             print(f"Sleeping for {params.MINUTE_INTERVAL} minute(s)...\n")
             # time.sleep(args.H * 3600)
             time.sleep(params.MINUTE_INTERVAL * 60)
