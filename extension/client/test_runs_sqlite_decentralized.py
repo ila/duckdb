@@ -514,6 +514,10 @@ def run_cycle(initial_clients, run):
 
 def main():
 
+    # make sure the tmp dir exists
+    if not os.path.exists(params.TMP_DIR):
+        os.makedirs(params.TMP_DIR, exist_ok=True)
+
     create_postgres_table_if_not_exists()
     run = 0
     hostname = subprocess.check_output("hostnamectl --static", shell=True).decode("utf-8").strip()

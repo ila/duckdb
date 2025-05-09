@@ -1,4 +1,5 @@
 -- ./duckdb runs.db
+
 create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string varchar, type tinyint, last_update timestamp);
 create table if not exists _duckdb_ivm_delta_tables (view_name varchar, table_name varchar, last_update timestamp, primary key(view_name, table_name));
 insert or replace into _duckdb_ivm_views values ('mv_daily_runs_city', '', 0, now());
@@ -6,7 +7,7 @@ insert into _duckdb_ivm_delta_tables values ('mv_daily_runs_city', 'delta_rdda_c
 
 attach if not exists 'dbname=rdda_client user=ubuntu password=test host=localhost' as rdda_client (type postgres);
 
-create table mv_daily_runs_city as select nickname, city, date, sum(steps) as total_steps, rdda_window,
+create table mv_daily_runs_city as select nickname, city, date, sum(steps) as total_steps, rdda_window
 from rdda_client.rdda_centralized_view_runs
 group by nickname, city, date, rdda_window;
 
