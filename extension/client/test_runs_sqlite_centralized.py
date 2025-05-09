@@ -513,7 +513,7 @@ def main():
     run = 0
     hostname = subprocess.check_output("hostnamectl --static", shell=True).decode("utf-8").strip()
 
-    while True:
+    while run < params.MAX_RUNS:
         try:
             print(f"\n--- Starting cycle {run} ---")
             run_cycle(params.INITIAL_CLIENTS, run)
