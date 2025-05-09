@@ -514,7 +514,7 @@ def main():
             print(f"\n--- Starting cycle {run} ---")
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
-            if hostname == "client-instance-0":
+            if hostname == "ip-172-31-22-255": # fixme
                 update_window()
                 time.sleep(params.MINUTE_INTERVAL * 30)
                 print("--- Flushing data ---")
