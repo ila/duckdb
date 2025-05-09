@@ -100,6 +100,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		}
 		string queries = CompilerExtension::ReadFile(file_name);
 		ExecuteCommitLogAndWriteQueries(server_con, queries, file_name, view_name, append, run, false);
+		run++;
 	 	return;
 	 }
 

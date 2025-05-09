@@ -103,6 +103,7 @@ public:
 					if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_PROJECTION) {
 						// this is either a VALUES or a query
 						// if we have INSERT INTO VALUES, we just compile the statement
+						// todo - add catalog and schema here
 
 						insert_query = "insert into delta_" + insert_node->table.name;
 
@@ -149,7 +150,7 @@ public:
 						}
 						auto r = con.Query(insert_query);
 						if (r->HasError()) {
-							throw InternalException("Cannot insert in delta table! " + r->GetError());
+							throw InternalException("Cannot insert in delta table after insertion! " + r->GetError());
 						}
 						// lastly, we need to set the multiplicity and timestamp of the new data
 						// altering a table setting defaults still does not work in the same transaction
@@ -216,7 +217,7 @@ public:
 					// todo 2 -- implement this in LPTS
 					// todo 3 -- throw exception if the plan is too complicated
 					string insert_string =
-					    "insert into " + delta_delete_table + " select *, false, now() from " + delete_table_catalog + "." + delete_table_schema + "." + delete_table_name;
+					    "insert into " + delete_table_catalog + "." + delete_table_schema + "." + delta_delete_table + " select *, false, now() from " + delete_table_catalog + "." + delete_table_schema + "." + delete_table_name;
 					// handling the potential filters
 					if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 						auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
@@ -240,7 +241,7 @@ public:
 
 					auto r = con.Query(insert_string);
 					if (r->HasError()) {
-						throw InternalException("Cannot insert in delta table! " + r->GetError());
+						throw InternalException("Cannot insert in delta table after deletion! " + r->GetError());
 					}
 					con.Commit();
 				}
@@ -280,7 +281,7 @@ public:
 					// here we also assume simple queries with at most a filter
 					// this is for the rows to delete
 					string insert_old =
-					    "insert into " + delta_update_table + " select *, false, now() from " + update_table_catalog + "." + update_table_schema + "." + update_table_name;
+					    "insert into " + update_table_catalog + "." + update_table_schema + "." + delta_update_table + " select *, false, now() from " + update_table_catalog + "." + update_table_schema + "." + update_table_name;
 					// this is for the new rows to be added
 					string insert_new = "insert into " + delta_update_table + " ";
 					// we assume a projection with either a filter or a scan
@@ -359,12 +360,12 @@ public:
 
 					auto r = con.Query(insert_old);
 					if (r->HasError()) {
-						throw InternalException("Cannot insert in delta table! " + r->GetError());
+						throw InternalException("Cannot insert in delta table after update! " + r->GetError());
 					}
 
 					r = con.Query(insert_new);
 					if (r->HasError()) {
-						throw InternalException("Cannot insert in delta table! " + r->GetError());
+						throw InternalException("Cannot insert in delta table after update! " + r->GetError());
 					}
 
 					con.Commit();
