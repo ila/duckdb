@@ -2,9 +2,6 @@
 #include "include/update_metrics.hpp"
 
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
-#include <duckdb/common/printer.hpp>
-#include <duckdb/parser/parser.hpp>
-#include <duckdb/planner/planner.hpp>
 #include "duckdb/planner/binder.hpp"
 
 #include <common.hpp>
@@ -14,11 +11,39 @@
 #include <duckdb/common/local_file_system.hpp>
 #include <duckdb/function/aggregate/distributive_functions.hpp>
 #include <duckdb/main/database.hpp>
-#include <fmt/format.h>
 
 namespace duckdb {
 
 int run = 0; // benchmark run (only for benchmarking purposes)
+
+string UpdateWithMinimumAggregation(string &centralized_view_name, string &centralized_table_name, string &join_names,
+                                    string &protected_column_names, int minimum_aggregation) {
+
+	string query = "update " + centralized_table_name + " x\nset action = 2 \nfrom (\n\tselect ";
+	query += protected_column_names + ", "; // without the alias
+	query += "count(distinct client_id)\n\t";
+	query += "from " + centralized_view_name + " \n\t";
+	query += "group by " + protected_column_names + "\n\t";
+	query += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation);
+	query += ") y\n";
+	query += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
+	return query;
+}
+
+string UpdateWithoutMinimumAggregation(string &centralized_view_name, string &centralized_table_name, string &column_names) {
+	// if there is no minimum aggregation, we do not need to update the table
+	// we can just remove the tuples in the staging area and insert them into the centralized table
+	// as long as the TTL is not expired
+	// also, the buffer size is always 0, since at every refresh all the data is inserted
+	string query = "INSERT INTO " + centralized_table_name + "\n";
+	query += "SELECT " + column_names + "\n";
+	query += " FROM " + centralized_view_name + "\n";
+	query += "WHERE rdda_window <= (SELECT expired_window FROM threshold_window);\n\n";
+
+	return query;
+
+
+}
 
 void FlushFunction(ClientContext &context, const FunctionParameters &parameters) {
 
@@ -32,7 +57,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	 * update centralized_view_$name x
 	 * set action = 2
 	 * from (
-	 *	select c1, c2, c3, win, count(distinct client_id
+	 *	select c1, c2, c3, win, count(distinct client_id)
 	 *	from centralized_view_$name
 	 *	group by c1, c2, c3, win
 	 *	having count(distinct client_id) > min_agg) y
@@ -89,11 +114,9 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	}
 	centralized_view_name = "rdda_client." + centralized_view_name; // since we are attaching the db
 	centralized_table_name = server_db_name.substr(0, server_db_name.size() - 3) + "." + centralized_table_name;
-	string update_query_1 = "update " + centralized_view_name + " x\nset action = 2 \nfrom (\n\tselect ";
 
 	string protected_column_names = "";
 	string join_names = "";
-	string join_names_cte = "";
 	string table_column_names = ""; // column names of the centralized table (without metadata)
 
 	string extract_metadata = "WITH stats AS (\n"
@@ -145,13 +168,11 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		auto column = protected_columns->GetValue(0, i).ToString();
 		protected_column_names += column + ", ";
 		join_names += "x." + column + " = y." + column + " \nand ";
-		join_names_cte += "x." + column + " = z." + column + " \nand ";
 	}
 
 	// also adding the window
 	protected_column_names += "rdda_window";
 	join_names += "x.rdda_window = y.rdda_window \nand ";
-	join_names_cte += "x.rdda_window = z.rdda_window \nand ";
 
 	auto &centralized_view_entry = centralized_view_catalog_entry->Cast<TableCatalogEntry>();
 	for (auto &column : centralized_view_entry.GetColumns().GetColumnNames()) {
@@ -161,16 +182,6 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	}
 	// remove the last comma and space
 	table_column_names = table_column_names.substr(0, table_column_names.size() - 2);
-
-	update_query_1 += protected_column_names + ", "; // without the alias
-	update_query_1 += "count(distinct client_id)\n\t";
-	update_query_1 += "from " + centralized_view_name + " \n\t";
-	update_query_1 += "group by " + protected_column_names + "\n\t";
-	if (minimum_aggregation > 1) {
-		update_query_1 += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation);
-	}
-	update_query_1 += ") y\n";
-	update_query_1 += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
 
 	// we have to attach the client to the server and not the other way around
 	// because the server database has to be the default for IVM pipelines
@@ -194,7 +205,18 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string delete_query_2 = extract_metadata + "\ndelete from " + centralized_view_name +
 	                        " where rdda_window <= (SELECT expired_window FROM threshold_window);\n\n";
 
+	// we compile the first update query based on the minimum aggregation
+	string update_query_1;
+	if (minimum_aggregation > 0) {
+        update_query_1 = UpdateWithMinimumAggregation(centralized_view_name, centralized_table_name, join_names,
+                                                     protected_column_names, minimum_aggregation);
+    } else {
+        update_query_1 = UpdateWithoutMinimumAggregation(centralized_view_name, centralized_table_name,
+                                                        table_column_names);
+    }
+
 	// now generating the queries to update the metadata
+	// todo - optimize for min agg = 1
 	string update_responsiveness = UpdateResponsiveness(view_name);
 	string update_completeness = attach_parser_read_only + extract_metadata + UpdateCompleteness(view_name);
 	string update_buffer_size = UpdateBufferSize(view_name);

@@ -517,10 +517,6 @@ def run_cycle(initial_clients, run):
     save_metadata(metadata)
 
 def main():
-    parser = argparse.ArgumentParser(description="Setup SQLite clients and push to Postgres periodically.")
-    parser.add_argument("N", type=int, help="Number of active clients")
-    parser.add_argument("H", type=int, help="Interval in minutes between runs")
-    args = parser.parse_args()
 
     create_postgres_table_if_not_exists()
 
@@ -529,12 +525,12 @@ def main():
     while True:
         try:
             print(f"\n--- Starting cycle {run} ---")
-            run_cycle(args.N, run)
+            run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
             update_window()
-            print(f"Sleeping for {args.H} minute(s)...\n")
+            print(f"Sleeping for {params.MINUTE_INTERVAL} minute(s)...\n")
             # time.sleep(args.H * 3600)
-            time.sleep(args.H * 60)
+            time.sleep(params.MINUTE_INTERVAL * 60)
         except KeyboardInterrupt:
             print("\nShutting down...")
             break
