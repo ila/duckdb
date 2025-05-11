@@ -145,7 +145,7 @@ def setup_client_folder(i):
                 traceback.print_exc()
 
         db_path = os.path.join(folder, "runs.db")
-        client_info_path = os.path.join(folder, "client_c__info.csv")
+        client_info_path = os.path.join(folder, f"client_c_{i}_info.csv")
         csv_path = os.path.join(folder, "test_data.csv")
 
         if os.path.exists(csv_path):
@@ -416,9 +416,13 @@ def save_metadata(metadata):
 def run_cycle(initial_clients, run):
     metadata = load_metadata()
 
+    # if some clients are late, the cycle will finish before the "0" percentage is applied
     dead = set(metadata.get("dead_clients", []))
     late = metadata.get("late_clients", {})
     next_client_id = metadata.get("next_client_id", 0)
+
+    # if params.LATE_RATE == 0:
+    #     late = {}
 
     all_clients = list(range(next_client_id))
     alive_clients = [cid for cid in all_clients if cid not in dead and cid not in late]
@@ -427,18 +431,19 @@ def run_cycle(initial_clients, run):
     target_clients = int(min(params.MAX_CLIENTS, initial_clients * ((1 + params.NEW_RATE) ** run)))
 
     # Sample deaths
-    num_to_die = max(1, int(len(alive_clients) * params.DEATH_RATE)) if alive_clients else 0
+    num_to_die = int(len(alive_clients) * params.DEATH_RATE) if alive_clients else 0
     dying_clients = random.sample(alive_clients, min(num_to_die, len(alive_clients)))
+
     dead.update(dying_clients)
 
     # Sample new late clients (exclude already-late ones)
     alive_after_death = [cid for cid in alive_clients if cid not in dying_clients]
     eligible_for_new_late = [cid for cid in alive_after_death if str(cid) not in late]
-    num_late = max(1, int(len(eligible_for_new_late) * params.LATE_RATE)) if eligible_for_new_late else 0
+    num_late = int(len(eligible_for_new_late) * params.LATE_RATE) if eligible_for_new_late else 0
     new_late_clients = random.sample(eligible_for_new_late, min(num_late, len(eligible_for_new_late)))
+
     for cid in new_late_clients:
         late[str(cid)] = random.randint(1, 5)
-
 
     # Process late countdown
     late_active = []
@@ -507,14 +512,15 @@ def main():
 
     create_postgres_table_if_not_exists()
     run = 0
-    hostname = subprocess.check_output("hostnamectl --static", shell=True).decode("utf-8").strip()
+    client_n = os.getenv("CLIENT_N")
+    whoami = subprocess.check_output("whoami", shell=True).decode("utf-8").strip()
 
     while run < params.MAX_RUNS:
         try:
             print(f"\n--- Starting cycle {run} ---")
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
-            if hostname == "ip-172-31-22-255": # fixme
+            if client_n == "client-0" or whoami == "ila": # fixme (also fix openivm insert rule)
                 update_window()
                 time.sleep(params.MINUTE_INTERVAL * 30)
                 print("--- Flushing data ---")
