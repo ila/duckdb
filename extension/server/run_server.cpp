@@ -317,20 +317,12 @@ void UpdateWindowRemotely(int32_t connfd, Connection &con) {
 	read(connfd, view_name.data(), view_name_size);
 	string view_name_str(view_name.begin(), view_name.end());
 	// now we update the window
-	auto window_query =
-	    "update rdda_current_window set rdda_window = rdda_window + 1, last_update = now() where view_name = 'rdda_centralized_view_" +
-	    view_name_str + "';";
-	auto r = con.Query(window_query);
+	auto r = con.Query("update rdda_current_window set rdda_window = rdda_window + 1, last_update = now() where view_name = 'rdda_centralized_view_" +
+		view_name_str + "';");
 	if (r->HasError()) {
-		// try inserting
-		r = con.Query(
-            "insert into rdda_current_window values('rdda_centralized_view_" + view_name_str + "', 0, now());");
-		if (r->HasError()) {
-			throw ParserException("Error while updating window metadata: " + r->GetError());
-		}
+		throw ParserException("Error while updating window metadata: " + r->GetError());
 	}
 	Printer::Print("Updated window for view: " + view_name_str + "...");
-
 }
 
 void ClientThreadHandler(int connfd, unordered_map<string, string> &config, vector<int32_t> &client_socket, int index) {

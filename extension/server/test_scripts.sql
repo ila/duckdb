@@ -13,7 +13,7 @@ CREATE DECENTRALIZED MATERIALIZED VIEW daily_runs_city AS
     FROM runs
     GROUP BY nickname, city, date
     WINDOW 24
-    TTL 48
+    TTL 72
     MINIMUM AGGREGATION 3
     REFRESH 24;
 

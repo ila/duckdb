@@ -1,5 +1,10 @@
 -- ./duckdb runs.db
 
+attach if not exists 'rdda_parser.db' as rdda_parser;
+insert or replace into rdda_parser.rdda_tables values ('mv_daily_runs_city', 1, '', true);
+insert or replace into rdda_parser.rdda_view_constraints values ('mv_daily_runs_city', 24, 72, 24, 0, now());
+insert or replace into rdda_parser.rdda_current_window values ('mv_daily_runs_city', 0, now());
+
 create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string varchar, type tinyint, last_update timestamp);
 create table if not exists _duckdb_ivm_delta_tables (view_name varchar, table_name varchar, last_update timestamp, primary key(view_name, table_name));
 insert or replace into _duckdb_ivm_views values ('mv_daily_runs_city', '', 0, now());

@@ -38,7 +38,7 @@ string UpdateWithoutMinimumAggregation(string &centralized_view_name, string &ce
 	string query = "INSERT INTO " + centralized_table_name + "\n";
 	query += "SELECT " + column_names + "\n";
 	query += " FROM " + centralized_view_name + "\n";
-	query += "WHERE rdda_window <= (SELECT expired_window FROM threshold_window);\n\n";
+	query += "WHERE rdda_window > (SELECT expired_window FROM threshold_window);\n\n";
 
 	return query;
 
@@ -121,13 +121,13 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string table_column_names = ""; // column names of the centralized table (without metadata)
 
 	string extract_metadata = "WITH stats AS (\n"
-						      "\tSELECT rdda_ttl FROM rdda_parser.rdda_view_constraints\n"
+						      "\tSELECT rdda_window, rdda_ttl FROM rdda_parser.rdda_view_constraints\n"
 	                          "\tWHERE view_name = '" + view_name + "'),\n"
 							  "current_window AS (\n"
 							  "\tSELECT rdda_window FROM rdda_parser.rdda_current_window\n"
 							  "\tWHERE view_name = '" + view_name + "'),\n"
 					          "\tthreshold_window AS (\n"
-	                          "\tSELECT (cw.rdda_window - s.rdda_ttl) AS expired_window\n"
+	                          "\tSELECT (cw.rdda_window - s.rdda_ttl) / s.rdda_window AS expired_window\n"
 							  "\tFROM current_window cw, stats s)";
 
 	string min_agg_query =
