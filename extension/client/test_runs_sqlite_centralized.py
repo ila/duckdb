@@ -12,8 +12,17 @@ from datetime import datetime, timedelta
 import traceback
 import socket
 import struct
+from itertools import repeat
+
+from psycopg2 import DatabaseError
+from psycopg2 import OperationalError
 
 import test_runs_sqlite_parameters as params
+
+import json
+
+CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_c_metadata")
+CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
 # note: this requires postgres installed, role and database created ("ubuntu" in this case)
 # setting postgresql.conf with 100 max clients and listening on all addresses
@@ -266,6 +275,7 @@ def send_to_postgres(i, run):
             rows = sqlite_conn.execute("SELECT * FROM runs").fetchall()
 
         if not rows:
+            print(f"No rows to send for client {i}")
             return
 
         now = datetime.now()
@@ -273,24 +283,27 @@ def send_to_postgres(i, run):
 
         enriched = []
         for row in rows:
-            nickname, city, date, start, end, steps, heartbeat, _ = row
+            nickname, city, date, start, end, steps, heartbeat = row
             window = run
             client_id = int(nickname.split("_")[1])
             enriched.append(
                 (nickname, city, date, start, end, steps, heartbeat, now, now, window, client_id, 1)  # generation  # arrival  # action
             )
 
-        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
-            with pg_conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO rdda_centralized_view_runs (
-                        nickname, city, date, start, end, steps, heartbeat, generation, arrival, rdda_window, client_id, action
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                    enriched,
-                )
-            pg_conn.commit()
+            try:
+                with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
+                    with pg_conn.cursor() as cur:
+                        cur.executemany(
+                            """
+                            INSERT INTO rdda_centralized_view_runs (
+                                nickname, city, date, start_time, end_time, steps, heartbeat_rate, generation, arrival, rdda_window, client_id, action
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            enriched,
+                        )
+                    pg_conn.commit()
+            except (OperationalError, DatabaseError) as e:
+                print(f"❌ Error during PostgreSQL insertion: {e}")
 
         update_timestamp(client_id, False, i)
 
@@ -379,7 +392,7 @@ def update_window():
             sock.sendall(packed_view)
             sock.sendall(packed_close)
 
-            print(f"Updated window")
+            print(f"--- Updated window ---")
 
     except Exception as e:
         print(f"Error updating window")
@@ -392,11 +405,6 @@ def run_client(client_id, run):
         print(f"Error running client {client_id}: {str(e)}")
         traceback.print_exc()
 
-
-import json
-
-CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_c_metadata")
-CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
 def load_metadata():
     if not os.path.exists(CLIENT_METADATA_DIR):
@@ -496,7 +504,7 @@ def run_cycle(initial_clients, run):
 
     print("--- Generating and sending data ---")
     with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
-        executor.map(run_client, active_clients)
+        executor.map(run_client, active_clients, repeat(run))
 
     # Save metadata
     metadata["dead_clients"] = list(dead)
