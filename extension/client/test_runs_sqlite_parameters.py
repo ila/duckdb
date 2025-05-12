@@ -26,7 +26,7 @@ NEW_RATE = 0.2   # Proportion of total active clients that are new
 MAX_CLIENTS = 250 # Maximum number of clients to simulate at once
 MAX_CONCURRENT_CLIENTS = 25 # Maximum number of clients to simulate in parallel
 INITIAL_CLIENTS = 100 # Initial number of clients to simulate
-MINUTE_INTERVAL = 1 # Interval in minutes for the simulation
+MINUTE_INTERVAL = 2 # Interval in minutes for the simulation
 MAX_RUNS = 10 # Maximum number of runs to simulate
 
 CITIES = [
