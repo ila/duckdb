@@ -387,6 +387,9 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 	server_running = true;
 	SetupSignalHandling();
 
+	// Ignore SIGPIPE to prevent crashing when writing to closed sockets
+	std::signal(SIGPIPE, SIG_IGN);
+
 	string config_path = "../extension/server/";
 	string config_file = "server.config";
 	auto config = ParseConfig(config_path, config_file);
@@ -409,6 +412,16 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 	int opt = 1;
 	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
 		Printer::Print("setsockopt failed");
+		close(sockfd);
+		return;
+	}
+
+	// Enable forced close on lingering sockets
+	struct linger sl;
+	sl.l_onoff = 1;   // Enable linger option
+	sl.l_linger = 0;  // Discard pending data, close immediately
+	if (setsockopt(sockfd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl))) {
+		Printer::Print("setsockopt(SO_LINGER) failed");
 		close(sockfd);
 		return;
 	}
@@ -438,69 +451,74 @@ void RunServer(ClientContext &context, const FunctionParameters &parameters) {
 	vector<std::thread> client_threads;
 	socklen_t addrlen = sizeof(servaddr);
 
-	while (server_running) {
-		fd_set readfds;
-		FD_ZERO(&readfds);
+	try {
+		while (server_running) {
+			fd_set readfds;
+			FD_ZERO(&readfds);
 
-		FD_SET(sockfd, &readfds);
-		FD_SET(self_pipe[0], &readfds);
+			FD_SET(sockfd, &readfds);
+			FD_SET(self_pipe[0], &readfds);
 
-		int32_t max_sockfd = std::max(sockfd, self_pipe[0]);
+			int32_t max_sockfd = std::max(sockfd, self_pipe[0]);
 
-		// Clean up finished threads
-		for (auto it = client_threads.begin(); it != client_threads.end();) {
-			if (it->joinable()) {
-				it->join();
-				it = client_threads.erase(it);
-			} else {
-				++it;
-			}
-		}
-
-		struct timeval timeout;
-		timeout.tv_sec = 5; // Check server_running every 5 seconds
-		timeout.tv_usec = 0;
-
-		int activity = select(max_sockfd + 1, &readfds, nullptr, nullptr, &timeout);
-
-		if (activity < 0 && errno != EINTR) {
-			string error_message = "Select error: " + std::to_string(errno);
-			Printer::Print(error_message);
-			break;
-		}
-
-		if (!server_running)
-			break;
-
-		if (FD_ISSET(self_pipe[0], &readfds)) {
-			char buf;
-			read(self_pipe[0], &buf, 1);
-			break; // Exit after reading self-pipe
-		}
-
-		if (FD_ISSET(sockfd, &readfds)) {
-			int connfd = accept(sockfd, reinterpret_cast<struct sockaddr *>(&servaddr), &addrlen);
-			if (connfd < 0) {
-				Printer::Print("Connection error!");
-				continue;
+			// Clean up finished threads
+			for (auto it = client_threads.begin(); it != client_threads.end();) {
+				if (it->joinable()) {
+					it->join();
+					it = client_threads.erase(it);
+				} else {
+					++it;
+				}
 			}
 
-			// Find empty slot for new client
-			std::lock_guard<std::mutex> lock(client_socket_mutex);
-			for (int i = 0; i < max_clients; i++) {
-				if (client_socket[i] == 0) {
-					client_socket[i] = connfd;
+			struct timeval timeout;
+			timeout.tv_sec = 5; // Check server_running every 5 seconds
+			timeout.tv_usec = 0;
 
-					// Launch a new thread for this client
-					client_threads.emplace_back([connfd, &config, &client_socket, i]() {
-						ClientThreadHandler(connfd, config, client_socket, i);
-					});
+			int activity = select(max_sockfd + 1, &readfds, nullptr, nullptr, &timeout);
 
-					break;
+			if (activity < 0 && errno != EINTR) {
+				string error_message = "Select error: " + std::to_string(errno);
+				Printer::Print(error_message);
+				break;
+			}
+
+			if (!server_running)
+				break;
+
+			if (FD_ISSET(self_pipe[0], &readfds)) {
+				char buf;
+				read(self_pipe[0], &buf, 1);
+				break; // Exit after reading self-pipe
+			}
+
+			if (FD_ISSET(sockfd, &readfds)) {
+				int connfd = accept(sockfd, reinterpret_cast<struct sockaddr *>(&servaddr), &addrlen);
+				if (connfd < 0) {
+					Printer::Print("Connection error!");
+					continue;
+				}
+
+				// Find empty slot for new client
+				std::lock_guard<std::mutex> lock(client_socket_mutex);
+				for (int i = 0; i < max_clients; i++) {
+					if (client_socket[i] == 0) {
+						client_socket[i] = connfd;
+
+						// Launch a new thread for this client
+						client_threads.emplace_back([connfd, &config, &client_socket, i]() {
+							ClientThreadHandler(connfd, config, client_socket, i);
+						});
+
+						break;
+					}
 				}
 			}
 		}
 	}
+	catch (const std::exception &e) {
+        Printer::Print("Interrupting execution and cleaning up sockets.");
+    }
 
 	// Wait for all client threads to finish
 	for (auto &thread : client_threads) {

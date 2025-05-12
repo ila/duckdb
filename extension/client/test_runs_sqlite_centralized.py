@@ -530,7 +530,7 @@ def main():
             run += 1
             if client_n == "client-0" or whoami == "ila": # fixme (also fix openivm insert rule)
                 update_window()
-                time.sleep(params.MINUTE_INTERVAL * 30)
+                time.sleep(params.MINUTE_INTERVAL * 10)
                 print("--- Flushing data ---")
                 flush()
             print("✔️  Cycle complete.\n")
