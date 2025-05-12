@@ -532,7 +532,7 @@ def main():
                 update_window()
                 time.sleep(params.MINUTE_INTERVAL * 30)
                 print("--- Flushing data ---")
-                #flush()
+                flush()
             print("✔️  Cycle complete.\n")
             print(f"Sleeping for {params.MINUTE_INTERVAL} minute(s)...\n")
             # time.sleep(args.H * 3600)
