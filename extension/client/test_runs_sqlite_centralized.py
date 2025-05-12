@@ -355,8 +355,6 @@ def flush():
             sock.sendall(packed_postgres)
             sock.sendall(packed_close)
 
-            print(f"Flushed")
-
     except Exception as e:
         print(f"Error flushing")
         traceback.print_exc()

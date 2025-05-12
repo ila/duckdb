@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 
 
 TMP_DIR = "/home/tmp_duckdb/"
-#SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
-#CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
-SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
-CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
+SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
+CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
+# SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
+# CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
 
 SOURCE_POSTGRES_DSN = os.environ.get(
     "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-18-159-115-118.eu-central-1.compute.amazonaws.com"
@@ -27,7 +27,7 @@ MAX_CLIENTS = 250 # Maximum number of clients to simulate at once
 MAX_CONCURRENT_CLIENTS = 25 # Maximum number of clients to simulate in parallel
 INITIAL_CLIENTS = 100 # Initial number of clients to simulate
 MINUTE_INTERVAL = 1 # Interval in minutes for the simulation
-MAX_RUNS = 20 # Maximum number of runs to simulate
+MAX_RUNS = 10 # Maximum number of runs to simulate
 
 CITIES = [
     "New York",
