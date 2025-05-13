@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import traceback
 import socket
 import struct
+from itertools import repeat
 
 import test_runs_sqlite_parameters as params
 
@@ -286,7 +287,7 @@ def send_to_postgres(i, run):
 
         enriched = []
         for row in rows:
-            nickname, city, date, steps, _ = row
+            nickname, city, date, steps = row
             window = run
             client_id = int(nickname.split("_")[1])
             enriched.append(
@@ -305,7 +306,7 @@ def send_to_postgres(i, run):
                 )
             pg_conn.commit()
 
-        update_timestamp(client_id, False, i)
+        # update_timestamp(client_id, False, i)
 
         with sqlite3.connect(db_path) as sqlite_conn:
             try:
@@ -392,7 +393,7 @@ def update_window():
             sock.sendall(packed_view)
             sock.sendall(packed_close)
 
-            print(f"Updated window")
+            print(f"--- Updated window ---")
 
     except Exception as e:
         print(f"Error updating window")

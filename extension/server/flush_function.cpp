@@ -19,7 +19,7 @@ int run = 0; // benchmark run (only for benchmarking purposes)
 string UpdateWithMinimumAggregation(string &centralized_view_name, string &centralized_table_name, string &join_names,
                                     string &protected_column_names, int minimum_aggregation) {
 
-	string query = "update " + centralized_table_name + " x\nset action = 2 \nfrom (\n\tselect ";
+	string query = "update " + centralized_view_name + " x\nset action = 2 \nfrom (\n\tselect ";
 	query += protected_column_names + ", "; // without the alias
 	query += "count(distinct client_id)\n\t";
 	query += "from " + centralized_view_name + " \n\t";
@@ -35,10 +35,10 @@ string UpdateWithoutMinimumAggregation(string &centralized_view_name, string &ce
 	// we can just remove the tuples in the staging area and insert them into the centralized table
 	// as long as the TTL is not expired
 	// also, the buffer size is always 0, since at every refresh all the data is inserted
-	string query = "INSERT INTO " + centralized_table_name + "\n";
-	query += "SELECT " + column_names + "\n";
-	query += " FROM " + centralized_view_name + "\n";
-	query += "WHERE rdda_window > (SELECT expired_window FROM threshold_window);\n\n";
+	string query = "insert into " + centralized_table_name + " by name \n";
+	query += "select " + column_names + "\n";
+	query += " from " + centralized_view_name + "\n";
+	query += "where rdda_window > (select expired_window from threshold_window);\n\n";
 
 	return query;
 
@@ -128,7 +128,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 							  "\tWHERE view_name = '" + view_name + "'),\n"
 					          "\tthreshold_window AS (\n"
 	                          "\tSELECT (cw.rdda_window - s.rdda_ttl) / s.rdda_window AS expired_window\n"
-							  "\tFROM current_window cw, stats s)";
+							  "\tFROM current_window cw, stats s)\n";
 
 	string min_agg_query =
 		"select rdda_min_agg from rdda_view_constraints where view_name = '" + view_name + "';";
@@ -187,6 +187,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// we have to attach the client to the server and not the other way around
 	// because the server database has to be the default for IVM pipelines
 	string attach_query;
+	string attach_parser = "attach 'rdda_parser.db' as rdda_parser;\n\n";
 	string attach_parser_read_only = "attach 'rdda_parser.db' as rdda_parser (read_only);\n\n";
 	if (database == "duckdb") {
 		attach_query = "attach '" + client_db_name + "' as rdda_client;\n\n";
@@ -208,11 +209,11 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 
 	// we compile the first update query based on the minimum aggregation
 	string update_query_1;
-	if (minimum_aggregation > 0) {
+	if (minimum_aggregation > 1) {
         update_query_1 = UpdateWithMinimumAggregation(centralized_view_name, centralized_table_name, join_names,
                                                      protected_column_names, minimum_aggregation);
     } else {
-        update_query_1 = UpdateWithoutMinimumAggregation(centralized_view_name, centralized_table_name,
+        update_query_1 = extract_metadata + UpdateWithoutMinimumAggregation(centralized_view_name, centralized_table_name,
                                                         table_column_names);
     }
 
@@ -228,12 +229,12 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// we detach the client database and reattach it as read-only
 	string queries;
 	if (database == "duckdb") {
-		queries = attach_query + update_query_1 + detach_query + attach_query_read_only + insert_query + detach_query +
+		queries = attach_query + attach_parser + update_query_1 + detach_query + attach_query_read_only + insert_query + detach_query +
 		          attach_query + delete_query_1 + detach_query + cleanup_expired_clients + update_responsiveness +
 		          attach_query + update_completeness + delete_query_2 + update_buffer_size + detach_query;
 
 	} else if (database == "postgres") {
-		queries = attach_query + update_query_1 + insert_query + delete_query_1 + cleanup_expired_clients +
+		queries = attach_query + attach_parser + update_query_1 + insert_query + delete_query_1 + cleanup_expired_clients +
 		          update_responsiveness + update_completeness + delete_query_2 + update_buffer_size;
 	}
 

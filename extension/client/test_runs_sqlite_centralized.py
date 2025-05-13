@@ -305,7 +305,7 @@ def send_to_postgres(i, run):
             except (OperationalError, DatabaseError) as e:
                 print(f"❌ Error during PostgreSQL insertion: {e}")
 
-        update_timestamp(client_id, False, i)
+        # update_timestamp(client_id, False, i)
 
         with sqlite3.connect(db_path) as sqlite_conn:
             try:

@@ -119,10 +119,8 @@ string UpdateBufferSize(string &view_name) {
 
 string CleanupExpiredClients(std::unordered_map<string, string> &config) {
 
-	string query = "attach 'rdda_parser.db' as rdda_parser;\n\n";
-
 	int keep_alive_days = std::stoi(config["keep_alive_clients_days"]);
-	query += "delete from rdda_parser.rdda_clients where last_update < today() - interval " +
+	string query = "delete from rdda_parser.rdda_clients where last_update < today() - interval " +
 	         std::to_string(keep_alive_days) + " day;\n\n";
 	// todo - do we need to delete anything else? refresh history?
 	query += "detach rdda_parser;\n\n";

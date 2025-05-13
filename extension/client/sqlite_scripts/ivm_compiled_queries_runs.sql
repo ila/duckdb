@@ -19,13 +19,6 @@ GROUP BY nickname, city, date
     MINIMUM AGGREGATION 1
     REFRESH 24;
 
--- todo incrementalize this kind of query
-CREATE CENTRALIZED MATERIALIZED VIEW weekly_runs_city AS
-SELECT nickname, city, week(date), SUM(total_steps) AS total_steps
-FROM daily_runs_city
-GROUP BY nickname, city, week(date)
-    REFRESH 24;
-
 attach if not exists 'rdda_parser.db' as rdda_parser;
 insert or replace into rdda_parser.rdda_tables values ('mv_daily_runs_city', 1, '', true);
 insert or replace into rdda_parser.rdda_view_constraints values ('mv_daily_runs_city', 24, 72, 24, 0, now());
