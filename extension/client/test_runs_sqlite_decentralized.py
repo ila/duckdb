@@ -14,6 +14,9 @@ import socket
 import struct
 from itertools import repeat
 
+from psycopg2 import DatabaseError
+from psycopg2 import OperationalError
+
 import test_runs_sqlite_parameters as params
 
 # note: this requires postgres installed, role and database created ("ubuntu" in this case)
@@ -294,17 +297,21 @@ def send_to_postgres(i, run):
                 (nickname, city, date, steps, now, now, window, client_id, 1)  # generation  # arrival  # action
             )
 
-        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
-            with pg_conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO rdda_centralized_view_daily_runs_city (
-                        nickname, city, date, total_steps, generation, arrival, rdda_window, client_id, action
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                    enriched,
-                )
-            pg_conn.commit()
+        try:
+            with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
+                with pg_conn.cursor() as cur:
+                    cur.executemany(
+                        """
+                        INSERT INTO rdda_centralized_view_daily_runs_city (
+                            nickname, city, date, total_steps, generation, arrival, rdda_window, client_id, action
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                        enriched,
+                    )
+                pg_conn.commit()
+
+        except (OperationalError, DatabaseError) as e:
+            print(f"❌ Error during PostgreSQL insertion: {e}")
 
         # update_timestamp(client_id, False, i)
 

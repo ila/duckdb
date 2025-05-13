@@ -16,8 +16,8 @@ namespace duckdb {
 
 int run = 0; // benchmark run (only for benchmarking purposes)
 
-string UpdateWithMinimumAggregation(string &centralized_view_name, string &centralized_table_name, string &join_names,
-                                    string &protected_column_names, int minimum_aggregation) {
+string UpdateWithMinimumAggregation(string &centralized_view_name, string &centralized_table_name, string &column_names,
+									string &join_names, string &protected_column_names, int minimum_aggregation) {
 
 	string query = "update " + centralized_view_name + " x\nset action = 2 \nfrom (\n\tselect ";
 	query += protected_column_names + ", "; // without the alias
@@ -27,6 +27,10 @@ string UpdateWithMinimumAggregation(string &centralized_view_name, string &centr
 	query += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation);
 	query += ") y\n";
 	query += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
+	query += "insert into " + centralized_table_name + " by name\nselect " + column_names +
+					" \nfrom " + centralized_view_name + " \nwhere action = 2;\n\n";
+	query += "delete from " + centralized_view_name + " \nwhere action = 2;\n\n";
+
 	return query;
 }
 
@@ -37,12 +41,10 @@ string UpdateWithoutMinimumAggregation(string &centralized_view_name, string &ce
 	// also, the buffer size is always 0, since at every refresh all the data is inserted
 	string query = "insert into " + centralized_table_name + " by name \n";
 	query += "select " + column_names + "\n";
-	query += " from " + centralized_view_name + "\n";
+	query += "from " + centralized_view_name + "\n";
 	query += "where rdda_window > (select expired_window from threshold_window);\n\n";
 
 	return query;
-
-
 }
 
 void FlushFunction(ClientContext &context, const FunctionParameters &parameters) {
@@ -125,7 +127,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	                          "\tWHERE view_name = '" + view_name + "'),\n"
 							  "current_window AS (\n"
 							  "\tSELECT rdda_window FROM rdda_parser.rdda_current_window\n"
-							  "\tWHERE view_name = '" + view_name + "'),\n"
+							  "\tWHERE view_name = 'rdda_centralized_view_" + view_name + "'),\n"
 					          "\tthreshold_window AS (\n"
 	                          "\tSELECT (cw.rdda_window - s.rdda_ttl) / s.rdda_window AS expired_window\n"
 							  "\tFROM current_window cw, stats s)\n";
@@ -198,9 +200,6 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		attach_query = "attach if not exists " + postgres_credentials + " as rdda_client (type postgres);\n\n";
 	}
 	auto attach_query_read_only = "attach '" + client_db_name + "' as rdda_client (read_only);\n\n";
-	auto insert_query = "insert into " + centralized_table_name + " by name\nselect " + table_column_names +
-	                    " \nfrom " + centralized_view_name + " \nwhere action = 2;\n\n";
-	auto delete_query_1 = "delete from " + centralized_view_name + " \nwhere action = 2;\n\n";
 
 	string detach_query = "detach rdda_client;\n\n";
 	// lastly we remove stale tuples
@@ -210,7 +209,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// we compile the first update query based on the minimum aggregation
 	string update_query_1;
 	if (minimum_aggregation > 1) {
-        update_query_1 = UpdateWithMinimumAggregation(centralized_view_name, centralized_table_name, join_names,
+        update_query_1 = UpdateWithMinimumAggregation(centralized_view_name, centralized_table_name, table_column_names, join_names,
                                                      protected_column_names, minimum_aggregation);
     } else {
         update_query_1 = extract_metadata + UpdateWithoutMinimumAggregation(centralized_view_name, centralized_table_name,
@@ -220,7 +219,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// now generating the queries to update the metadata
 	// todo - optimize for min agg = 1
 	string update_responsiveness = UpdateResponsiveness(view_name);
-	string update_completeness = attach_parser_read_only + extract_metadata + UpdateCompleteness(view_name);
+	string update_completeness = attach_parser_read_only + extract_metadata.substr(0, extract_metadata.size() - 2) + UpdateCompleteness(view_name);
 	string update_buffer_size = UpdateBufferSize(view_name);
 	string cleanup_expired_clients = CleanupExpiredClients(config);
 
@@ -229,12 +228,11 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// we detach the client database and reattach it as read-only
 	string queries;
 	if (database == "duckdb") {
-		queries = attach_query + attach_parser + update_query_1 + detach_query + attach_query_read_only + insert_query + detach_query +
-		          attach_query + delete_query_1 + detach_query + cleanup_expired_clients + update_responsiveness +
+		queries = attach_query + attach_parser + update_query_1 + detach_query + cleanup_expired_clients + update_responsiveness +
 		          attach_query + update_completeness + delete_query_2 + update_buffer_size + detach_query;
 
 	} else if (database == "postgres") {
-		queries = attach_query + attach_parser + update_query_1 + insert_query + delete_query_1 + cleanup_expired_clients +
+		queries = attach_query + attach_parser + update_query_1 + cleanup_expired_clients +
 		          update_responsiveness + update_completeness + delete_query_2 + update_buffer_size;
 	}
 
