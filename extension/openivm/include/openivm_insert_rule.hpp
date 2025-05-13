@@ -68,12 +68,12 @@ public:
 			auto insert_node = dynamic_cast<LogicalInsert *>(root);
 			// we need to check whether the table isn't the delta table already
 			auto insert_table_name = insert_node->table.name;
+			auto delta_insert_table = "delta_" + insert_node->table.name;
 
 			if (insert_table_name.substr(0, 6) == "delta_" || insert_table_name.empty()) {
 				// this happens when we insert into the delta table (we don't want to insert twice)
 				return;
 			}
-			auto delta_insert_table = "delta_" + insert_node->table.name;
 			auto delta_table_catalog_entry =
 			    Catalog::GetEntry<TableCatalogEntry>(input.context, insert_node->table.catalog.GetName(), insert_node->table.schema.name,
 			                      delta_insert_table, OnEntryNotFound::RETURN_NULL);
@@ -99,13 +99,12 @@ public:
 					// the simpler one is INSERT INTO table VALUES (v1, v2, ...)
 					// consists in an INSERT node followed by PROJECTION
 					// for COPY, we have INSERT followed by READ_CSV
-					string insert_query;
+					string full_delta_table_name = "delta_" + insert_node->table.catalog.GetName() + "." + insert_node->table.schema.name + "." +
+                                                insert_node->table.name;
 					if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_PROJECTION) {
 						// this is either a VALUES or a query
 						// if we have INSERT INTO VALUES, we just compile the statement
-						// todo - add catalog and schema here
-
-						insert_query = "insert into delta_" + insert_node->table.name;
+						string insert_query = "insert into " + full_delta_table_name;
 
 						// COPY can just be another COPY in the delta table
 						auto projection = dynamic_cast<LogicalProjection *>(insert_node->children[0].get());
@@ -130,8 +129,7 @@ public:
 											values += constant->value.ToString() + ",";
 										}
 									} else {
-										// printf("\nType of value: %d\n", static_cast<int>(value->type));
-										throw NotImplementedException("Only constant values are supported for now");
+										throw NotImplementedException("Only constant values are supported for now!");
 									}
 								}
 								// add "true" as multiplicity (we are performing an insertion)
@@ -154,17 +152,11 @@ public:
 						}
 						// lastly, we need to set the multiplicity and timestamp of the new data
 						// altering a table setting defaults still does not work in the same transaction
-						r = con.Query("update delta_" + insert_node->table.name +
-						              " set _duckdb_ivm_multiplicity = true where _duckdb_ivm_multiplicity is null;");
+						r = con.Query("update " + full_delta_table_name +
+						              " set _duckdb_ivm_multiplicity = true, _duckdb_ivm_timestamp = now() where _duckdb_ivm_multiplicity is null and _duckdb_ivm_timestamp is null;");
 						if (r->HasError()) {
-							throw InternalException("Cannot update multiplicity metadata! " + r->GetError());
+							throw InternalException("Cannot update multiplicity and timestamp metadata! " + r->GetError());
 						}
-						r = con.Query("update delta_" + insert_node->table.name +
-						              " set _duckdb_ivm_timestamp = now() where _duckdb_ivm_timestamp is null;");
-						if (r->HasError()) {
-							throw InternalException("Cannot update timestamp metadata! " + r->GetError());
-						}
-
 						con.Commit();
 
 					} else if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
@@ -176,14 +168,13 @@ public:
 							// we cannot just copy; we need to hardcode the multiplicity and timestamp
 							// insert into delta_table select *, true, now() from read_csv(path);
 							// the performance is the same, since COPY is an insertion
-							auto query = "insert into delta_" + insert_node->table.name +
+							auto query = "insert into " + full_delta_table_name +
 							             " select *, true, now() from read_csv('" + file + "');";
 							auto r = con.Query(query);
 							if (r->HasError()) {
 								throw InternalException("Cannot insert in delta table! " + r->GetError());
 							}
 						}
-
 						con.Commit();
 					}
 				}
@@ -193,10 +184,8 @@ public:
 		case LogicalOperatorType::LOGICAL_DELETE: {
 			// delete plans consists in delete + filter + scan
 			auto delete_node = dynamic_cast<LogicalDelete *>(root);
-			// we need to check whether the table isn't the delta table already
 			auto delete_table_name = delete_node->table.name;
-			auto delete_table_schema = delete_node->table.schema.name;
-			auto delete_table_catalog = delete_node->table.catalog.GetName();
+			// we need to check whether the table isn't the delta table already
 			if (delete_table_name.substr(0, 6) == "delta_") {
 				return;
 			}
@@ -207,6 +196,8 @@ public:
 
 			if (delta_table_catalog_entry) { // if it exists, we can append
 				                             // check if already done
+				auto full_table_name = delete_node->table.catalog.GetName() + "." + delete_node->table.schema.name + "." + delete_node->table.name;
+				auto full_delta_table_name = "delta_" + delete_node->table.catalog.GetName() + "." + delete_node->table.schema.name + "." + delete_node->table.name;
 				Connection con(*input.context.db);
 				con.SetAutoCommit(false);
 				auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + delete_table_name + "'");
@@ -217,7 +208,7 @@ public:
 					// todo 2 -- implement this in LPTS
 					// todo 3 -- throw exception if the plan is too complicated
 					string insert_string =
-					    "insert into " + delete_table_catalog + "." + delete_table_schema + "." + delta_delete_table + " select *, false, now() from " + delete_table_catalog + "." + delete_table_schema + "." + delete_table_name;
+					    "insert into " + full_delta_table_name + " select *, false, now() from " + full_table_name;
 					// handling the potential filters
 					if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 						auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
@@ -262,28 +253,28 @@ public:
 			// updates consist in update + projection (+ filter) + scan
 			auto update_node = dynamic_cast<LogicalUpdate *>(root);
 			auto update_table_name = update_node->table.name;
-			auto update_table_schema = update_node->table.schema.name;
-			auto update_table_catalog = update_node->table.catalog.GetName();
 			if (update_table_name.substr(0, 6) == "delta_") {
 				return;
 			}
-			auto delta_update_table = "delta_" + update_node->table.name;
+			auto delta_update_table_name = "delta_" + update_node->table.name;
 			auto delta_table_catalog_entry =
 			    Catalog::GetEntry<TableCatalogEntry>(input.context, update_node->table.catalog.GetName(), update_node->table.schema.name,
-			                      delta_update_table, OnEntryNotFound::RETURN_NULL);
+			                      delta_update_table_name, OnEntryNotFound::RETURN_NULL);
 
 			if (delta_table_catalog_entry) { // if it exists, we can append
 				                             // check if already done
 				Connection con(*input.context.db);
+				auto full_table_name = update_node->table.catalog.GetName() + "." + update_node->table.schema.name + "." + update_node->table.name;
+				auto full_delta_table_name = "delta_" + update_node->table.catalog.GetName() + "." + update_node->table.schema.name + "." + update_node->table.name;
 				con.SetAutoCommit(false);
 				auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + update_table_name + "'");
 				if (t->RowCount() == 0) {
 					// here we also assume simple queries with at most a filter
 					// this is for the rows to delete
 					string insert_old =
-					    "insert into " + update_table_catalog + "." + update_table_schema + "." + delta_update_table + " select *, false, now() from " + update_table_catalog + "." + update_table_schema + "." + update_table_name;
+					    "insert into " + full_delta_table_name + " select *, false, now() from " + full_table_name;
 					// this is for the new rows to be added
-					string insert_new = "insert into " + delta_update_table + " ";
+					string insert_new = "insert into " + full_delta_table_name + " ";
 					// we assume a projection with either a filter or a scan
 					auto projection = dynamic_cast<LogicalProjection *>(update_node->children[0].get());
 
@@ -355,7 +346,7 @@ public:
 						}
 					}
 					// we add the multiplicity flag
-					insert_new += "true, now() from " + update_table_catalog + "." + update_table_schema + "." + update_table_name + where_string;
+					insert_new += "true, now() from " + full_table_name + where_string;
 					insert_old += where_string;
 
 					auto r = con.Query(insert_old);
