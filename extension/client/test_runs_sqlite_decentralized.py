@@ -535,8 +535,8 @@ def main():
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
             if client_n == "client-0" or whoami == "ila":
-                update_window()
                 time.sleep(params.MINUTE_INTERVAL * 30)
+                update_window()
                 print("--- Flushing data ---")
                 flush()
             print("✔️  Cycle complete.\n")
