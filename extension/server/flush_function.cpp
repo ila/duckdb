@@ -43,12 +43,11 @@ string UpdateWithoutMinimumAggregation(string &centralized_view_name, string &ce
 	query += "select " + column_names + "\n";
 	query += "from " + centralized_view_name + "\n";
 	query += "where rdda_window > (select expired_window from threshold_window);\n\n";
-
+	query += "delete from " + centralized_view_name + ";\n\n";
 	return query;
 }
 
 void FlushFunction(ClientContext &context, const FunctionParameters &parameters) {
-
 	// for flush, we need to:
 	// 1. insert into the centralized table the columns meeting min agg
 	// 2. removing the set from 1) in the materialized view
@@ -103,13 +102,13 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 		string queries = CompilerExtension::ReadFile(file_name);
 		ExecuteCommitLogAndWriteQueries(server_con, queries, file_name, view_name, append, run, false);
 		run++;
-	 	return;
-	 }
+		return;
+	}
 
 	client_con.BeginTransaction();
 	auto centralized_view_catalog_entry =
-	    Catalog::GetEntry<TableCatalogEntry>(*client_con.context, client_catalog_name, "main",
-	                      centralized_view_name, OnEntryNotFound::RETURN_NULL, QueryErrorContext());
+		Catalog::GetEntry<TableCatalogEntry>(*client_con.context, client_catalog_name, "main",
+						  centralized_view_name, OnEntryNotFound::RETURN_NULL, QueryErrorContext());
 	client_con.Rollback();
 
 	if (!centralized_view_catalog_entry) {
@@ -123,13 +122,13 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	string table_column_names = ""; // column names of the centralized table (without metadata)
 
 	string extract_metadata = "WITH stats AS (\n"
-						      "\tSELECT rdda_window, rdda_ttl FROM rdda_parser.rdda_view_constraints\n"
-	                          "\tWHERE view_name = '" + view_name + "'),\n"
+							  "\tSELECT rdda_window, rdda_ttl FROM rdda_parser.rdda_view_constraints\n"
+							  "\tWHERE view_name = '" + view_name + "'),\n"
 							  "current_window AS (\n"
 							  "\tSELECT rdda_window FROM rdda_parser.rdda_current_window\n"
 							  "\tWHERE view_name = 'rdda_centralized_view_" + view_name + "'),\n"
-					          "\tthreshold_window AS (\n"
-	                          "\tSELECT (cw.rdda_window - s.rdda_ttl) / s.rdda_window AS expired_window\n"
+							  "\tthreshold_window AS (\n"
+							  "\tSELECT (cw.rdda_window - s.rdda_ttl) / s.rdda_window AS expired_window\n"
 							  "\tFROM current_window cw, stats s)\n";
 
 	string min_agg_query =
@@ -161,8 +160,8 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	in_table_names = in_table_names.substr(0, in_table_names.size() - 2) + ")";
 
 	auto protected_columns_query =
-	    "select column_name from rdda_table_constraints where rdda_protected = 1 and table_name in " + in_table_names +
-	    ";";
+		"select column_name from rdda_table_constraints where rdda_protected = 1 and table_name in " + in_table_names +
+		";";
 	auto protected_columns = metadata_con.Query(protected_columns_query);
 	if (protected_columns->HasError()) {
 		throw ParserException("Error while querying protected columns: " + protected_columns->GetError());
@@ -202,9 +201,6 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	auto attach_query_read_only = "attach '" + client_db_name + "' as rdda_client (read_only);\n\n";
 
 	string detach_query = "detach rdda_client;\n\n";
-	// lastly we remove stale tuples
-	string delete_query_2 = extract_metadata + "\ndelete from " + centralized_view_name +
-	                        " where rdda_window <= (SELECT expired_window FROM threshold_window);\n\n";
 
 	// we compile the first update query based on the minimum aggregation
 	string update_query_1;
@@ -219,9 +215,26 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// now generating the queries to update the metadata
 	// todo - optimize for min agg = 1
 	string update_responsiveness = UpdateResponsiveness(view_name);
-	string update_completeness = attach_parser_read_only + extract_metadata.substr(0, extract_metadata.size() - 2) + UpdateCompleteness(view_name);
-	string update_buffer_size = UpdateBufferSize(view_name);
+	string update_completeness;
+	if (minimum_aggregation > 1) {
+		update_completeness = attach_parser_read_only + extract_metadata.substr(0, extract_metadata.size() - 1) + UpdateCompleteness(view_name);
+	} else {
+		update_completeness = "update rdda_centralized_table_" + view_name + " rdda_metadata_update\nset completeness = 100;\n\n";
+	}
+	string update_buffer_size;
+	if (minimum_aggregation > 1) {
+        update_buffer_size = UpdateBufferSize(view_name);
+    } else {
+        update_buffer_size = "update rdda_centralized_table_" + view_name + " rdda_metadata_update\nset buffer_size = 0;\n\n";
+    }
 	string cleanup_expired_clients = CleanupExpiredClients(config);
+
+	// lastly we remove stale tuples
+	string delete_query_2;
+	if (minimum_aggregation > 1) {
+		delete_query_2 = extract_metadata + "delete from " + centralized_view_name +
+								" where rdda_window <= (SELECT expired_window FROM threshold_window);\n\n";
+	}
 
 	// IVM delta propagation opens another connection to the client database
 	// to avoid concurrency issues, every time we might trigger IVM (insertion into a centralized table)
