@@ -207,7 +207,7 @@ def setup_client_folder(i):
             execute_sql_file(conn, db_path, upsert_sql_path)
 
         save_client_info(client_info_path, nickname, city, run_count + 1, True)
-        update_timestamp(client_id, True, i)
+        # update_timestamp(client_id, True, i)
 
     except Exception as e:
         print(f"Error setting up client folder {folder}: {str(e)}")
