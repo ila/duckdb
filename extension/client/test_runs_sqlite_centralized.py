@@ -29,6 +29,11 @@ CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
 # the database is rdda_client
 
+def chunk_clients(client_list, size):
+    """Split the client list into chunks of given size."""
+    for i in range(0, len(client_list), size):
+        yield client_list[i:i + size]
+
 
 def get_random_city():
     return random.choice(params.CITIES)
@@ -376,7 +381,7 @@ def update_window():
         # Create socket connection
         with socket.create_connection((server_addr, server_port), timeout=10) as sock:
 
-            view = "runs"
+            view = "mv_daily_runs_city"
             view_len = len(view)
 
             message_type = struct.pack('i', 9)
@@ -500,9 +505,14 @@ def run_cycle(initial_clients, run):
         except Exception as e:
             print(f"❌ Failed to setup client {cid}: {str(e)}")
 
-    print("--- Generating and sending data ---")
-    with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
-        executor.map(run_client, active_clients, repeat(run))
+    print("--- Generating and sending data in chunks ---")
+    for i, chunk in enumerate(chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
+        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
+        with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
+            executor.map(run_client, chunk, repeat(run))
+        if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
+            time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
+
 
     # Save metadata
     metadata["dead_clients"] = list(dead)
@@ -511,8 +521,6 @@ def run_cycle(initial_clients, run):
     save_metadata(metadata)
 
 def main():
-
-    # make sure the tmp dir exists
     if not os.path.exists(params.TMP_DIR):
         os.makedirs(params.TMP_DIR, exist_ok=True)
 
@@ -520,21 +528,28 @@ def main():
     run = 0
     client_n = os.getenv("CLIENT_N")
     whoami = subprocess.check_output("whoami", shell=True).decode("utf-8").strip()
+    last_flush_time = time.time()
 
     while run < params.MAX_RUNS:
         try:
             print(f"\n--- Starting cycle {run} ---")
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
-            if client_n == "client-0" or whoami == "ila": # fixme (also fix openivm insert rule)
-                time.sleep(params.MINUTE_INTERVAL * 30)
-                update_window()
-                print("--- Flushing data ---")
-                flush()
+
+            if client_n == "client-0" or whoami == "ila":
+                # Only flush every N minutes
+                now = time.time()
+                elapsed_minutes = (now - last_flush_time) / 60
+                if elapsed_minutes >= params.FLUSH_INTERVAL:
+                    print(f"🧼 {params.FLUSH_INTERVAL} minutes passed — flushing data")
+                    flush()
+                    update_window()
+                    last_flush_time = now
+
             print("✔️  Cycle complete.\n")
-            print(f"Sleeping for {params.MINUTE_INTERVAL} minute(s)...\n")
-            # time.sleep(args.H * 3600)
-            time.sleep(params.MINUTE_INTERVAL * 60)
+            print(f"Sleeping for {params.SLEEP_INTERVAL} second(s)...\n")
+            time.sleep(params.SLEEP_INTERVAL)
+
         except KeyboardInterrupt:
             print("\nShutting down...")
             break
@@ -543,6 +558,7 @@ def main():
             traceback.print_exc()
             print("Restarting cycle...")
             time.sleep(60)
+
 
 
 if __name__ == "__main__":

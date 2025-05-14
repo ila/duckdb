@@ -317,7 +317,7 @@ void UpdateWindowRemotely(int32_t connfd, Connection &con) {
 	read(connfd, view_name.data(), view_name_size);
 	string view_name_str(view_name.begin(), view_name.end());
 	// now we update the window
-	auto r = con.Query("update rdda_current_window set rdda_window = rdda_window + 1, last_update = now() where view_name = 'rdda_centralized_view_" +
+	auto r = con.Query("update rdda_current_window set rdda_window = rdda_window + 1, last_update = now() where view_name = '" +
 		view_name_str + "';");
 	if (r->HasError()) {
 		throw ParserException("Error while updating window metadata: " + r->GetError());

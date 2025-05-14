@@ -386,7 +386,7 @@ def update_window():
         # Create socket connection
         with socket.create_connection((server_addr, server_port), timeout=10) as sock:
 
-            view = "daily_runs_city"
+            view = "rdda_centralized_view_daily_runs_city"
             view_len = len(view)
 
             message_type = struct.pack('i', 9)

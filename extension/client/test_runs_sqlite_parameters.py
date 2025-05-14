@@ -23,10 +23,11 @@ LATE_RATE = 0    # Proportion of remaining alive clients that become late
 NEW_RATE = 0.2   # Proportion of total active clients that are new
 
 # Simulation parameters
-MAX_CLIENTS = 500 # Maximum number of clients to simulate at once
+MAX_CLIENTS = 5000 # Maximum number of clients to simulate at once
 MAX_CONCURRENT_CLIENTS = 25 # Maximum number of clients to simulate in parallel
-INITIAL_CLIENTS = 100 # Initial number of clients to simulate
-MINUTE_INTERVAL = 3 # Interval in minutes for the simulation
+INITIAL_CLIENTS = 500 # Initial number of clients to simulate
+SLEEP_INTERVAL = 5 # Interval in seconds for the simulation
+FLUSH_INTERVAL = 5 # Interval in minutes to flush the database
 MAX_RUNS = 15 # Maximum number of runs to simulate
 
 CITIES = [
