@@ -529,20 +529,6 @@ def run_cycle(initial_clients, run):
     save_metadata(metadata)
 
 
-def background_flusher(stop_event):
-    last_flush_time = time.time()
-    while not stop_event.is_set():
-        now = time.time()
-        elapsed_minutes = (now - last_flush_time) / 60
-        if elapsed_minutes >= params.FLUSH_INTERVAL:
-            if os.getenv("CLIENT_N") == "client-0" or subprocess.getoutput("whoami").strip() == "ila":
-                print(f"🧼 {params.FLUSH_INTERVAL} minutes passed — flushing data (background)")
-                flush()
-                update_window()
-                last_flush_time = now
-        time.sleep(10)  # Check every 10 seconds
-
-
 def main():
     if not os.path.exists(params.TMP_DIR):
         os.makedirs(params.TMP_DIR, exist_ok=True)
@@ -550,16 +536,11 @@ def main():
     create_postgres_table_if_not_exists()
     run = 0
 
-    stop_event = threading.Event()
-    flusher_thread = threading.Thread(target=background_flusher, args=(stop_event,))
-    flusher_thread.start()
-
     try:
         while run < params.MAX_RUNS:
             print(f"\n--- Starting cycle {run} ---")
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
-
             print("✔️  Cycle complete.\n")
             print(f"Sleeping for {params.SLEEP_INTERVAL} second(s)...\n")
             time.sleep(params.SLEEP_INTERVAL)
@@ -572,9 +553,6 @@ def main():
         traceback.print_exc()
         print("Restarting cycle...")
         time.sleep(60)
-    finally:
-        stop_event.set()
-        flusher_thread.join()
 
 
 if __name__ == "__main__":
