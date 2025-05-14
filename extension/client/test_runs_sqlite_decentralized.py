@@ -526,7 +526,6 @@ def run_cycle(initial_clients, run):
                 print(f"❌ Failed to setup client {cid}: {str(e)}")
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # same stagger delay
-            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
 
     print("--- Generating and sending data in chunks ---")
     for i, chunk in enumerate(chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
@@ -535,7 +534,6 @@ def run_cycle(initial_clients, run):
             executor.map(run_client, chunk, repeat(run))
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
-            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
 
     # Save metadata
     metadata["dead_clients"] = list(dead)
