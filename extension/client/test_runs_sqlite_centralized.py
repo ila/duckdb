@@ -29,6 +29,7 @@ CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 # setting postgresql.conf with 100 max clients and listening on all addresses
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
 # the database is rdda_client
+# 2gb shared buffers, 1000 connections
 
 def chunk_clients(client_list, size):
     """Split the client list into chunks of given size."""
@@ -556,14 +557,14 @@ def main():
     except KeyboardInterrupt:
         print("\n🚨 Interrupted by user. Exiting gracefully.")
 
-
-    except KeyboardInterrupt:
-        print("\nShutting down...")
     except Exception as e:
         print(f"Unexpected error in main loop: {str(e)}")
         traceback.print_exc()
         print("Restarting cycle...")
         time.sleep(60)
+
+    finally:
+        run += 1
 
 
 if __name__ == "__main__":
