@@ -272,6 +272,7 @@ def create_postgres_table_if_not_exists():
 
 
 def send_to_postgres(i, run):
+    client_id = -1
     try:
         folder = os.path.join(params.TMP_DIR, f"client_c_{i}")
         db_path = os.path.join(folder, "runs.db")
@@ -284,8 +285,6 @@ def send_to_postgres(i, run):
             return
 
         now = datetime.now()
-        client_id = 0
-
         enriched = []
         for row in rows:
             nickname, city, date, start, end, steps, heartbeat = row
@@ -509,6 +508,7 @@ def run_cycle(initial_clients, run):
                 print(f"❌ Failed to setup client {cid}: {str(e)}")
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # same stagger delay
+            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
 
 
     print("--- Generating and sending data in chunks ---")
@@ -518,9 +518,10 @@ def run_cycle(initial_clients, run):
             executor.map(run_client, chunk, repeat(run))
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
+            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
 
 
-    # Save metadata
+# Save metadata
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late
     metadata["next_client_id"] = next_client_id
@@ -555,6 +556,7 @@ def main():
             print("✔️  Cycle complete.\n")
             print(f"Sleeping for {params.SLEEP_INTERVAL} second(s)...\n")
             time.sleep(params.SLEEP_INTERVAL)
+            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
 
         except KeyboardInterrupt:
             print("\nShutting down...")
@@ -564,7 +566,6 @@ def main():
             traceback.print_exc()
             print("Restarting cycle...")
             time.sleep(60)
-
 
 
 if __name__ == "__main__":
