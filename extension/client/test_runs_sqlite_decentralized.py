@@ -552,13 +552,27 @@ def main():
 
     try:
         while run < params.MAX_RUNS:
+            start_time = time.time()
             print(f"\n--- Starting cycle {run} ---")
+
             run_cycle(params.INITIAL_CLIENTS, run)
             run += 1
+
             print("✔️  Cycle complete.\n")
-            print(f"Sleeping for {params.SLEEP_INTERVAL} second(s)...\n")
-            time.sleep(params.SLEEP_INTERVAL)
-            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
+
+            # Calculate remaining time to sleep
+            elapsed = time.time() - start_time
+            flush_interval = params.FLUSH_INTERVAL * 60 + params.SLEEP_INTERVAL
+            remaining = flush_interval - elapsed
+
+            total_sleep = max(0, remaining)
+            if run < params.MAX_RUNS:
+                print(f"Sleeping for {int(total_sleep)} seconds (to keep cycle ~{flush_interval // 60} min)...\n")
+                time.sleep(total_sleep)
+
+    except KeyboardInterrupt:
+        print("\n🚨 Interrupted by user. Exiting gracefully.")
+
 
     except KeyboardInterrupt:
         print("\nShutting down...")

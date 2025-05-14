@@ -26,9 +26,8 @@ NEW_RATE = 0.2   # Proportion of total active clients that are new
 MAX_CLIENTS = 5000 # Maximum number of clients to simulate at once
 MAX_CONCURRENT_CLIENTS = 50 # Maximum number of clients to simulate in parallel
 INITIAL_CLIENTS = 500 # Initial number of clients to simulate
-CLIENT_DISPATCH_INTERVAL = 60 # Interval in seconds to wait before dispatching new clients
-SLEEP_INTERVAL = 10 # Interval in seconds for the simulation
-SLEEP_RANDOM_INTERVAL = 20 # Random additional interval in seconds to sleep between dispatches
+CLIENT_DISPATCH_INTERVAL = 10 # Interval in seconds to wait before dispatching new clients
+SLEEP_INTERVAL = 10 # Additional interval in seconds to sleep between dispatches
 FLUSH_INTERVAL = 10 # Interval in minutes to flush the database
 MAX_RUNS = 15 # Maximum number of runs to simulate
 
