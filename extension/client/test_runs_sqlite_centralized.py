@@ -499,11 +499,17 @@ def run_cycle(initial_clients, run):
     print("========================\n")
 
     # Generate and send data
-    for cid in active_clients:
-        try:
-            setup_client_folder(cid)
-        except Exception as e:
-            print(f"❌ Failed to setup client {cid}: {str(e)}")
+    print("--- Initializing client folders in chunks ---")
+    for i, chunk in enumerate(chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
+        print(f"📦 Initializing chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
+        for cid in chunk:
+            try:
+                setup_client_folder(cid)  # this includes update_timestamp(..., initialize=True, ...)
+            except Exception as e:
+                print(f"❌ Failed to setup client {cid}: {str(e)}")
+        if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
+            time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # same stagger delay
+
 
     print("--- Generating and sending data in chunks ---")
     for i, chunk in enumerate(chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
