@@ -144,9 +144,6 @@ def main():
             update_window(update_window_name, centralized)
             run += 1
             print("✔️  Cycle complete.\n")
-            print(f"Sleeping for {params.SLEEP_INTERVAL} second(s)...\n")
-            time.sleep(params.SLEEP_INTERVAL)
-            time.sleep(random.randint(0, params.SLEEP_RANDOM_INTERVAL))  # random delay
 
     except KeyboardInterrupt:
         print("\nShutting down...")
