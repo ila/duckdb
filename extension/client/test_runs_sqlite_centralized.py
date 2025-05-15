@@ -534,8 +534,8 @@ def main():
     create_postgres_table_if_not_exists()
     run = 0
 
-    try:
-        while run < params.MAX_RUNS:
+    while run < params.MAX_RUNS:
+        try:
             start_time = time.time()
             print(f"\n--- Starting cycle {run} ---")
 
@@ -554,17 +554,17 @@ def main():
                 print(f"Sleeping for {int(total_sleep)} seconds (to keep cycle ~{flush_interval // 60} min)...\n")
                 time.sleep(total_sleep)
 
-    except KeyboardInterrupt:
-        print("\n🚨 Interrupted by user. Exiting gracefully.")
+        except KeyboardInterrupt:
+            print("\n🚨 Interrupted by user. Exiting gracefully.")
 
-    except Exception as e:
-        print(f"Unexpected error in main loop: {str(e)}")
-        traceback.print_exc()
-        print("Restarting cycle...")
-        time.sleep(60)
+        except Exception as e:
+            print(f"Unexpected error in main loop: {str(e)}")
+            traceback.print_exc()
+            print("Restarting cycle...")
+            time.sleep(10)
 
-    finally:
-        run += 1
+        finally:
+            run += 1
 
 
 if __name__ == "__main__":
