@@ -342,16 +342,13 @@ def run_cycle(initial_clients, run):
     print("========================\n")
 
     # Generate and send data
-    print("--- Initializing client folders in chunks ---")
-    for i, chunk in enumerate(common.chunk_clients(active_clients, params.CHUNK_SIZE)):
-        print(f"📦 Initializing chunk {i + 1}/{(len(active_clients) // params.CHUNK_SIZE) + 1}")
+    print("--- Initializing client folders ---")
+    for i in active_clients:
         try:
-            with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
-                executor.map(setup_client_folder, chunk, repeat(run))
-                if i < len(active_clients) // params.CHUNK_SIZE:
-                    time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # same stagger delay
+            setup_client_folder(i)
         except Exception as e:
-            print(f"❌ Failed to setup client folders for chunk {i + 1}: {e}")
+            print(f"Error setting up client folder {i}: {str(e)}")
+            traceback.print_exc()
 
     print("--- Generating and sending data in chunks ---")
     for i, chunk in enumerate(common.chunk_clients(active_clients, params.CHUNK_SIZE)):
