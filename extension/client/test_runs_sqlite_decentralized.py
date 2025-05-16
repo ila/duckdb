@@ -19,122 +19,12 @@ from psycopg2 import DatabaseError
 from psycopg2 import OperationalError
 
 import test_runs_sqlite_parameters as params
+import test_runs_sqlite_common as common
 
 # note: this requires postgres installed, role and database created ("ubuntu" in this case)
 # setting postgresql.conf with 100 max clients and listening on all addresses
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
 # the database is rdda_client
-
-def chunk_clients(client_list, size):
-    """Split the client list into chunks of given size."""
-    for i in range(0, len(client_list), size):
-        yield client_list[i:i + size]
-
-
-def get_random_city():
-    return random.choice(params.CITIES)
-
-
-def format_date(offset_days):
-    return (datetime.now() + timedelta(days=offset_days)).strftime('%Y-%m-%d')
-
-
-def format_time():
-    return f"{random.randint(5, 8):02}:{random.randint(0, 59):02}:{random.randint(0, 59):02}"
-
-
-def parse_client_config(folder_path):
-    config_path = os.path.join(folder_path, "client.config")
-    config = {}
-
-    try:
-        with open(config_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and '=' in line:
-                    key, value = line.split('=', 1)
-                    config[key.strip()] = value.strip()
-
-    except FileNotFoundError:
-        print(f"Config file not found: {config_path}")
-        raise
-    except Exception as e:
-        print(f"Error reading config file {config_path}: {str(e)}")
-        traceback.print_exc()
-        raise
-
-    return config
-
-
-def generate_client_info(path):
-    if os.path.exists(path):
-        try:
-            with open(path, 'r') as f:
-                nickname, city, run_count, initialized = f.read().split(",")
-                return nickname, city, int(run_count), initialized == 'True'
-        except Exception as e:
-            print(f"Error reading client info from {path}: {str(e)}")
-            traceback.print_exc()
-            raise
-
-    nickname = f"user_{random.randint(0, 1500000)}"
-    city = get_random_city()
-    run_count = 0
-    initialized = False
-    return nickname, city, run_count, initialized
-
-
-def save_client_info(path, nickname, city, run_count, initialized):
-    try:
-        with open(path, 'w') as f:
-            f.write(f"{nickname},{city},{run_count},{initialized}")
-    except Exception as e:
-        print(f"Error saving client info to {path}: {str(e)}")
-        traceback.print_exc()
-
-
-def generate_csv(path, nickname, city, date):
-    try:
-        if os.path.exists(path):
-            os.remove(path)  # ✅ Remove old CSV before generating new one
-
-        with open(path, 'a') as f:
-            writer = csv.writer(f)
-            for _ in range(random.randint(1, 5)):
-                writer.writerow(
-                    [
-                        nickname,
-                        city,
-                        date,
-                        format_time(),
-                        format_time(),
-                        random.randint(500, 10500),
-                        random.randint(60, 140),
-                    ]
-                )
-    except Exception as e:
-        print(f"Error generating CSV at {path}: {str(e)}")
-        traceback.print_exc()
-
-
-def execute_sql_file(conn, db_path, sql_file):
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-
-        with open(sql_file, 'r') as f:
-            sql_script = f.read()
-            try:
-                conn.executescript(sql_script)
-            except sqlite3.Error as e:
-                print(f"Error executing SQL file {sql_file} on database {db_path}: {str(e)}")
-                print(f"Failed SQL: {sql_script}")
-                traceback.print_exc()
-                raise
-    except Exception as e:
-        print(f"General error processing SQL file {sql_file} for database {db_path}: {str(e)}")
-        traceback.print_exc()
-        raise
 
 
 def setup_client_folder(i):
@@ -164,8 +54,8 @@ def setup_client_folder(i):
         if os.path.exists(csv_path):
             os.remove(csv_path)
 
-        nickname, city, run_count, initialized = generate_client_info(client_info_path)
-        date = format_date(run_count)
+        nickname, city, run_count, initialized = common.generate_client_info(client_info_path)
+        date = common.format_date(run_count)
         client_id = int(nickname.split("_")[1])
 
         if not initialized:
@@ -176,9 +66,9 @@ def setup_client_folder(i):
             ]:
                 sql_path = os.path.join(folder, sql)
                 with sqlite3.connect(db_path) as conn:
-                    execute_sql_file(conn, db_path, sql_path)
+                   common.execute_sql_file(conn, db_path, sql_path)
 
-        generate_csv(csv_path, nickname, city, date)
+        common.generate_csv(csv_path, nickname, city, date)
 
         with sqlite3.connect(db_path, isolation_level='IMMEDIATE') as conn:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -204,56 +94,15 @@ def setup_client_folder(i):
                 conn.executemany("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?)", list(reader))
 
             upsert_sql_path = os.path.join(folder, "ivm_upsert_queries_daily_runs_city.sql")
-            execute_sql_file(conn, db_path, upsert_sql_path)
+            common.execute_sql_file(conn, db_path, upsert_sql_path)
 
-        save_client_info(client_info_path, nickname, city, run_count + 1, True)
+        common.save_client_info(client_info_path, nickname, city, run_count + 1, True)
         # update_timestamp(client_id, True, i)
 
     except Exception as e:
         print(f"Error setting up client folder {folder}: {str(e)}")
         traceback.print_exc()
         raise
-
-
-def update_timestamp(client_id, initialize, i):
-    try:
-        folder = os.path.join(params.TMP_DIR, f"client_d_{i}")
-
-        # Parse config
-        config = parse_client_config(folder)
-        server_addr = config.get('server_addr')
-        server_port = int(config.get('server_port'))
-
-        if not server_addr or not server_port:
-            print(f"Missing server_addr or server_port in client.config for client {client_id}")
-            return
-
-        # Create socket connection
-        with socket.create_connection((server_addr, server_port), timeout=10) as sock:
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            timestamp_bytes = now.encode('utf-8')
-            timestamp_size = len(timestamp_bytes)
-
-            # Prepare messages
-            if initialize:
-                message_type = struct.pack('i', 1)
-            else:
-                message_type = struct.pack('i', 7)
-
-            packed_id = struct.pack('Q', client_id)  # client ID
-            packed_size = struct.pack('Q', timestamp_size)  # timestamp size
-            close_message = struct.pack('i', 0)  # close message
-
-            # Send all in order
-            sock.sendall(message_type)
-            sock.sendall(packed_id)
-            sock.sendall(packed_size)
-            sock.sendall(timestamp_bytes)
-            sock.sendall(close_message)
-
-    except Exception as e:
-        print(f"Error sending timestamp update for client {client_id}: {str(e)}")
-        traceback.print_exc()
 
 
 def create_postgres_table_if_not_exists():
@@ -280,101 +129,65 @@ def create_postgres_table_if_not_exists():
         print("Error creating PostgreSQL table:", str(e))
         traceback.print_exc()
 
-
 def send_to_postgres(i, run):
     client_id = -1
-    try:
-        folder = os.path.join(params.TMP_DIR, f"client_d_{i}")
-        db_path = os.path.join(folder, "runs.db")
+    folder = os.path.join(params.TMP_DIR, f"client_d_{i}")
+    db_path = os.path.join(folder, "runs.db")
 
+    try:
+        # Step 1: Read from SQLite
         with sqlite3.connect(db_path) as sqlite_conn:
             rows = sqlite_conn.execute("SELECT * FROM daily_runs_city").fetchall()
 
         if not rows:
-            return
+            raise ValueError(f"No rows found in daily_runs_city for client {i}")
 
+        # Step 2: Enrich rows
         now = datetime.now()
-
         enriched = []
         for row in rows:
             nickname, city, date, steps = row
-            window = run
             client_id = int(nickname.split("_")[1])
-            enriched.append(
-                (nickname, city, date, steps, now, now, window, client_id, 1)  # generation  # arrival  # action
-            )
+            enriched.append((
+                nickname, city, date, steps,
+                now, now, run, client_id, 1  # generation, arrival, window, client_id, action
+            ))
 
+        # Step 3: Insert into PostgreSQL
         try:
             with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as pg_conn:
                 with pg_conn.cursor() as cur:
                     cur.executemany(
                         """
                         INSERT INTO rdda_centralized_view_daily_runs_city (
-                            nickname, city, date, total_steps, generation, arrival, rdda_window, client_id, action
+                            nickname, city, date, total_steps,
+                            generation, arrival, rdda_window, client_id, action
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                        enriched,
+                        """,
+                        enriched
                     )
                 pg_conn.commit()
-
         except (OperationalError, DatabaseError) as e:
-            print(f"❌ Error during PostgreSQL insertion: {e}")
+            print(f"❌ PostgreSQL error for client {i}: {e}")
+            traceback.print_exc()
+            raise
 
-        # update_timestamp(client_id, False, i)
+        # Step 4: Clean up local SQLite data
+        try:
+            with sqlite3.connect(db_path) as sqlite_conn:
+                sqlite_conn.execute("DELETE FROM daily_runs_city")
+        except sqlite3.Error as e:
+            print(f"❌ SQLite deletion error for client {i}: {e}")
+            traceback.print_exc()
+            raise
 
-        with sqlite3.connect(db_path) as sqlite_conn:
-            try:
-                sqlite_conn.execute("DELETE FROM runs")
-            except sqlite3.Error as e:
-                print(f"Error deleting rows from SQLite database {db_path}: {str(e)}")
-                traceback.print_exc()
-                raise
-
+    except ValueError as ve:
+        print(f"⚠️ {ve}")
+        raise
     except Exception as e:
-        print(f"Error sending data to Postgres for client {client_id}: {str(e)}")
+        print(f"🔥 Unexpected error for client {i} (client_id: {client_id}): {e}")
         traceback.print_exc()
-
-def flush():
-    try:
-        folder = os.path.join(params.TMP_DIR, f"client_d_0")
-
-        # Parse config
-        config = parse_client_config(folder)
-        server_addr = config.get('server_addr')
-        server_port = int(config.get('server_port'))
-
-        if not server_addr or not server_port:
-            print(f"Missing server_addr or server_port in client.config for client")
-            return
-
-        # Create socket connection
-        with socket.create_connection((server_addr, server_port), timeout=10) as sock:
-
-            postgres = "postgres"
-            postgres_len = len(postgres)
-            view = "daily_runs_city"
-            view_len = len(view)
-
-            message_type = struct.pack('i', 8)
-            packed_postgres_len = struct.pack('Q', postgres_len)
-            packed_postgres = postgres.encode('utf-8')
-            packed_view_len = struct.pack('Q', view_len)
-            packed_view = view.encode('utf-8')
-            packed_close = struct.pack('i', 0)  # close message
-
-            # Send all in order
-            sock.sendall(message_type)
-            sock.sendall(packed_view_len)
-            sock.sendall(packed_view)
-            sock.sendall(packed_postgres_len)
-            sock.sendall(packed_postgres)
-            sock.sendall(packed_close)
-
-            print(f"Flushed")
-
-    except Exception as e:
-        print(f"Error flushing")
-        traceback.print_exc()
+        raise
 
 
 def update_window():
@@ -382,7 +195,7 @@ def update_window():
         folder = os.path.join(params.TMP_DIR, f"client_d_0")
 
         # Parse config
-        config = parse_client_config(folder)
+        config = common.parse_client_config(folder)
         server_addr = config.get('server_addr')
         server_port = int(config.get('server_port'))
 
@@ -421,28 +234,8 @@ def run_client(client_id, run):
         traceback.print_exc()
 
 
-import json
-
-CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_d_metadata")
-CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
-
-def load_metadata():
-    if not os.path.exists(CLIENT_METADATA_DIR):
-        os.makedirs(CLIENT_METADATA_DIR, exist_ok=True)
-
-    if not os.path.exists(CLIENT_METADATA_PATH):
-        return {"dead_clients": [], "late_clients": {}, "next_client_id": 0}
-
-    with open(CLIENT_METADATA_PATH, "r") as f:
-        return json.load(f)
-
-
-def save_metadata(metadata):
-    with open(CLIENT_METADATA_PATH, "w") as f:
-        json.dump(metadata, f, indent=2)
-
 def run_cycle(initial_clients, run):
-    metadata = load_metadata()
+    metadata = common.load_metadata()
 
     # if some clients are late, the cycle will finish before the "0" percentage is applied
     dead = set(metadata.get("dead_clients", []))
@@ -517,7 +310,7 @@ def run_cycle(initial_clients, run):
 
     # Generate and send data
     print("--- Initializing client folders in chunks ---")
-    for i, chunk in enumerate(chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
+    for i, chunk in enumerate(common.chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
         print(f"📦 Initializing chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
         for cid in chunk:
             try:
@@ -528,18 +321,20 @@ def run_cycle(initial_clients, run):
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # same stagger delay
 
     print("--- Generating and sending data in chunks ---")
-    for i, chunk in enumerate(chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
+    for i, chunk in enumerate(common.chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
         print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(run))
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
 
+
     # Save metadata
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late
     metadata["next_client_id"] = next_client_id
-    save_metadata(metadata)
+    common.save_metadata(metadata)
+
 
 def main():
     if not os.path.exists(params.TMP_DIR):
@@ -548,8 +343,8 @@ def main():
     create_postgres_table_if_not_exists()
     run = 0
 
-    try:
-        while run < params.MAX_RUNS:
+    while run < params.MAX_RUNS:
+        try:
             start_time = time.time()
             print(f"\n--- Starting cycle {run} ---")
 
@@ -568,17 +363,11 @@ def main():
                 print(f"Sleeping for {int(total_sleep)} seconds (to keep cycle ~{flush_interval // 60} min)...\n")
                 time.sleep(total_sleep)
 
-    except KeyboardInterrupt:
-        print("\n🚨 Interrupted by user. Exiting gracefully.")
+        except KeyboardInterrupt:
+            print("\n🚨 Interrupted by user. Exiting gracefully.")
 
-
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-    except Exception as e:
-        print(f"Unexpected error in main loop: {str(e)}")
-        traceback.print_exc()
-        print("Restarting cycle...")
-        time.sleep(60)
+        finally:
+            run += 1
 
 
 if __name__ == "__main__":
