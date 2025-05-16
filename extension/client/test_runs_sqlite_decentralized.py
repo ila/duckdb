@@ -26,6 +26,8 @@ import test_runs_sqlite_common as common
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
 # the database is rdda_client
 
+CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_c_metadata")
+CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
 def setup_client_folder(i):
     folder = os.path.join(params.TMP_DIR, f"client_d_{i}")
@@ -235,7 +237,7 @@ def run_client(client_id, run):
 
 
 def run_cycle(initial_clients, run):
-    metadata = common.load_metadata()
+    metadata = common.load_metadata(CLIENT_METADATA_DIR, CLIENT_METADATA_PATH)
 
     # if some clients are late, the cycle will finish before the "0" percentage is applied
     dead = set(metadata.get("dead_clients", []))

@@ -268,7 +268,7 @@ def run_client(client_id, run):
 
 
 def run_cycle(initial_clients, run):
-    metadata = common.load_metadata()
+    metadata = common.load_metadata(CLIENT_METADATA_DIR, CLIENT_METADATA_PATH)
 
     # if some clients are late, the cycle will finish before the "0" percentage is applied
     dead = set(metadata.get("dead_clients", []))
