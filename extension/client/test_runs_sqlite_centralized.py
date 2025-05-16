@@ -364,7 +364,7 @@ def run_cycle(initial_clients, run):
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late
     metadata["next_client_id"] = next_client_id
-    common.save_metadata(metadata, CLIENT_METADATA_DIR + CLIENT_METADATA_PATH)
+    common.save_metadata(metadata, CLIENT_METADATA_PATH)
 
 
 def main():
