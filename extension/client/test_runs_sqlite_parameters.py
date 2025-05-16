@@ -29,8 +29,8 @@ CHUNK_SIZE = 100 # Number of clients to process in each chunk
 INITIAL_CLIENTS = 2000 # Initial number of clients to simulate
 CLIENT_DISPATCH_INTERVAL = 5 # Interval in seconds to wait before dispatching new clients
 SLEEP_INTERVAL = 15 # Additional interval in seconds to sleep between dispatches
-FLUSH_INTERVAL = 15 # Interval in minutes to flush the database
-MAX_RUNS = 5 # Maximum number of runs to simulate
+FLUSH_INTERVAL = 20 # Interval in minutes to flush the database
+MAX_RUNS = 6 # Maximum number of runs to simulate
 
 CITIES = [
     "New York",
