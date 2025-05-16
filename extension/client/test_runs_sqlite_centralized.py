@@ -502,7 +502,7 @@ def run_cycle(initial_clients, run):
     # Generate and send data
     print("--- Initializing client folders in chunks ---")
     for i, chunk in enumerate(chunk_clients(active_clients, params.CHUNK_SIZE)):
-        print(f"📦 Initializing chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
+        print(f"📦 Initializing chunk {i + 1}/{(len(active_clients) // params.CHUNK_SIZE) + 1}")
         for cid in chunk:
             try:
                 setup_client_folder(cid)  # this includes update_timestamp(..., initialize=True, ...)
@@ -513,7 +513,7 @@ def run_cycle(initial_clients, run):
 
     print("--- Generating and sending data in chunks ---")
     for i, chunk in enumerate(chunk_clients(active_clients, params.CHUNK_SIZE)):
-        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
+        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.CHUNK_SIZE) + 1}")
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(run))
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
