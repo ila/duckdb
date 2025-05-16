@@ -24,7 +24,7 @@ NEW_RATE = 0.2   # Proportion of total active clients that are new
 
 # Simulation parameters
 MAX_CLIENTS = 4000 # Maximum number of clients to simulate at once
-MAX_CONCURRENT_CLIENTS = 25 # Maximum number of clients to simulate in parallel
+MAX_CONCURRENT_CLIENTS = 10 # Maximum number of clients to simulate in parallel
 CHUNK_SIZE = 100 # Number of clients to process in each chunk
 INITIAL_CLIENTS = 2000 # Initial number of clients to simulate
 CLIENT_DISPATCH_INTERVAL = 5 # Interval in seconds to wait before dispatching new clients
