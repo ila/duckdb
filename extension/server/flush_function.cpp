@@ -65,6 +65,9 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	 * where x.c1 = y.c1 and x.c2 = y.c2 and x.c3 = y.c3 and x.win = y.win;
 	 */
 
+	// todo - implement refresh logic (insert or replace into)
+	// todo - implement client deletes
+
 	auto database = StringValue::Get(parameters.values[1]);
 	if (database != "duckdb" && database != "postgres") {
 		throw ParserException("Invalid database type: " + database + " - only duckdb and postgres are supported!");
