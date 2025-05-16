@@ -347,7 +347,8 @@ def run_cycle(initial_clients, run):
         print(f"📦 Initializing chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
         for cid in chunk:
             try:
-                setup_client_folder(cid)  # this includes update_timestamp(..., initialize=True, ...)
+                with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
+                    executor.map(setup_client_folder, cid, repeat(cid))
             except Exception as e:
                 print(f"❌ Failed to setup client {cid}: {str(e)}")
         if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
