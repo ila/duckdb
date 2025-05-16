@@ -354,11 +354,11 @@ def run_cycle(initial_clients, run):
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # same stagger delay
 
     print("--- Generating and sending data in chunks ---")
-    for i, chunk in enumerate(common.chunk_clients(active_clients, params.MAX_CONCURRENT_CLIENTS)):
-        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.MAX_CONCURRENT_CLIENTS) + 1}")
+    for i, chunk in enumerate(common.chunk_clients(active_clients, params.CHUNK_SIZE)):
+        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.CHUNK_SIZE) + 1}")
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(run))
-        if i < len(active_clients) // params.MAX_CONCURRENT_CLIENTS:
+        if i < len(active_clients) // params.CHUNK_SIZE:
             time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
 
 
@@ -366,7 +366,7 @@ def run_cycle(initial_clients, run):
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late
     metadata["next_client_id"] = next_client_id
-    common.save_metadata(metadata)
+    common.save_metadata(metadata, CLIENT_METADATA_DIR + CLIENT_METADATA_PATH)
 
 
 def main():
