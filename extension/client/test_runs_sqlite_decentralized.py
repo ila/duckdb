@@ -234,6 +234,7 @@ def run_client(client_id, run):
     except Exception as e:
         print(f"Error running client {client_id}: {str(e)}")
         traceback.print_exc()
+        raise
 
 
 def run_cycle(initial_clients, run):
