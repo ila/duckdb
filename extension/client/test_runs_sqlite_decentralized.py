@@ -26,7 +26,7 @@ import test_runs_sqlite_common as common
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
 # the database is rdda_client
 
-CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_c_metadata")
+CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_d_metadata")
 CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
 def setup_client_folder(i):
