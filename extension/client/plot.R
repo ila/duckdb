@@ -21,7 +21,7 @@ library(purrr)
 library(stringr)
 library(extrafont)
 
-fonts_import()
+# font_import()
 
 # Example centralized and decentralized data
 # Replace this with your actual data frames
@@ -48,12 +48,9 @@ agg_data <- all_data %>%
 plot_1 <- ggplot(agg_data, aes(x = run, y = total_time, color = system)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 2) +
-  labs(
-    x = "Run",
-    y = "Total Time (ms)",
-    color = "System"
-  ) +
-  theme_minimal(base_size = 14, base_family = "Libertine") +
+  labs(x = "Run", y = "Total Time (ms)", color = "System") +
+  scale_y_continuous(labels = comma)
+  theme_minimal(base_size = 14, base_family = "Linux Libertine") +
   scale_color_manual(values = c("Centralized" = "#0072B2", "Decentralized" = "#D55E00")) +
   theme(
     plot.title = element_text(face = "bold", hjust = 0.5),
