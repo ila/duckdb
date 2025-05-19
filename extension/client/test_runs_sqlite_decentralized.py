@@ -349,7 +349,6 @@ def main():
             print(f"\n--- Starting cycle {run} ---")
 
             run_cycle(params.INITIAL_CLIENTS, run)
-            run += 1
 
             print("✔️  Cycle complete.\n")
 
