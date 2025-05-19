@@ -178,15 +178,14 @@ def send_to_postgres(i, run):
         try:
             with sqlite3.connect(db_path) as sqlite_conn:
                 sqlite_conn.execute("DELETE FROM daily_runs_city")
-                with sqlite3.connect(db_path) as sqlite_conn:
-                    cursor = sqlite_conn.execute("SELECT COUNT(*) FROM runs")
-                    print(f"Before DELETE, runs count: {cursor.fetchone()[0]}")
+                cursor = sqlite_conn.execute("SELECT COUNT(*) FROM runs")
+                print(f"Before DELETE, runs count: {cursor.fetchone()[0]}")
 
-                    sqlite_conn.execute("DELETE FROM runs")
-                    sqlite_conn.commit()
+                sqlite_conn.execute("DELETE FROM runs")
+                sqlite_conn.commit()
 
-                    cursor = sqlite_conn.execute("SELECT COUNT(*) FROM runs")
-                    print(f"After DELETE, runs count: {cursor.fetchone()[0]}")
+                cursor = sqlite_conn.execute("SELECT COUNT(*) FROM runs")
+                print(f"After DELETE, runs count: {cursor.fetchone()[0]}")
 
         except sqlite3.Error as e:
             print(f"❌ SQLite deletion error for client {i}: {e}")
