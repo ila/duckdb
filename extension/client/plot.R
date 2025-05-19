@@ -25,8 +25,8 @@ library(extrafont)
 
 # Example centralized and decentralized data
 # Replace this with your actual data frames
-centralized <- read.csv("results_runs.csv")
-decentralized <- read.csv("results_daily_runs_city.csv")
+centralized <- read.csv("results/results_runs_3.csv")
+decentralized <- read.csv("results/results_daily_runs_city_3.csv")
 
 # Add source labels
 centralized$system <- "Centralized"
