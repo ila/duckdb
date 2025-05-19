@@ -132,9 +132,9 @@ def update_window(update_window_name, centralized):
 def main():
 
     run = 0
-    flush_name = "runs"
-    update_window_name = "mv_daily_runs_city"
-    centralized = True
+    flush_name = "daily_runs_city"
+    update_window_name = "rdda_centralized_view_daily_runs_city"
+    centralized = False
 
     try:
         while run < params.MAX_RUNS + 1:

@@ -178,6 +178,7 @@ def send_to_postgres(i, run):
         try:
             with sqlite3.connect(db_path) as sqlite_conn:
                 sqlite_conn.execute("DELETE FROM daily_runs_city")
+                sqlite_conn.execute("DELETE FROM runs")
         except sqlite3.Error as e:
             print(f"❌ SQLite deletion error for client {i}: {e}")
             traceback.print_exc()

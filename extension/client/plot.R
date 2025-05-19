@@ -1,25 +1,7 @@
 # === Package Installer ===
-packages <- c("ggplot2", "dplyr", "ggpubr", "gridExtra", "ggplotify", "readr", "tidyr", "purrr", "stringr")
+packages <- c("ggplot2", "dplyr", "ggpubr", "gridExtra", "ggplotify", "readr", "tidyr", "purrr", "stringr", "extrafont")
 # Set CRAN mirror
 options(repos = c(CRAN = "https://cloud.r-project.org"))
-
-# Install missing packages
-install_if_missing <- function(pkg) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    install.packages(pkg, dependencies = TRUE)
-  }
-}
-
-install_if_missing("ggplot2")
-install_if_missing("dplyr")
-install_if_missing("ggpubr")
-install_if_missing("gridExtra")
-install_if_missing("ggplotify")
-install_if_missing("readr")
-install_if_missing("tidyr")
-install_if_missing("purrr")
-install_if_missing("stringr")
-
 
 installed <- rownames(installed.packages())
 for (pkg in packages) {
@@ -30,6 +12,16 @@ for (pkg in packages) {
 
 library(ggplot2)
 library(dplyr)
+library(ggpubr)
+library(gridExtra)
+library(ggplotify)
+library(readr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(extrafont)
+
+fonts_import()
 
 # Example centralized and decentralized data
 # Replace this with your actual data frames
@@ -48,21 +40,20 @@ all_data <- bind_rows(centralized, decentralized)
 queries_to_exclude <- c("query1", "query2")
 
 agg_data <- all_data %>%
-  filter(!query %in% queries_to_exclude) %>%
+  filter(!query_hash %in% queries_to_exclude) %>%
   group_by(run, system) %>%
-  summarise(time = sum(time), .groups = "drop")
+  summarise(total_time = sum(time_ms), .groups = "drop")
 
 # === PLOT ===
-plot_1 <- ggplot(agg_data, aes(x = run, y = time, color = system)) +
-  geom_line(size = 1.2) +
+plot_1 <- ggplot(agg_data, aes(x = run, y = total_time, color = system)) +
+  geom_line(linewidth = 1.2) +
   geom_point(size = 2) +
   labs(
-    title = paste("Benchmark: ", paste(queries_to_sum, collapse = " + ")),
     x = "Run",
-    y = "Total Time (s)",
+    y = "Total Time (ms)",
     color = "System"
   ) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 14, base_family = "Libertine") +
   scale_color_manual(values = c("Centralized" = "#0072B2", "Decentralized" = "#D55E00")) +
   theme(
     plot.title = element_text(face = "bold", hjust = 0.5),
@@ -70,6 +61,6 @@ plot_1 <- ggplot(agg_data, aes(x = run, y = time, color = system)) +
   )
 
 # Save the plot
-png("plots/benchmark_plot.png", width = 800, height = 600)
-paste0(plot_1)
+png("plots/centralized_vs_decentralized_plot.png", width = 800, height = 600, res = 100)
+print(plot_1)
 dev.off()
