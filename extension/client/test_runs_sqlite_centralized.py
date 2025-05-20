@@ -379,9 +379,8 @@ def main():
         try:
             start_time = time.time()
             print(f"\n--- Starting cycle {run} ---")
-            run += 1
             run_cycle(params.INITIAL_CLIENTS, run)
-
+            run += 1
             print("✔️  Cycle complete.\n")
 
             # Calculate remaining time to sleep
