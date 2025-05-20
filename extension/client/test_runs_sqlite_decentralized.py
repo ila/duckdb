@@ -351,6 +351,7 @@ def main():
             start_time = time.time()
             print(f"\n--- Starting cycle {run} ---")
 
+            run += 1
             run_cycle(params.INITIAL_CLIENTS, run)
 
             print("✔️  Cycle complete.\n")
@@ -367,9 +368,6 @@ def main():
 
         except KeyboardInterrupt:
             print("\n🚨 Interrupted by user. Exiting gracefully.")
-
-        finally:
-            run += 1
 
 
 if __name__ == "__main__":

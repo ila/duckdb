@@ -66,7 +66,9 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	 */
 
 	// todo - implement refresh logic (insert or replace into)
-	// todo - implement client deletes
+	// todo - implement client deletes (opt out)
+	// todo add index logic for upsert
+    // todo check expired windows in 1st update w min agg
 
 	auto database = StringValue::Get(parameters.values[1]);
 	if (database != "duckdb" && database != "postgres") {

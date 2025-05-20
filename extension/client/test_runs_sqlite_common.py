@@ -21,6 +21,16 @@ def chunk_clients(client_list, size):
 def get_random_city():
     return random.choice(params.CITIES)
 
+MAIN_CITY = "New York"
+RARE_CITIES = [c for c in params.CITIES if c != MAIN_CITY]
+
+def get_random_city_skewed():
+    # 90% of clients go to the main city
+    if random.random() < 0.9:
+        return MAIN_CITY
+    # 10% distributed across the remaining 99 cities
+    return random.choice(RARE_CITIES)
+
 def format_date(offset_days):
     return (datetime.now() + timedelta(days=offset_days)).strftime('%Y-%m-%d')
 
@@ -58,7 +68,7 @@ def generate_client_info(path):
             traceback.print_exc()
             raise
     nickname = f"user_{random.randint(0, 1500000)}"
-    city = get_random_city()
+    city = get_random_city_skewed()
     run_count = 0
     initialized = False
     return nickname, city, run_count, initialized

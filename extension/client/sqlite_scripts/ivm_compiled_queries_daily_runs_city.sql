@@ -1,3 +1,7 @@
+-- update rdda_view_constraints set rdda_min_agg = 100 where view_name = 'daily_runs_city';
+-- LEAST((d.window_client_count::DOUBLE / t.total_client_count) * 100, 100) AS percentage
+-- update rdda_current_window set rdda_window = 0;
+
 CREATE TABLE runs
 (
     nickname       TEXT,
