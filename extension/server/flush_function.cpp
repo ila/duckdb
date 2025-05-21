@@ -132,8 +132,8 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 							  "current_window AS (\n"
 							  "\tSELECT rdda_window FROM rdda_parser.rdda_current_window\n"
 							  "\tWHERE view_name = 'rdda_centralized_view_" + view_name + "'),\n"
-							  "\tthreshold_window AS (\n"
-							  "\tSELECT (cw.rdda_window - s.rdda_ttl) / s.rdda_window AS expired_window\n"
+							  "threshold_window AS (\n"
+							  "\tSELECT cw.rdda_window - (s.rdda_ttl / s.rdda_window) AS expired_window\n"
 							  "\tFROM current_window cw, stats s)\n";
 
 	string min_agg_query =
