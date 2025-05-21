@@ -34,6 +34,10 @@ struct EnumUtil {
 
 enum class ARTConflictType : uint8_t;
 
+enum class ARTHandlingResult : uint8_t;
+
+enum class ARTScanHandling : uint8_t;
+
 enum class AccessMode : uint8_t;
 
 enum class AggregateCombineType : uint8_t;
@@ -119,6 +123,10 @@ enum class DateCastResult : uint8_t;
 enum class DatePartSpecifier : uint8_t;
 
 enum class DebugInitialize : uint8_t;
+
+enum class DebugVectorVerification : uint8_t;
+
+enum class DecimalBitWidth : uint8_t;
 
 enum class DefaultOrderByNullType : uint8_t;
 
@@ -226,7 +234,9 @@ enum class MetaPipelineType : uint8_t;
 
 enum class MetricsType : uint8_t;
 
-enum class MultiFileReaderColumnMappingMode : uint8_t;
+enum class MultiFileColumnMappingMode : uint8_t;
+
+enum class MultiFileFileState : uint8_t;
 
 enum class NType : uint8_t;
 
@@ -274,6 +284,8 @@ enum class PreparedParamType : uint8_t;
 
 enum class PreparedStatementMode : uint8_t;
 
+enum class PreserveOrderType : uint8_t;
+
 enum class ProfilerPrintFormat : uint8_t;
 
 enum class QuantileSerializationType : uint8_t;
@@ -281,8 +293,6 @@ enum class QuantileSerializationType : uint8_t;
 enum class QueryNodeType : uint8_t;
 
 enum class QueryResultType : uint8_t;
-
-enum class QuoteRule : uint8_t;
 
 enum class RelationType : uint8_t;
 
@@ -327,6 +337,8 @@ enum class SinkNextBatchType : uint8_t;
 enum class SinkResultType : uint8_t;
 
 enum class SourceResultType : uint8_t;
+
+enum class StarExpressionType : uint8_t;
 
 enum class StatementReturnType : uint8_t;
 
@@ -393,6 +405,12 @@ enum class WindowExcludeMode : uint8_t;
 
 template<>
 const char* EnumUtil::ToChars<ARTConflictType>(ARTConflictType value);
+
+template<>
+const char* EnumUtil::ToChars<ARTHandlingResult>(ARTHandlingResult value);
+
+template<>
+const char* EnumUtil::ToChars<ARTScanHandling>(ARTScanHandling value);
 
 template<>
 const char* EnumUtil::ToChars<AccessMode>(AccessMode value);
@@ -522,6 +540,12 @@ const char* EnumUtil::ToChars<DatePartSpecifier>(DatePartSpecifier value);
 
 template<>
 const char* EnumUtil::ToChars<DebugInitialize>(DebugInitialize value);
+
+template<>
+const char* EnumUtil::ToChars<DebugVectorVerification>(DebugVectorVerification value);
+
+template<>
+const char* EnumUtil::ToChars<DecimalBitWidth>(DecimalBitWidth value);
 
 template<>
 const char* EnumUtil::ToChars<DefaultOrderByNullType>(DefaultOrderByNullType value);
@@ -683,7 +707,10 @@ template<>
 const char* EnumUtil::ToChars<MetricsType>(MetricsType value);
 
 template<>
-const char* EnumUtil::ToChars<MultiFileReaderColumnMappingMode>(MultiFileReaderColumnMappingMode value);
+const char* EnumUtil::ToChars<MultiFileColumnMappingMode>(MultiFileColumnMappingMode value);
+
+template<>
+const char* EnumUtil::ToChars<MultiFileFileState>(MultiFileFileState value);
 
 template<>
 const char* EnumUtil::ToChars<NType>(NType value);
@@ -755,6 +782,9 @@ template<>
 const char* EnumUtil::ToChars<PreparedStatementMode>(PreparedStatementMode value);
 
 template<>
+const char* EnumUtil::ToChars<PreserveOrderType>(PreserveOrderType value);
+
+template<>
 const char* EnumUtil::ToChars<ProfilerPrintFormat>(ProfilerPrintFormat value);
 
 template<>
@@ -765,9 +795,6 @@ const char* EnumUtil::ToChars<QueryNodeType>(QueryNodeType value);
 
 template<>
 const char* EnumUtil::ToChars<QueryResultType>(QueryResultType value);
-
-template<>
-const char* EnumUtil::ToChars<QuoteRule>(QuoteRule value);
 
 template<>
 const char* EnumUtil::ToChars<RelationType>(RelationType value);
@@ -834,6 +861,9 @@ const char* EnumUtil::ToChars<SinkResultType>(SinkResultType value);
 
 template<>
 const char* EnumUtil::ToChars<SourceResultType>(SourceResultType value);
+
+template<>
+const char* EnumUtil::ToChars<StarExpressionType>(StarExpressionType value);
 
 template<>
 const char* EnumUtil::ToChars<StatementReturnType>(StatementReturnType value);
@@ -931,6 +961,12 @@ const char* EnumUtil::ToChars<WindowExcludeMode>(WindowExcludeMode value);
 
 template<>
 ARTConflictType EnumUtil::FromString<ARTConflictType>(const char *value);
+
+template<>
+ARTHandlingResult EnumUtil::FromString<ARTHandlingResult>(const char *value);
+
+template<>
+ARTScanHandling EnumUtil::FromString<ARTScanHandling>(const char *value);
 
 template<>
 AccessMode EnumUtil::FromString<AccessMode>(const char *value);
@@ -1060,6 +1096,12 @@ DatePartSpecifier EnumUtil::FromString<DatePartSpecifier>(const char *value);
 
 template<>
 DebugInitialize EnumUtil::FromString<DebugInitialize>(const char *value);
+
+template<>
+DebugVectorVerification EnumUtil::FromString<DebugVectorVerification>(const char *value);
+
+template<>
+DecimalBitWidth EnumUtil::FromString<DecimalBitWidth>(const char *value);
 
 template<>
 DefaultOrderByNullType EnumUtil::FromString<DefaultOrderByNullType>(const char *value);
@@ -1221,7 +1263,10 @@ template<>
 MetricsType EnumUtil::FromString<MetricsType>(const char *value);
 
 template<>
-MultiFileReaderColumnMappingMode EnumUtil::FromString<MultiFileReaderColumnMappingMode>(const char *value);
+MultiFileColumnMappingMode EnumUtil::FromString<MultiFileColumnMappingMode>(const char *value);
+
+template<>
+MultiFileFileState EnumUtil::FromString<MultiFileFileState>(const char *value);
 
 template<>
 NType EnumUtil::FromString<NType>(const char *value);
@@ -1293,6 +1338,9 @@ template<>
 PreparedStatementMode EnumUtil::FromString<PreparedStatementMode>(const char *value);
 
 template<>
+PreserveOrderType EnumUtil::FromString<PreserveOrderType>(const char *value);
+
+template<>
 ProfilerPrintFormat EnumUtil::FromString<ProfilerPrintFormat>(const char *value);
 
 template<>
@@ -1303,9 +1351,6 @@ QueryNodeType EnumUtil::FromString<QueryNodeType>(const char *value);
 
 template<>
 QueryResultType EnumUtil::FromString<QueryResultType>(const char *value);
-
-template<>
-QuoteRule EnumUtil::FromString<QuoteRule>(const char *value);
 
 template<>
 RelationType EnumUtil::FromString<RelationType>(const char *value);
@@ -1372,6 +1417,9 @@ SinkResultType EnumUtil::FromString<SinkResultType>(const char *value);
 
 template<>
 SourceResultType EnumUtil::FromString<SourceResultType>(const char *value);
+
+template<>
+StarExpressionType EnumUtil::FromString<StarExpressionType>(const char *value);
 
 template<>
 StatementReturnType EnumUtil::FromString<StatementReturnType>(const char *value);
