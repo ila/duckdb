@@ -4,5 +4,5 @@ terraform apply -auto-approve
 
 terraform refresh
 ansible -i terraform-inventory.py clients -u ubuntu --key-file /home/ila/server.pem -m ping -e 'ansible_ssh_common_args="-o StrictHostKeyChecking=no"'
-ansible-playbook -i terraform-inventory.py playbook.yml -u ubuntu --key-file /home/ila/server.pem -e 'ansible_ssh_common_args="-o StrictHostKeyChecking=no"' -v
+ ANSIBLE_FORKS=25 ansible-playbook -i terraform-inventory.py playbook.yml -u ubuntu --key-file /home/ila/server.pem -e 'ansible_ssh_common_args="-o StrictHostKeyChecking=no"' -v
 terraform destroy

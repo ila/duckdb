@@ -132,15 +132,15 @@ def update_window(update_window_name, centralized):
 def main():
 
     run = 0
-    flush_name = "daily_runs_city"
-    update_window_name = "rdda_centralized_view_daily_runs_city"
-    centralized = False
-    # flush_name = "runs"
-    # update_window_name = "mv_daily_runs_city"
-    # centralized = True
+    # flush_name = "daily_runs_city"
+    # update_window_name = "rdda_centralized_view_daily_runs_city"
+    # centralized = False
+    flush_name = "runs"
+    update_window_name = "mv_daily_runs_city"
+    centralized = True
 
     try:
-        while run < params.MAX_RUNS + 1:
+        while run < params.MAX_RUNS:
             print(f"\n--- Starting cycle {run} ---")
             time.sleep(params.FLUSH_INTERVAL * 60)
             flush(flush_name, centralized)

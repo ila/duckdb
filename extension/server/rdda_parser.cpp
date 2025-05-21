@@ -100,7 +100,7 @@ void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, con
 		CompilerExtension::WriteFile(file_path, false, queries);
     }
 	std::ofstream csv_file(csv_path, run != 0 ? std::ios::app : std::ios::trunc);
-	std::ofstream query_log(log_path, std::ios::app); // Always append to log
+	std::ofstream query_log(log_path, std::ios::trunc);
 
 	if (!csv_file.is_open() || !query_log.is_open()) {
 		throw IOException("Failed to open output file(s)");
