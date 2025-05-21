@@ -68,7 +68,8 @@ def generate_client_info(path):
             traceback.print_exc()
             raise
     nickname = f"user_{random.randint(0, 1500000)}"
-    city = get_random_city_skewed()
+    # city = get_random_city_skewed()
+    city = get_random_city()
     run_count = 0
     initialized = False
     return nickname, city, run_count, initialized

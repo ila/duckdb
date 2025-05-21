@@ -31,16 +31,18 @@ centralized_3 <- read.csv("results/results_runs_3.csv")
 decentralized <- read.csv("results/results_daily_runs_city.csv")
 
 decentralized_min_agg <- read.csv("results/results_daily_runs_city_min_agg_2_all.csv")
+decentralized_min_agg_90 <- read.csv("results/results_daily_runs_city_min_agg_100_90.csv")
 
 # Add source labels
 centralized_1$system <- "Centralized, 1 run/day"
 centralized_3$system <- "Centralized, 3 runs/day"
 decentralized$system <- "Decentralized"
 decentralized_min_agg$system <- "Decentralized, minimum aggregation of 2"
+decentralized_min_agg_90$system <- "Decentralized, minimum aggregation of 100, 90%"
 
 # Combine data
 all_data_1 <- bind_rows(centralized_1, centralized_3, decentralized)
-all_data_2 <- bind_rows(decentralized, decentralized_min_agg)
+all_data_2 <- bind_rows(decentralized, decentralized_min_agg, decentralized_min_agg_90)
 
 # === AGGREGATE SELECTED QUERIES ===
 # Change these to include/exclude more queries
@@ -70,7 +72,7 @@ plot_1 <- ggplot(agg_data_1, aes(x = run, y = total_time, color = system)) +
   )
 
 # Save the plot
-png("plots/centralized_vs_decentralized_plot.png", width = 1600, height = 1200, res = 200)
+png("plots/centralized_vs_decentralized_plot.png", width = 2000, height = 1200, res = 200)
 print(plot_1)
 dev.off()
 
@@ -87,6 +89,6 @@ plot_2 <- ggplot(agg_data_2, aes(x = run, y = total_time, color = system)) +
   )
 
 # Save the plot
-png("plots/minimum_aggregation_plot.png", width = 1600, height = 1200, res = 200)
+png("plots/minimum_aggregation_plot.png", width = 2000, height = 1200, res = 200)
 print(plot_2)
 dev.off()

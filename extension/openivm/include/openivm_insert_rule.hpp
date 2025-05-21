@@ -162,14 +162,13 @@ public:
 					} else if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 						// this is a COPY
 						auto get = dynamic_cast<LogicalGet *>(insert_node->children[0].get());
-						auto files = dynamic_cast<ReadCSVData *>(get->bind_data.get())->files; // vector
-						//auto files = dynamic_cast<MultiFileBindData *>(get->bind_data.get())->file_list->GetAllFiles(); // vector
+						auto files = dynamic_cast<MultiFileBindData *>(get->bind_data.get())->file_list->GetAllFiles(); // vector
 						for (auto &file : files) {
 							// we cannot just copy; we need to hardcode the multiplicity and timestamp
 							// insert into delta_table select *, true, now() from read_csv(path);
 							// the performance is the same, since COPY is an insertion
 							auto query = "insert into " + full_delta_table_name +
-							             " select *, true, now() from read_csv('" + file + "');";
+							             " select *, true, now() from read_csv('" + file.path + "');";
 							auto r = con.Query(query);
 							if (r->HasError()) {
 								throw InternalException("Cannot insert in delta table! " + r->GetError());
