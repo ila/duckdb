@@ -400,6 +400,8 @@ def run_flush_window(initial_clients, flush_run):
     print(f"💀 Dead clients this window ({len(dying_clients)}): {dying_clients}")
     print("========================\n")
 
+    flush_window_start = time.time()
+
     print("--- Initializing client folders ---")
     for i in active_clients:
         try:
@@ -413,7 +415,6 @@ def run_flush_window(initial_clients, flush_run):
     chunk_size = (len(active_clients) + num_chunks - 1) // num_chunks
     client_chunks = [active_clients[i:i + chunk_size] for i in range(0, len(active_clients), chunk_size)]
 
-    flush_window_start = time.time()
     chunk_interval = (params.FLUSH_INTERVAL * 60) / num_chunks
 
     for i, chunk in enumerate(client_chunks):
