@@ -132,27 +132,42 @@ def update_window(update_window_name, centralized):
 def main():
 
     run = 0
-    # flush_name = "daily_runs_city"
-    # update_window_name = "rdda_centralized_view_daily_runs_city"
-    # centralized = False
-    flush_name = "runs"
-    update_window_name = "mv_daily_runs_city"
-    centralized = True
 
-    flush_interval = params.FLUSH_INTERVAL
+    flush_name = "daily_runs_city"
+    update_window_name = "rdda_centralized_view_daily_runs_city"
+    centralized = False
+    # flush_name = "runs"
+    # update_window_name = "mv_daily_runs_city"
+    # centralized = True
 
-    if centralized:
-        if params.REFRESH:
-            flush_interval = params.FLUSH_INTERVAL / params.NUM_CHUNKS
+    refresh = params.REFRESH
+
+    flush_interval_minutes = params.FLUSH_INTERVAL  # e.g., 20
+    chunk_interval = (
+        flush_interval_minutes / params.NUM_CHUNKS
+        if refresh and not centralized
+        else flush_interval_minutes
+    )
 
     try:
         while run < params.MAX_RUNS:
-            print(f"\n--- Starting cycle {run} ---")
-            time.sleep(flush_interval * 60)
+            print(f"\n--- Starting chunk ---")
+            time.sleep(chunk_interval * 60)
+
+            # Execute flush every chunk interval
             flush(flush_name, centralized)
-            update_window(update_window_name, centralized)
-            run += 1
-            print("✔️  Cycle complete.\n")
+
+            # Only increment run every full flush interval (i.e., after all chunks)
+            if refresh and not centralized:
+                # Count how many chunks happened and increment only every full interval
+                if (run + 1) * params.NUM_CHUNKS % params.NUM_CHUNKS == 0:
+                    run += 1
+                    update_window(update_window_name, centralized)
+                    print(f"✔️  Cycle {run} complete.\n")
+            else:
+                run += 1
+                update_window(update_window_name, centralized)
+                print(f"✔️  Cycle {run} complete.\n")
 
     except KeyboardInterrupt:
         print("\nShutting down...")
