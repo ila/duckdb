@@ -139,10 +139,16 @@ def main():
     update_window_name = "mv_daily_runs_city"
     centralized = True
 
+    flush_interval = params.FLUSH_INTERVAL
+
+    if centralized:
+        if params.REFRESH:
+            flush_interval = params.FLUSH_INTERVAL / params.NUM_CHUNKS
+
     try:
         while run < params.MAX_RUNS:
             print(f"\n--- Starting cycle {run} ---")
-            time.sleep(params.FLUSH_INTERVAL * 60)
+            time.sleep(flush_interval * 60)
             flush(flush_name, centralized)
             update_window(update_window_name, centralized)
             run += 1

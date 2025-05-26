@@ -421,6 +421,7 @@ def run_flush_window(initial_clients, flush_run):
             executor.map(run_client, chunk, repeat(flush_run))
         if i < len(client_chunks) - 1:
             time.sleep((params.FLUSH_INTERVAL * 60) // num_chunks)
+            print(f"⏳ Waiting for {(params.FLUSH_INTERVAL * 60) // num_chunks} seconds before next chunk...\n")
 
     elapsed = time.time() - flush_window_start
     total_flush_seconds = params.FLUSH_INTERVAL * 60
