@@ -35,6 +35,7 @@ MAX_RUNS = 5 # Maximum number of runs to simulate
 # Refresh parameters (note: it takes around 3 min to initialize 2000 clients)
 REFRESH = True # Whether to refresh the data in between windows
 NUM_CHUNKS = 4 # Number of refreshes per window
+UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh (or wait for the next window)
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",

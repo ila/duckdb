@@ -414,14 +414,20 @@ def run_flush_window(initial_clients, flush_run):
     client_chunks = [active_clients[i:i + chunk_size] for i in range(0, len(active_clients), chunk_size)]
 
     flush_window_start = time.time()
+    chunk_interval = (params.FLUSH_INTERVAL * 60) / num_chunks
 
     for i, chunk in enumerate(client_chunks):
+        chunk_start = time.time()
         print(f"🧩 Dispatching chunk {i + 1}/{len(client_chunks)}")
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(flush_run))
+
         if i < len(client_chunks) - 1:
-            time.sleep((params.FLUSH_INTERVAL * 60) // num_chunks)
-            print(f"⏳ Waiting for {(params.FLUSH_INTERVAL * 60) // num_chunks} seconds before next chunk...\n")
+            elapsed_chunk = time.time() - chunk_start
+            remaining_chunk = chunk_interval - elapsed_chunk
+            if remaining_chunk > 0:
+                print(f"⏳ Waiting for {int(remaining_chunk)} seconds before next chunk...\n")
+                time.sleep(remaining_chunk)
 
     elapsed = time.time() - flush_window_start
     total_flush_seconds = params.FLUSH_INTERVAL * 60
@@ -429,6 +435,7 @@ def run_flush_window(initial_clients, flush_run):
     if remaining > 0:
         print(f"🛌 Sleeping remaining {int(remaining)} seconds to complete flush window...\n")
         time.sleep(remaining)
+
 
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late

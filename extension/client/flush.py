@@ -141,6 +141,7 @@ def main():
     # centralized = True
 
     refresh = params.REFRESH
+    runs = params.MAX_RUNS
 
     flush_interval_minutes = params.FLUSH_INTERVAL  # e.g., 20
     chunk_interval = (
@@ -148,17 +149,20 @@ def main():
         if refresh and not centralized
         else flush_interval_minutes
     )
+    if refresh and not centralized:
+        runs = runs * params.NUM_CHUNKS
 
     try:
-        while run < params.MAX_RUNS:
+        while run < runs:
             print(f"\n--- Starting chunk ---")
+            print(f"Sleeping for {chunk_interval} minutes...")
             time.sleep(chunk_interval * 60)
 
             # Execute flush every chunk interval
             flush(flush_name, centralized)
 
             # Only increment run every full flush interval (i.e., after all chunks)
-            if refresh and not centralized:
+            if refresh and not centralized and not params.UPDATE_WINDOW_EVERY_REFRESH:
                 # Count how many chunks happened and increment only every full interval
                 if (run + 1) * params.NUM_CHUNKS % params.NUM_CHUNKS == 0:
                     run += 1
