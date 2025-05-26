@@ -400,9 +400,8 @@ def run_flush_window(initial_clients, flush_run):
     print(f"💀 Dead clients this window ({len(dying_clients)}): {dying_clients}")
     print("========================\n")
 
-    flush_window_start = time.time()
-
     print("--- Initializing client folders ---")
+    chunk_start = time.time()
     for i in active_clients:
         try:
             setup_client_folder(i)
@@ -418,7 +417,6 @@ def run_flush_window(initial_clients, flush_run):
     chunk_interval = (params.FLUSH_INTERVAL * 60) / num_chunks
 
     for i, chunk in enumerate(client_chunks):
-        chunk_start = time.time()
         print(f"🧩 Dispatching chunk {i + 1}/{len(client_chunks)}")
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(flush_run))
@@ -430,13 +428,7 @@ def run_flush_window(initial_clients, flush_run):
                 print(f"⏳ Waiting for {int(remaining_chunk)} seconds before next chunk...\n")
                 time.sleep(remaining_chunk)
 
-    elapsed = time.time() - flush_window_start
-    total_flush_seconds = params.FLUSH_INTERVAL * 60
-    remaining = total_flush_seconds - elapsed
-    if remaining > 0:
-        print(f"🛌 Sleeping remaining {int(remaining)} seconds to complete flush window...\n")
-        time.sleep(remaining)
-
+            chunk_start = time.time()
 
     metadata["dead_clients"] = list(dead)
     metadata["late_clients"] = late
