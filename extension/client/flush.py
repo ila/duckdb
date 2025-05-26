@@ -158,19 +158,25 @@ def main():
             print(f"Sleeping for {chunk_interval} minutes...")
             time.sleep(chunk_interval * 60)
 
-            # Execute flush every chunk interval
             flush(flush_name, centralized)
 
-            # Only increment run every full flush interval (i.e., after all chunks)
-            if refresh and not centralized and not params.UPDATE_WINDOW_EVERY_REFRESH:
-                # Count how many chunks happened and increment only every full interval
-                if (run + 1) * params.NUM_CHUNKS % params.NUM_CHUNKS == 0:
-                    run += 1
-                    update_window(update_window_name, centralized)
-                    print(f"✔️  Cycle {run} complete.\n")
-            else:
-                run += 1
+            # Case 1: update window every chunk (rare)
+            if params.UPDATE_WINDOW_EVERY_REFRESH:
                 update_window(update_window_name, centralized)
+
+            # Case 2: update only at the end of each full refresh interval (for chunked non-centralized mode)
+            if refresh and not centralized and not params.UPDATE_WINDOW_EVERY_REFRESH:
+                if (run + 1) % params.NUM_CHUNKS == 0:
+                    update_window(update_window_name, centralized)
+                    run += 1
+                    print(f"✔️  Cycle {run} complete.\n")
+                else:
+                    run += 1  # not end of flush window yet
+            else:
+                # Case 3: centralized or non-refresh (always one flush per run)
+                run += 1
+                if not refresh:
+                    update_window(update_window_name, centralized)
                 print(f"✔️  Cycle {run} complete.\n")
 
     except KeyboardInterrupt:

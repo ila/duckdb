@@ -56,5 +56,27 @@ CITIES = [
     "Laredo", "Madison", "Chandler", "Buffalo", "Lubbock",
     "Scottsdale", "Reno", "Glendale", "Gilbert", "Winston–Salem",
     "North Las Vegas", "Norfolk", "Chesapeake", "Garland", "Irving",
-    "Hialeah", "Fremont", "Boise", "Richmond", "Baton Rouge"
+    "Hialeah", "Fremont", "Boise", "Richmond", "Baton Rouge",
+    "Spokane", "Des Moines", "Tacoma", "San Bernardino", "Modesto",
+    "Fontana", "Santa Clarita", "Birmingham", "Oxnard", "Fayetteville",
+    "Moreno Valley", "Rochester", "Glendale", "Huntington Beach",
+    "Salt Lake City", "Grand Rapids", "Amarillo", "Yonkers", "Aurora",
+    "Montgomery", "Akron", "Little Rock", "Huntsville", "Augusta",
+    "Columbus", "Grand Prairie", "Shreveport", "Overland Park",
+    "Tallahassee", "Mobile", "Knoxville", "Worcester", "Tempe",
+    "Cape Coral", "Providence", "Fort Lauderdale", "Chattanooga",
+    "Oceanside", "Garden Grove", "Rancho Cucamonga", "Santa Rosa",
+    "Port St. Lucie", "Ontario", "Vancouver", "Sioux Falls", "Peoria",
+    "Springfield", "Pembroke Pines", "Elk Grove", "Salem", "Lancaster",
+    "Corona", "Eugene", "Palmdale", "Salinas", "Springfield", "Pasadena",
+    "Fort Collins", "Hayward", "Pomona", "Cary", "Rockford",
+    "Alexandria", "Escondido", "McKinney", "Kansas City", "Joliet",
+    "Sunnyvale", "Torrance", "Bridgeport", "Lakewood", "Hollywood",
+    "Paterson", "Naperville", "Syracuse", "Mesquite", "Dayton",
+    "Savannah", "Clarksville", "Orange", "Pasadena", "Fullerton",
+    "Killeen", "Frisco", "Hampton", "McAllen", "Warren",
+    "Bellevue", "West Valley City", "Columbia", "Olathe", "Sterling Heights",
+    "New Haven", "Miramar", "Waco", "Thousand Oaks", "Cedar Rapids",
+    "Charleston", "Visalia", "Topeka", "Elizabeth"
 ]
+
