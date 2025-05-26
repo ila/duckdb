@@ -339,21 +339,122 @@ def run_cycle(initial_clients, run):
     common.save_metadata(metadata, CLIENT_METADATA_PATH)
 
 
+def run_flush_window(initial_clients, flush_run):
+    metadata = common.load_metadata(CLIENT_METADATA_DIR, CLIENT_METADATA_PATH)
+
+    dead = set(metadata.get("dead_clients", []))
+    late = metadata.get("late_clients", {})
+    next_client_id = metadata.get("next_client_id", 0)
+
+    all_clients = list(range(next_client_id))
+    alive_clients = [cid for cid in all_clients if cid not in dead and cid not in late]
+
+    target_clients = int(min(params.MAX_CLIENTS, initial_clients * ((1 + params.NEW_RATE) ** flush_run)))
+
+    num_to_die = int(len(alive_clients) * params.DEATH_RATE) if alive_clients else 0
+    dying_clients = random.sample(alive_clients, min(num_to_die, len(alive_clients)))
+    dead.update(dying_clients)
+
+    alive_after_death = [cid for cid in alive_clients if cid not in dying_clients]
+    eligible_for_new_late = [cid for cid in alive_after_death if str(cid) not in late]
+    num_late = int(len(eligible_for_new_late) * params.LATE_RATE) if eligible_for_new_late else 0
+    new_late_clients = random.sample(eligible_for_new_late, min(num_late, len(eligible_for_new_late)))
+
+    for cid in new_late_clients:
+        late[str(cid)] = random.randint(1, 5)
+
+    late_active = []
+    still_late = {}
+    old_late_info = {}
+    for cid_str, delay in late.items():
+        delay -= 1
+        if delay <= 0:
+            late_active.append(int(cid_str))
+        else:
+            still_late[cid_str] = delay
+            old_late_info[int(cid_str)] = delay
+    late = still_late
+
+    current_total_clients = next_client_id
+    available_slots = params.MAX_CLIENTS - current_total_clients
+    if flush_run == 0:
+        num_new = min(target_clients, available_slots)
+    else:
+        num_new = min(max(1, int(target_clients * params.NEW_RATE)), available_slots)
+    new_clients = list(range(next_client_id, next_client_id + num_new))
+    next_client_id += num_new
+
+    remaining_slots = target_clients - len(new_clients)
+    old_clients = alive_after_death.copy()
+    random.shuffle(old_clients)
+    selected_existing = old_clients[:max(0, remaining_slots - len(late_active))]
+
+    active_clients = sorted(set(selected_existing + late_active + new_clients))
+
+    print("\n=== 🌀 Flush Window Summary ===")
+    print(f"▶️  Flush window: {flush_run}")
+    print(f"👥 Active clients ({len(active_clients)}): {active_clients}")
+    print(f"🆕 New clients ({len(new_clients)}): {new_clients}")
+    print(f"🐌 New late clients ({len(new_late_clients)}): {new_late_clients}")
+    print(f"🕰️ Late clients still pending ({len(old_late_info)}): {old_late_info}")
+    print(f"💀 Dead clients this window ({len(dying_clients)}): {dying_clients}")
+    print("========================\n")
+
+    print("--- Initializing client folders ---")
+    for i in active_clients:
+        try:
+            setup_client_folder(i)
+        except Exception as e:
+            print(f"Error setting up client folder {i}: {str(e)}")
+            traceback.print_exc()
+
+    print("--- Generating and sending data in chunks ---")
+    num_chunks = params.NUM_CHUNKS
+    chunk_size = (len(active_clients) + num_chunks - 1) // num_chunks
+    client_chunks = [active_clients[i:i + chunk_size] for i in range(0, len(active_clients), chunk_size)]
+
+    flush_window_start = time.time()
+
+    for i, chunk in enumerate(client_chunks):
+        print(f"🧩 Dispatching chunk {i + 1}/{len(client_chunks)}")
+        with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
+            executor.map(run_client, chunk, repeat(flush_run))
+        if i < len(client_chunks) - 1:
+            time.sleep((params.FLUSH_INTERVAL * 60) // num_chunks)
+
+    elapsed = time.time() - flush_window_start
+    total_flush_seconds = params.FLUSH_INTERVAL * 60
+    remaining = total_flush_seconds - elapsed
+    if remaining > 0:
+        print(f"🛌 Sleeping remaining {int(remaining)} seconds to complete flush window...\n")
+        time.sleep(remaining)
+
+    metadata["dead_clients"] = list(dead)
+    metadata["late_clients"] = late
+    metadata["next_client_id"] = next_client_id
+    common.save_metadata(metadata, CLIENT_METADATA_PATH)
+
+
 def main():
     if not os.path.exists(params.TMP_DIR):
         os.makedirs(params.TMP_DIR, exist_ok=True)
 
     create_postgres_table_if_not_exists()
     run = 0
+    refresh = params.REFRESH  # Add this flag in your params.py
 
     while run < params.MAX_RUNS:
         start_time = time.time()
         print(f"\n--- Starting cycle {run} ---")
-        run_cycle(params.INITIAL_CLIENTS, run)
+
+        if refresh:
+            run_flush_window(params.INITIAL_CLIENTS, run)
+        else:
+            run_cycle(params.INITIAL_CLIENTS, run)
+
         run += 1
         print("✔️  Cycle complete.\n")
 
-        # Calculate remaining time to sleep
         elapsed = time.time() - start_time
         flush_interval = params.FLUSH_INTERVAL * 60 + params.SLEEP_INTERVAL
         remaining = flush_interval - elapsed

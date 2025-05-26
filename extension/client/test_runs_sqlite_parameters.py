@@ -32,6 +32,10 @@ SLEEP_INTERVAL = 15 # Additional interval in seconds to sleep between dispatches
 FLUSH_INTERVAL = 10 # Interval in minutes to flush the database
 MAX_RUNS = 5 # Maximum number of runs to simulate
 
+# Refresh parameters
+REFRESH = True # Whether to refresh the data in between windows
+NUM_CHUNKS = 4 # Number of refreshes per window
+
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
     "San Antonio", "San Diego", "Dallas", "San Jose", "Austin", "Jacksonville",

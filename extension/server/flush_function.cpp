@@ -69,6 +69,7 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// todo - implement client deletes (opt out)
 	// todo add index logic for upsert
     // todo check expired windows in 1st update w min agg
+	// todo only remove local aggregations if the window elapses (not at every refresh)
 
 	auto database = StringValue::Get(parameters.values[1]);
 	if (database != "duckdb" && database != "postgres") {
