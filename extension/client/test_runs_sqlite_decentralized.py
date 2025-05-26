@@ -29,7 +29,7 @@ import test_runs_sqlite_common as common
 CLIENT_METADATA_DIR = os.path.join(params.TMP_DIR, "client_d_metadata")
 CLIENT_METADATA_PATH = os.path.join(CLIENT_METADATA_DIR, "metadata.json")
 
-def setup_client_folder(i):
+def setup_client_folder(i, run):
     folder = os.path.join(params.TMP_DIR, f"client_d_{i}")
     try:
         os.makedirs(folder, exist_ok=True)
@@ -57,7 +57,7 @@ def setup_client_folder(i):
             os.remove(csv_path)
 
         nickname, city, run_count, initialized = common.generate_client_info(client_info_path)
-        date = common.format_date(run_count)
+        date = common.format_date(run)
         client_id = int(nickname.split("_")[1])
 
         if not initialized:
@@ -318,7 +318,7 @@ def run_cycle(initial_clients, run):
     print("--- Initializing client folders ---")
     for i in active_clients:
         try:
-            setup_client_folder(i)
+            setup_client_folder(i, run)
         except Exception as e:
             print(f"Error setting up client folder {i}: {str(e)}")
             traceback.print_exc()
@@ -404,7 +404,7 @@ def run_flush_window(initial_clients, flush_run):
     chunk_start = time.time()
     for i in active_clients:
         try:
-            setup_client_folder(i)
+            setup_client_folder(i, flush_run)
         except Exception as e:
             print(f"Error setting up client folder {i}: {str(e)}")
             traceback.print_exc()
