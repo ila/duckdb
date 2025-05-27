@@ -32,6 +32,7 @@ def get_random_city_skewed():
     return random.choice(RARE_CITIES)
 
 def format_date(offset_days):
+    offset_days = 0
     return (datetime.now() + timedelta(days=offset_days)).strftime('%Y-%m-%d')
 
 def format_time():
