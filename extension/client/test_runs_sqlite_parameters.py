@@ -29,12 +29,12 @@ CHUNK_SIZE = 100 # Number of clients to process in each chunk
 INITIAL_CLIENTS = 2000 # Initial number of clients to simulate
 CLIENT_DISPATCH_INTERVAL = 5 # Interval in seconds to wait before dispatching new clients
 SLEEP_INTERVAL = 15 # Additional interval in seconds to sleep between dispatches
-FLUSH_INTERVAL = 16 # Interval in minutes to flush the database
+FLUSH_INTERVAL = 10 # Interval in minutes to flush the database
 MAX_RUNS = 5 # Maximum number of runs to simulate
 
 # Refresh parameters (note: it takes around 3 min to initialize 2000 clients)
 REFRESH = True # Whether to refresh the data in between windows
-NUM_CHUNKS = 4 # Number of refreshes per window
+NUM_CHUNKS = 2 # Number of refreshes per window
 UPDATE_WINDOW_EVERY_REFRESH = True # Whether to update the window every refresh (or wait for the next window)
 
 CITIES = [
