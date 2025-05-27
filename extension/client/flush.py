@@ -169,7 +169,7 @@ def main():
                 if (run + 1) % params.NUM_CHUNKS == 0:
                     update_window(update_window_name, centralized)
                     run += 1
-                    print(f"✔️  Cycle {run} complete.\n")
+                    print(f"✔️  Cycle {run / params.NUM_CHUNKS - 1} complete.\n")
                 else:
                     run += 1  # not end of flush window yet
             else:
