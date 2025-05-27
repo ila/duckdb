@@ -457,6 +457,8 @@ def main():
 
         if refresh:
             run_flush_window(params.INITIAL_CLIENTS, run)
+            if params.UPDATE_WINDOW_EVERY_REFRESH:
+                run = run + params.NUM_CHUNKS - 1
         else:
             run_cycle(params.INITIAL_CLIENTS, run)
 
