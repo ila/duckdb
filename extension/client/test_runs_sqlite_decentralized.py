@@ -421,6 +421,9 @@ def run_flush_window(initial_clients, flush_run):
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(flush_run))
 
+        if params.UPDATE_WINDOW_EVERY_REFRESH:
+            flush_run = flush_run + 1
+
         if i < len(client_chunks) - 1:
             elapsed_chunk = time.time() - chunk_start
             remaining_chunk = chunk_interval - elapsed_chunk
@@ -444,7 +447,11 @@ def main():
     run = 0
     refresh = params.REFRESH  # Add this flag in your params.py
 
-    while run < params.MAX_RUNS:
+    max_runs = params.MAX_RUNS
+    if params.UPDATE_WINDOW_EVERY_REFRESH:
+        max_runs *= params.NUM_CHUNKS
+
+    while run < max_runs:
         start_time = time.time()
         print(f"\n--- Starting cycle {run} ---")
 
