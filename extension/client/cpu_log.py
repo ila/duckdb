@@ -26,21 +26,30 @@ def monitor(run_number, window_seconds, pg_table):
     print(f"\n[{datetime.now()}] Run {run_number} started...")
 
     cpu_time_used = 0.0
+    total_bytes_recv = 0  # Track total bytes received
 
+    # Initialize counters
     prev = psutil.cpu_times()
+    net_start = psutil.net_io_counters()  # Initial network state
     start_time = time.time()
 
     while time.time() - start_time < window_seconds:
         time.sleep(SAMPLE_INTERVAL)
+
+        # CPU measurement
         current = psutil.cpu_times()
         delta = sum([getattr(current, f) - getattr(prev, f) for f in current._fields])
         cpu_time_used += delta
         prev = current
 
+        # Network measurement (cumulative)
+        net_current = psutil.net_io_counters()
+        total_bytes_recv = net_current.bytes_recv - net_start.bytes_recv  # Bytes received since start
+
     total_capacity = window_seconds * psutil.cpu_count()
     cpu_percent = (cpu_time_used / total_capacity) * 100
 
-    print(f"[{datetime.now()}] Run {run_number} finished: CPU = {cpu_percent:.2f}%")
+    print(f"[{datetime.now()}] Run {run_number} finished: CPU = {cpu_percent:.2f}%, Network = {total_bytes_recv / (1024 ** 2):.2f} MB received")
 
     pg_size = get_postgres_table_size(pg_table)
     if pg_size != -1:
@@ -51,8 +60,8 @@ def monitor(run_number, window_seconds, pg_table):
     mode = 'w' if run_number == 0 else 'a'
     with open(OUTPUT_FILE, mode) as f:
         if run_number == 0:
-            f.write("run,total_cpu_usage,storage_size_bytes\n")
-        f.write(f"{run_number},{cpu_percent:.2f},{pg_size}\n")
+            f.write("run,total_cpu_usage,storage_size_bytes,bytes_received\n")  # New column
+        f.write(f"{run_number},{cpu_percent:.2f},{pg_size},{total_bytes_recv}\n")
 
 
 
@@ -71,12 +80,14 @@ if __name__ == "__main__":
     if refresh and not params.CENTRALIZED:
         runs *= params.NUM_CHUNKS
 
+    table_name = "rdda_centralized_view" + params.FLUSH_NAME
+
     try:
         while run < runs:
             print(f"\n--- Starting chunk ---")
-            print(f"Sleeping for {chunk_interval} minutes...")
+            print(f"Measuring for {chunk_interval} minutes...")
 
-            monitor(run, chunk_interval * 60, params.FLUSH_NAME)
+            monitor(run, chunk_interval * 60, table_name)
 
             run += 1
             print(f"✔️  Cycle {run} complete.\n")
