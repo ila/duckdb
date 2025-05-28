@@ -33,9 +33,15 @@ FLUSH_INTERVAL = 10 # Interval in minutes to flush the database
 MAX_RUNS = 5 # Maximum number of runs to simulate
 
 # Refresh parameters (note: it takes around 3 min to initialize 2000 clients)
-REFRESH = True # Whether to refresh the data in between windows
-NUM_CHUNKS = 2 # Number of refreshes per window
-UPDATE_WINDOW_EVERY_REFRESH = True # Whether to update the window every refresh (or wait for the next window)
+REFRESH = False # Whether to refresh the data in between windows
+NUM_CHUNKS = 1 # Number of refreshes per window
+UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh (or wait for the next window)
+
+# Parameters for flush and CPU analysis
+FLUSH_NAME = "daily_runs_city"
+UPDATE_WINDOW_NAME = "rdda_centralized_view_daily_runs_city"
+CENTRALIZED = False
+RUNS_PER_CLIENT = 10  # Number of data points per client
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",

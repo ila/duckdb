@@ -89,8 +89,7 @@ def generate_csv(path, nickname, city, date):
             os.remove(path)
         with open(path, 'a') as f:
             writer = csv.writer(f)
-            #for _ in range(random.randint(1, 5)):
-            for _ in range(3):
+            for _ in range(params.RUNS_PER_CLIENT):
                 writer.writerow([
                     nickname, city, date, format_time(),
                     format_time(), random.randint(500, 10500),

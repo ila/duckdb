@@ -77,6 +77,10 @@ decentralized <- read.csv("results/results_daily_runs_city.csv")
 decentralized_upsert <- read.csv("results/results_daily_runs_city_upsert_min_agg_100_all.csv")
 decentralized_min_agg <- read.csv("results/results_daily_runs_city_min_agg_100_all.csv")
 decentralized_min_agg_90 <- read.csv("results/results_daily_runs_city_min_agg_100_90.csv")
+decentralized_refresh_4 <- read.csv("results/results_daily_runs_city_refresh_4_min_agg_100.csv")
+decentralized_refresh_2 <- read.csv("results/results_daily_runs_city_refresh_2_min_agg_100.csv")
+decentralized_window_4 <- read.csv("results/results_daily_runs_city_window_6_min_agg_100.csv")
+decentralized_window_2 <- read.csv("results/results_daily_runs_city_window_12_min_agg_100.csv")
 
 # Add source labels
 centralized_1$system <- "Centralized, 1 run/day"
@@ -84,7 +88,32 @@ centralized_3$system <- "Centralized, 3 runs/day"
 decentralized$system <- "Decentralized"
 decentralized_min_agg$system <- "Dec., min. agg. 100, 100% selectivity"
 decentralized_min_agg_90$system <- "Dec., min. agg. 100, 90% selectivity"
-decentralized_upsert$system <- "Dec., UPSERT, min. agg. 100, 100% selectivity"
+decentralized_upsert$system <- "UPSERT, 1 refresh/window"
+#decentralized_upsert$system <- "Dec., UPSERT, min. agg. 100, 100% selectivity"
+decentralized_refresh_4$system <- "4 refreshes/window"
+decentralized_refresh_2$system <- "2 refreshes/window"
+decentralized_window_4$system <- "Window of 6 hours"
+decentralized_window_2$system <- "Window of 12 hours"
+
+decentralized_refresh_4_grouped <- decentralized_refresh_4 %>%
+  mutate(run = run %/% 4) %>%  # creates groups: 1–4 -> 1, 5–8 -> 2, etc.
+  group_by(run, system) %>%
+  summarise(time_ms = sum(time_ms))
+
+decentralized_refresh_2_grouped <- decentralized_refresh_2 %>%
+  mutate(run = run %/% 2) %>%
+  group_by(run, system) %>%
+  summarise(time_ms = sum(time_ms))
+
+decentralized_window_4_grouped <- decentralized_window_4 %>%
+  mutate(run = run %/% 4) %>%
+  group_by(run, system) %>%
+  summarise(time_ms = sum(time_ms))
+
+decentralized_window_2_grouped <- decentralized_window_2 %>%
+    mutate(run = run %/% 2) %>%
+    group_by(run, system) %>%
+    summarise(time_ms = sum(time_ms))
 
 # === AGGREGATE SELECTED QUERIES ===
 # Change these to include/exclude more queries
@@ -99,11 +128,11 @@ metadata_queries <- c("e3d02a6a", "6245fe4e", "56db5fd8")
 # Combine data
 all_data_1 <- bind_rows(centralized_1, centralized_3, decentralized)
 all_data_2 <- bind_rows(centralized_1, decentralized_min_agg, decentralized_min_agg_90, decentralized_upsert)
+all_data_3 <- bind_rows(decentralized_upsert, decentralized_refresh_4_grouped, decentralized_refresh_2_grouped)
+all_data_4 <- bind_rows(decentralized_upsert, decentralized_window_4_grouped, decentralized_window_2_grouped)
 
 all_data_1 <- all_data_1 %>%
   filter(!as.character(query_hash) %in% queries_to_exclude)
-
-summarize_queries_to_latex(all_data_2)
 
 agg_data_1 <- all_data_1 %>%
   group_by(run, system) %>%
@@ -116,13 +145,30 @@ agg_data_2 <- all_data_2 %>%
   group_by(run, system) %>%
   summarise(total_time = sum(time_ms), .groups = "drop")
 
+all_data_3 <- all_data_3 %>%
+  filter(!as.character(query_hash) %in% queries_to_exclude)
+
+agg_data_3 <- all_data_3 %>%
+  group_by(run, system) %>%
+  summarise(total_time = sum(time_ms), .groups = "drop")
+
+all_data_4 <- all_data_4 %>%
+  filter(!as.character(query_hash) %in% queries_to_exclude)
+
+agg_data_4 <- all_data_4 %>%
+  group_by(run, system) %>%
+  summarise(total_time = sum(time_ms), .groups = "drop")
+
+# summarize_queries_to_latex(all_data_2)
+
 cb_palette <- c(
   "Centralized, 1 run/day" = "#332288",
   "Centralized, 3 runs/day" = "#A755C2",
   "Decentralized" = "#C51310",
   "Dec., min. agg. 100, 100% selectivity" = "#f1a66a",
   "Dec., min. agg. 100, 90% selectivity" = "#FF3366",
-  "Dec., UPSERT, min. agg. 100, 100% selectivity" = "#2ec4b6"
+  "Dec., UPSERT, min. agg. 100, 100% selectivity" = "#2ec4b6",
+  "UPSERT, 1 refresh/window" = "#2ec4b6"
 )
 
 cb_shapes <- c(
@@ -131,7 +177,8 @@ cb_shapes <- c(
   "Decentralized" = 15,  # square
   "Dec., min. agg. 100, 100% selectivity" = 16,  # circle
   "Dec., min. agg. 100, 90% selectivity" = 10,  # small circle
-  "Dec., UPSERT, min. agg. 100, 100% selectivity" = 8  # asterisk
+  "Dec., UPSERT, min. agg. 100, 100% selectivity" = 8,  # asterisk
+  "UPSERT, 1 refresh/window" = 8  # asterisk
 )
 
 # === PLOT ===
@@ -178,4 +225,49 @@ plot_2 <- ggplot(agg_data_2, aes(x = run, y = total_time, color = system, shape 
 # Save the plot
 png("plots/minimum_aggregation_plot.png", width = 2000, height = 1100, res = 350)
 print(plot_2)
+dev.off()
+
+plot_3 <- ggplot(agg_data_3, aes(x = run, y = total_time, color = system, shape = system)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(x = "Run", y = "Total Time (ms)", color = "System", shape = "System") +
+  #scale_color_manual(values = cb_palette) +
+  #scale_shape_manual(values = cb_shapes) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, 8000, by = 1000)) +
+  theme_minimal(base_size = 14, base_family = "Linux Libertine") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.margin = margin(c(0, 0, 0, -50)),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.text = element_text(size = 9)
+  )
+
+# Save the plot
+png("plots/refresh_plot.png", width = 2000, height = 1100, res = 350)
+print(plot_3)
+dev.off()
+
+
+plot_4 <- ggplot(agg_data_4, aes(x = run, y = total_time, color = system, shape = system)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(x = "Run", y = "Total Time (ms)", color = "System", shape = "System") +
+  #scale_color_manual(values = cb_palette) +
+  #scale_shape_manual(values = cb_shapes) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, 8000, by = 1000)) +
+  theme_minimal(base_size = 14, base_family = "Linux Libertine") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.margin = margin(c(0, 0, 0, -50)),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.text = element_text(size = 9)
+  )
+
+# Save the plot
+png("plots/window_plot.png", width = 2000, height = 1100, res = 350)
+print(plot_4)
 dev.off()
