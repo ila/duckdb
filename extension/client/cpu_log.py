@@ -298,16 +298,6 @@ def monitor(run_number, window_seconds, pg_table):
             f.write("run,avg_cpu_usage,peak_cpu_usage,storage_size_bytes,bytes_received\n")
         f.write(f"{run_number},{avg_cpu_percent:.2f},{max_cpu_percent:.2f},{pg_size},{total_bytes_recv}\n")
 
-    # Now delete everything from the table
-    try:
-        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as conn:
-            with conn.cursor() as cur:
-                cur.execute(f"DELETE FROM {pg_table};")
-                conn.commit()
-                print(f"[{datetime.now()}] Deleted all rows from {pg_table}")
-    except Exception as e:
-        print(f"[{datetime.now()}] Error deleting rows from PostgreSQL: {e}")
-
     return avg_cpu_percent, max_cpu_percent
 
 
@@ -335,6 +325,16 @@ if __name__ == "__main__":
             print(f"Measuring for {chunk_interval} minutes...")
 
             monitor_postgres_only(run, chunk_interval * 60, table_name)
+
+            # Now delete everything from the table
+            try:
+                with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(f"DELETE FROM {table_name};")
+                        conn.commit()
+                        print(f"\n[{datetime.now()}] Deleted all rows from {table_name}")
+            except Exception as e:
+                print(f"\n[{datetime.now()}] Error deleting rows from PostgreSQL: {e}")
 
             print(f"✔️  Cycle {run} complete.\n")
             run += 1
