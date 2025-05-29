@@ -110,7 +110,8 @@ def monitor_postgres_only(run_number, window_seconds, pg_table, verbose=False):
         # Get system-wide CPU for comparison
         system_cpu = psutil.cpu_percent(interval=SAMPLE_INTERVAL)
 
-        postgres_cpu_percentages.append(postgres_cpu_total)
+        if not postgres_cpu_total == 0:
+            postgres_cpu_percentages.append(postgres_cpu_total)
         system_cpu_percentages.append(system_cpu)
 
         # Only print progress occasionally
@@ -296,6 +297,16 @@ def monitor(run_number, window_seconds, pg_table):
         if run_number == 0:
             f.write("run,avg_cpu_usage,peak_cpu_usage,storage_size_bytes,bytes_received\n")
         f.write(f"{run_number},{avg_cpu_percent:.2f},{max_cpu_percent:.2f},{pg_size},{total_bytes_recv}\n")
+
+    # Now delete everything from the table
+    try:
+        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"DELETE FROM {pg_table};")
+                conn.commit()
+                print(f"[{datetime.now()}] Deleted all rows from {pg_table}")
+    except Exception as e:
+        print(f"[{datetime.now()}] Error deleting rows from PostgreSQL: {e}")
 
     return avg_cpu_percent, max_cpu_percent
 
