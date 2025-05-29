@@ -27,7 +27,7 @@ string UpdateWithMinimumAggregation(string &centralized_view_name, string &centr
 	query += "having count(distinct client_id) >= " + std::to_string(minimum_aggregation);
 	query += ") y\n";
 	query += "where " + join_names.substr(0, join_names.size() - 6) + ";\n\n";
-	query += "insert into " + centralized_table_name + " by name\nselect " + column_names +
+	query += "insert or replace into " + centralized_table_name + " by name\nselect " + column_names +
 					" \nfrom " + centralized_view_name + " \nwhere action = 2;\n\n";
 	query += "delete from " + centralized_view_name + " \nwhere action = 2;\n\n";
 
@@ -39,7 +39,7 @@ string UpdateWithoutMinimumAggregation(string &centralized_view_name, string &ce
 	// we can just remove the tuples in the staging area and insert them into the centralized table
 	// as long as the TTL is not expired
 	// also, the buffer size is always 0, since at every refresh all the data is inserted
-	string query = "insert into " + centralized_table_name + " by name \n";
+	string query = "insert or replace into " + centralized_table_name + " by name \n";
 	query += "select " + column_names + "\n";
 	query += "from " + centralized_view_name + "\n";
 	query += "where rdda_window > (select expired_window from threshold_window);\n\n";
@@ -69,7 +69,10 @@ void FlushFunction(ClientContext &context, const FunctionParameters &parameters)
 	// todo - implement client deletes (opt out)
 	// todo add index logic for upsert
     // todo check expired windows in 1st update w min agg
-	// todo only remove local aggregations if the window elapses (not at every refresh)
+	// todo only remove local (client) aggregations if the window elapses (not at every refresh)
+	// todo change openivm to avoid delta tables
+	// todo implement "insert" only if window = refresh
+	// todo - fix bug in openivm where the insertions cannot be propagated because the threshold_query is too complicated
 
 	auto database = StringValue::Get(parameters.values[1]);
 	if (database != "duckdb" && database != "postgres") {

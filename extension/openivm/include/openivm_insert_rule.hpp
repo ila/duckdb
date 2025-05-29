@@ -99,7 +99,7 @@ public:
 					// the simpler one is INSERT INTO table VALUES (v1, v2, ...)
 					// consists in an INSERT node followed by PROJECTION
 					// for COPY, we have INSERT followed by READ_CSV
-					string full_delta_table_name = "delta_" + insert_node->table.catalog.GetName() + "." + insert_node->table.schema.name + "." +
+					string full_delta_table_name = insert_node->table.catalog.GetName() + "." + insert_node->table.schema.name + ".delta_" +
                                                 insert_node->table.name;
 					if (insert_node->children[0]->type == LogicalOperatorType::LOGICAL_PROJECTION) {
 						// this is either a VALUES or a query
@@ -196,7 +196,7 @@ public:
 			if (delta_table_catalog_entry) { // if it exists, we can append
 				                             // check if already done
 				auto full_table_name = delete_node->table.catalog.GetName() + "." + delete_node->table.schema.name + "." + delete_node->table.name;
-				auto full_delta_table_name = "delta_" + delete_node->table.catalog.GetName() + "." + delete_node->table.schema.name + "." + delete_node->table.name;
+				auto full_delta_table_name = delete_node->table.catalog.GetName() + "." + delete_node->table.schema.name + ".delta_" + delete_node->table.name;
 				Connection con(*input.context.db);
 				con.SetAutoCommit(false);
 				auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + delete_table_name + "'");
@@ -264,7 +264,7 @@ public:
 				                             // check if already done
 				Connection con(*input.context.db);
 				auto full_table_name = update_node->table.catalog.GetName() + "." + update_node->table.schema.name + "." + update_node->table.name;
-				auto full_delta_table_name = "delta_" + update_node->table.catalog.GetName() + "." + update_node->table.schema.name + "." + update_node->table.name;
+				auto full_delta_table_name = update_node->table.catalog.GetName() + "." + update_node->table.schema.name + ".delta_" + update_node->table.name;
 				con.SetAutoCommit(false);
 				auto t = con.Query("select * from _duckdb_ivm_views where view_name = '" + update_table_name + "'");
 				if (t->RowCount() == 0) {

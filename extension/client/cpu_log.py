@@ -80,7 +80,7 @@ if __name__ == "__main__":
     if refresh and not params.CENTRALIZED:
         runs *= params.NUM_CHUNKS
 
-    table_name = "rdda_centralized_view" + params.FLUSH_NAME
+    table_name = "rdda_centralized_view_" + params.FLUSH_NAME
 
     try:
         while run < runs:
