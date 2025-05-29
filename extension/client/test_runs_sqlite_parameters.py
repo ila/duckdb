@@ -41,7 +41,7 @@ UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh
 FLUSH_NAME = "runs"
 UPDATE_WINDOW_NAME = "rdda_centralized_view_daily_runs_city"
 CENTRALIZED = False
-RUNS_PER_CLIENT = 30  # Number of data points per client
+RUNS_PER_CLIENT = 100  # Number of data points per client
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
