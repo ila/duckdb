@@ -324,13 +324,25 @@ def run_cycle(initial_clients, run):
             traceback.print_exc()
 
     print("--- Generating and sending data in chunks ---")
-    for i, chunk in enumerate(common.chunk_clients(active_clients, params.CHUNK_SIZE)):
-        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.CHUNK_SIZE) + 1}")
+
+    # Simple chunking - split active_clients into chunks of CHUNK_SIZE
+    chunks = []
+    for i in range(0, len(active_clients), params.CHUNK_SIZE):
+        chunk = active_clients[i:i + params.CHUNK_SIZE]
+        chunks.append(chunk)
+
+    print(f"Processing {len(active_clients)} clients in {len(chunks)} chunks")
+
+    for i, chunk in enumerate(chunks):
+        print(f"🧩 Dispatching chunk {i + 1}/{len(chunks)} with {len(chunk)} clients: {chunk}")
+
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(run))
-        if i < len(active_clients) // params.CHUNK_SIZE:
-            time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
 
+        # Sleep between chunks (except for the last one)
+        if i < len(chunks) - 1:
+            print(f"⏳ Waiting {params.CLIENT_DISPATCH_INTERVAL} seconds before next chunk...")
+            time.sleep(params.CLIENT_DISPATCH_INTERVAL)
 
     # Save metadata
     metadata["dead_clients"] = list(dead)
