@@ -38,10 +38,10 @@ NUM_CHUNKS = 1 # Number of refreshes per window
 UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh (or wait for the next window)
 
 # Parameters for flush and CPU analysis
-FLUSH_NAME = "runs"
-UPDATE_WINDOW_NAME = "rdda_centralized_view_daily_runs_city"
-CENTRALIZED = False
-RUNS_PER_CLIENT = 100  # Number of data points per client
+FLUSH_NAME = "daily_runs_city"
+UPDATE_WINDOW_NAME = "rdda_centralized_view_daily_runs_city" # Do not change
+CENTRALIZED = True
+RUNS_PER_CLIENT = 1  # Number of data points per client
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",

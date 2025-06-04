@@ -8,20 +8,20 @@
       debug:
         msg: "Starting setup on {{ inventory_hostname }}"
 
-    - name: Install necessary system packages
-      become: true
-      apt:
-        name:
-          - gcc
-          - cmake
-          - ninja-build
-          - git
-          - python3-pip
-          - python3-venv
-          - python3-psycopg2
-          - libpq-dev
-        state: present
-        update_cache: yes
+#    - name: Install necessary system packages
+#      become: true
+#      apt:
+#        name:
+#          - gcc
+#          - cmake
+#          - ninja-build
+#          - git
+#          - python3-pip
+#          - python3-venv
+#          - python3-psycopg2
+#          - libpq-dev
+#        state: present
+#        update_cache: yes
 
     - name: Log after system packages install
       debug:
@@ -72,7 +72,7 @@
 
     - name: Run the Python script
       become: true
-      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_centralized.py
+      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_decentralized.py
 
     - name: Log after running the script
       debug:

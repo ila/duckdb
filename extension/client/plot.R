@@ -1,5 +1,5 @@
 # === Package Installer ===
-packages <- c("ggplot2", "dplyr", "ggpubr", "gridExtra", "ggplotify", "readr", "tidyr", "purrr", "stringr", "extrafont", "scales", "knitr")
+packages <- c("ggplot2", "dplyr", "ggpubr", "gridExtra", "ggplotify", "readr", "tidyr", "purrr", "stringr", "extrafont", "scales", "knitr", "cowplot")
 # Set CRAN mirror
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 
@@ -22,11 +22,9 @@ library(stringr)
 library(extrafont)
 library(scales)
 library(knitr)
+library(cowplot)
 
 # font_import()
-
-library(dplyr)
-library(knitr)
 
 
 summarize_queries_to_latex <- function(df) {
@@ -82,6 +80,12 @@ decentralized_refresh_2 <- read.csv("results/results_daily_runs_city_refresh_2_m
 decentralized_window_4 <- read.csv("results/results_daily_runs_city_window_6_min_agg_100.csv")
 decentralized_window_2 <- read.csv("results/results_daily_runs_city_window_12_min_agg_100.csv")
 
+# cpu data
+cpu_decentralized <- read.csv("results/cpu_decentralized.csv")
+cpu_centralized_10 <- read.csv("results/cpu_centralized_10.csv")
+cpu_centralized_30 <- read.csv("results/cpu_centralized_30.csv")
+cpu_centralized_100 <- read.csv("results/cpu_centralized_100.csv")
+
 # Add source labels
 centralized_1$system <- "Centralized, 1 run/day"
 centralized_3$system <- "Centralized, 3 runs/day"
@@ -94,6 +98,12 @@ decentralized_refresh_4$system <- "4 refreshes/window"
 decentralized_refresh_2$system <- "2 refreshes/window"
 decentralized_window_4$system <- "Window of 6 hours"
 decentralized_window_2$system <- "Window of 12 hours"
+
+# cpu data
+cpu_decentralized$system <- "Decentralized"
+cpu_centralized_10$system <- "Centralized, 10 data points/day"
+cpu_centralized_30$system <- "Centralized, 30 data points/day"
+cpu_centralized_100$system <- "Centralized, 100 data points/day"
 
 decentralized_refresh_4_grouped <- decentralized_refresh_4 %>%
   mutate(run = run %/% 4) %>%  # creates groups: 1–4 -> 1, 5–8 -> 2, etc.
@@ -130,6 +140,7 @@ all_data_1 <- bind_rows(centralized_1, centralized_3, decentralized)
 all_data_2 <- bind_rows(centralized_1, decentralized_min_agg, decentralized_min_agg_90, decentralized_upsert)
 all_data_3 <- bind_rows(decentralized_upsert, decentralized_refresh_4_grouped, decentralized_refresh_2_grouped)
 all_data_4 <- bind_rows(decentralized_upsert, decentralized_window_4_grouped, decentralized_window_2_grouped)
+all_data_cpu <- bind_rows(cpu_decentralized, cpu_centralized_10, cpu_centralized_30, cpu_centralized_100)
 
 all_data_1 <- all_data_1 %>%
   filter(!as.character(query_hash) %in% queries_to_exclude)
@@ -162,8 +173,9 @@ agg_data_4 <- all_data_4 %>%
 # summarize_queries_to_latex(all_data_2)
 
 cb_palette <- c(
-  "Centralized, 1 run/day" = "#332288",
-  "Centralized, 3 runs/day" = "#A755C2",
+  "Centralized, 10 data points/day" = "#332288",
+  "Centralized, 30 data points/day" = "#A755C2",
+  "Centralized, 100 data points/day" = "#88CCEE",
   "Decentralized" = "#C51310",
   "Dec., min. agg. 100, 100% selectivity" = "#f1a66a",
   "Dec., min. agg. 100, 90% selectivity" = "#FF3366",
@@ -172,8 +184,9 @@ cb_palette <- c(
 )
 
 cb_shapes <- c(
-  "Centralized, 1 run/day" = 18,  # diamond
-  "Centralized, 3 runs/day" = 17,  # triangle
+  "Centralized, 10 data points/day" = 18,  # diamond
+  "Centralized, 30 data points/day" = 17,  # triangle
+  "Centralized, 100 data points/day" = 16,  # square
   "Decentralized" = 15,  # square
   "Dec., min. agg. 100, 100% selectivity" = 16,  # circle
   "Dec., min. agg. 100, 90% selectivity" = 10,  # small circle
@@ -270,4 +283,99 @@ plot_4 <- ggplot(agg_data_4, aes(x = run, y = total_time, color = system, shape 
 # Save the plot
 png("plots/window_plot.png", width = 2000, height = 1100, res = 350)
 print(plot_4)
+dev.off()
+
+
+# cpu plots
+plot_5 <- ggplot(all_data_cpu, aes(x = run, y = avg_system_cpu, color = system, shape = system)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(x = "Benchmark Run", y = "Average CPU Usage (%)", color = "System", shape = "System") +
+  scale_color_manual(values = cb_palette) +
+  scale_shape_manual(values = cb_shapes) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, 100, by = 10)) +
+  theme_minimal(base_size = 14, base_family = "Linux Libertine") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.margin = margin(c(3, 3, 3, 3)),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.text = element_text(size = 9)
+  ) +
+    guides(color = guide_legend(ncol = 2,
+                                override.aes = list(size = 2),  # Smaller legend symbols
+                                keywidth = unit(0.8, "cm"),    # Narrower legend keys
+                                keyheight = unit(0.1, "cm")))  # Shorter legend keys
+
+
+# Save the plot
+png("plots/cpu_plot.png", width = 2000, height = 1000, res = 350)
+print(plot_5)
+dev.off()
+
+plot_6 <- ggplot(all_data_cpu, aes(x = run, y = storage_size_bytes / 1000000000, color = system, shape = system)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(x = "Benchmark Run", y = "Storage Space (GB)", color = "System", shape = "System") +
+  scale_color_manual(values = cb_palette) +
+  scale_shape_manual(values = cb_shapes) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, 10, by = 0.2)) +
+  theme_minimal(base_size = 14, base_family = "Linux Libertine") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.margin = margin(c(3, 3, 3, 3)),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.text = element_text(size = 9)
+  ) +
+    guides(color = guide_legend(ncol = 2,
+                                override.aes = list(size = 2),  # Smaller legend symbols
+                                keywidth = unit(0.8, "cm"),    # Narrower legend keys
+                                keyheight = unit(0.1, "cm")))  # Shorter legend keys
+
+
+# Save the plot
+png("plots/storage_plot.png", width = 2000, height = 1000, res = 350)
+print(plot_6)
+dev.off()
+
+plot_7 <- ggplot(all_data_cpu, aes(x = run, y = bytes_received / 1000000000, color = system, shape = system)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(x = "Benchmark Run", y = "Data Received (GB)", color = "System", shape = "System") +
+  scale_color_manual(values = cb_palette) +
+  scale_shape_manual(values = cb_shapes) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, 10, by = 0.5)) +
+  theme_minimal(base_size = 14, base_family = "Linux Libertine") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "top",
+    legend.margin = margin(c(3, 3, 3, 3)),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.text = element_text(size = 9)
+  ) +
+    guides(color = guide_legend(ncol = 2,
+                                override.aes = list(size = 2),  # Smaller legend symbols
+                                keywidth = unit(0.8, "cm"),    # Narrower legend keys
+                                keyheight = unit(0.1, "cm")))  # Shorter legend keys
+
+
+# Save the plot
+png("plots/network_plot.png", width = 2000, height = 1000, res = 350)
+print(plot_7)
+dev.off()
+
+# Remove legends from individual plots
+# plot_5 <- plot_5 + theme(legend.position = "none")
+# plot_6 <- plot_6 + theme(legend.position = "none")
+# plot_7 <- plot_7 + theme(legend.position = "none")
+
+
+
+# Save to file
+png("plots/combined_plot.png", width = 2000, height = 1000, res = 350)
+ggarrange(plot_5, plot_6, plot_7, ncol=3, nrow=1, common.legend = TRUE, legend="bottom")
 dev.off()
