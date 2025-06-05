@@ -139,7 +139,8 @@ def send_to_postgres(i, run):
     try:
         # Step 1: Read from SQLite
         with sqlite3.connect(db_path) as sqlite_conn:
-            rows = sqlite_conn.execute("SELECT * FROM daily_runs_city").fetchall()
+            # We put a limit of 1 because there is a bug here (very rarely the setup is called twice)
+            rows = sqlite_conn.execute("SELECT * FROM daily_runs_city LIMIT 1").fetchall()
 
         if not rows:
             raise ValueError(f"No rows found in daily_runs_city for client {i}")
@@ -324,25 +325,13 @@ def run_cycle(initial_clients, run):
             traceback.print_exc()
 
     print("--- Generating and sending data in chunks ---")
-
-    # Simple chunking - split active_clients into chunks of CHUNK_SIZE
-    chunks = []
-    for i in range(0, len(active_clients), params.CHUNK_SIZE):
-        chunk = active_clients[i:i + params.CHUNK_SIZE]
-        chunks.append(chunk)
-
-    print(f"Processing {len(active_clients)} clients in {len(chunks)} chunks")
-
-    for i, chunk in enumerate(chunks):
-        print(f"🧩 Dispatching chunk {i + 1}/{len(chunks)} with {len(chunk)} clients: {chunk}")
-
+    for i, chunk in enumerate(common.chunk_clients(active_clients, params.CHUNK_SIZE)):
+        print(f"🧩 Dispatching chunk {i + 1}/{(len(active_clients) // params.CHUNK_SIZE) + 1}")
         with ThreadPoolExecutor(max_workers=params.MAX_CONCURRENT_CLIENTS) as executor:
             executor.map(run_client, chunk, repeat(run))
+        if i < len(active_clients) // params.CHUNK_SIZE:
+            time.sleep(params.CLIENT_DISPATCH_INTERVAL)  # e.g., 5 seconds
 
-        # Sleep between chunks (except for the last one)
-        if i < len(chunks) - 1:
-            print(f"⏳ Waiting {params.CLIENT_DISPATCH_INTERVAL} seconds before next chunk...")
-            time.sleep(params.CLIENT_DISPATCH_INTERVAL)
 
     # Save metadata
     metadata["dead_clients"] = list(dead)
