@@ -19,6 +19,7 @@
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
 #include "duckdb/planner/planner.hpp"
+#include "logical_plan_to_sql.hpp"
 #include "openivm_benchmark.hpp"
 #include "openivm_cross_system_demo.hpp"
 #include "openivm_upsert.hpp"

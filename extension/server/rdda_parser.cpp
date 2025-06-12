@@ -13,7 +13,7 @@
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/planner.hpp"
 
-#include <data_representation.hpp>
+/* #include <data_representation.hpp> */ // TODO: Figure out what to do with the removed data_representation include.
 #include <iostream>
 #include <rdda/rdda_helpers.hpp>
 #include <rdda/rdda_parse_table.hpp>

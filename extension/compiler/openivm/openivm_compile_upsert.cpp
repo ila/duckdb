@@ -43,32 +43,40 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	// this should be the end of the painful part (famous last words)
 
 	// we start building the CTE (assuming it's always named ivm_cte)
+	auto agg_alias_map = std::map<string, string>();
 	string cte_string = "with ivm_cte AS (\n";
-	string cte_select_string = "select ";
-	for (auto &key : keys) {
-		cte_select_string = cte_select_string + key + ", ";
-	}
-	// now we sum the columns
-	for (auto &column : aggregates) {
-		cte_select_string = cte_select_string + "\n\tsum(case when _duckdb_ivm_multiplicity = false then -" + column +
-		                    " else " + column + " end) as " + column + ", ";
-	}
-	// remove the last comma
-	cte_select_string.erase(cte_select_string.size() - 2, 2);
-	cte_select_string += "\n";
-	// from
-	string cte_from_string = "from delta_" + view_name + "\n";
-	// group by
-	string cte_group_by_string = "group by ";
-	for (auto &key : keys) {
-		cte_group_by_string = cte_group_by_string + key + ", ";
-	}
-	// remove the last comma
-	cte_group_by_string.erase(cte_group_by_string.size() - 2, 2);
-	// cte_group_by_string += "\n";
+	{
+		string cte_select_string = "select ";
+		for (auto &key : keys) {
+			cte_select_string = cte_select_string + key + ", ";
+		}
+		// now we sum the columns.
+		for (size_t i = 0; i < aggregates.size(); ++i) {
+			// TODO: Can actually just be made a vector of strings (to be in sync with aggregates()).
+			string &column = aggregates[i];
+			// Cannot use functions in alias names, so create a custom alias.
+			// Will also be used later whenever needed.
+			agg_alias_map[column] = "agg_alias_" + std::to_string(i);
+			// Note: all columns should be surrounded by double quotes. `\"column\"`.
+			cte_select_string = (cte_select_string + "\n  sum(case when _duckdb_ivm_multiplicity = false then -\"" +
+			                     column + "\" else \"" + column + "\" end) as " + agg_alias_map.at(column) + ", ");
+		}
+		// remove the last comma
+		cte_select_string.erase(cte_select_string.size() - 2, 2);
+		cte_select_string += "\n";
+		// from
+		string cte_from_string = "from delta_" + view_name + "\n";
+		// group by
+		string cte_group_by_string = "group by ";
+		for (auto &key : keys) {
+			cte_group_by_string = cte_group_by_string + key + ", ";
+		}
+		// remove the last comma
+		cte_group_by_string.erase(cte_group_by_string.size() - 2, 2);
+		// cte_group_by_string += "\n";
 
-	cte_string = cte_string + cte_select_string + cte_from_string + cte_group_by_string + ")\n";
-
+		cte_string = cte_string + cte_select_string + cte_from_string + cte_group_by_string + ")\n";
+	}
 	// now build the external query
 	// select is easy; both tables have the same columns
 	// we assume that the delta view has the same columns as the view + the multiplicity column
@@ -81,8 +89,8 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	// now we sum the columns
 	for (auto &column : aggregates) {
 		// we coalesce newly added groups (otherwise the sum would be null)
-		select_string = select_string + "\n\tsum(coalesce(" + view_name + "." + column + ", 0) + delta_" + view_name +
-		                "." + column + "), ";
+		select_string = (select_string + "\n    sum(coalesce(" + view_name + ".\"" + column + "\", 0) + delta_" +
+		                 view_name + "." + agg_alias_map.at(column) + "), ");
 	}
 	// remove the last comma
 	select_string.erase(select_string.size() - 2, 2);
@@ -111,14 +119,14 @@ string CompileAggregateGroups(string &view_name, optional_ptr<CatalogEntry> inde
 	// group_by_string += "\n";
 
 	string external_query_string = select_string + from_string + join_string + group_by_string + ";";
-	string query_string = cte_string + external_query_string;
-	string upsert_query = "insert or replace into " + view_name + "\n" + query_string + "\n";
+	// CTE goes *before* INSERT keyword!
+	string upsert_query = cte_string + " insert or replace into " + view_name + "\n" + external_query_string + "\n";
 
 	// we need to delete the rows with SUM or COUNT equal to 0
 	// todo - sometimes this is wrong (ex. sometimes the sum is allowed to be 0?)
 	string delete_query = "\ndelete from " + view_name + " where ";
 	for (auto &column : aggregates) {
-		delete_query += column + " = 0 and ";
+		delete_query += "\"" + column + "\" = 0 and ";
 	}
 	// remove the last "and"
 	delete_query.erase(delete_query.size() - 5, 5);
@@ -145,10 +153,12 @@ string CompileSimpleAggregates(string &view_name, const vector<string> &column_n
 	string update_query = "update " + view_name + "\nset ";
 	// there should be only one column here
 	for (auto &column : column_names) {
+		// Use 4 spaces instead of tab character.
 		if (column != "_duckdb_ivm_multiplicity") { // we don't need the multiplicity column
-			update_query += column + " = \n\t" + column + " \n\t\t- coalesce((select " + column + " from delta_" +
-			                view_name + " where _duckdb_ivm_multiplicity = false), 0)\n\t\t+ coalesce((select " +
-			                column + " from delta_" + view_name + " where _duckdb_ivm_multiplicity = true), 0);\n";
+			update_query +=
+			    (column + " = \n    " + column + " \n        - coalesce((select " + column + " from delta_" +
+			     view_name + " where _duckdb_ivm_multiplicity = false), 0)\n        + coalesce((select " + column +
+			     " from delta_" + view_name + " where _duckdb_ivm_multiplicity = true), 0);\n");
 		}
 	}
 	// in this case, we choose not to delete from the main view if the final SUM or COUNT is 0

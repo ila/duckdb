@@ -4,6 +4,7 @@
 
 #include "include/flush_function.hpp"
 
+#include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/common/printer.hpp>
 #include <duckdb/parser/parser.hpp>
 #include <duckdb/planner/planner.hpp>
@@ -11,7 +12,7 @@
 
 #include <common.hpp>
 #include <compiler_extension.hpp>
-#include <logical_plan_to_string.hpp>
+/* #include <logical_plan_to_string.hpp> */ // TODO: Figure what to do with former LPTS include.
 #include <regex>
 #include <duckdb/common/serializer/binary_deserializer.hpp>
 #include <duckdb/common/serializer/binary_serializer.hpp>
@@ -135,6 +136,17 @@ void InsertClient(Connection &con, unordered_map<string, string> &config, uint64
 	}
 	Printer::Print("Added client: " + std::to_string(id));
 }
+
+/* FIXME 2025-06-12: check if needed.
+void CloseConnection(int connfd, vector<int32_t> &client_socket, int index) {
+	sockaddr_in peeraddr;
+	socklen_t addrlen = sizeof(peeraddr);
+	getpeername(connfd, reinterpret_cast<struct sockaddr *>(&peeraddr), &addrlen);
+	Printer::Print("Host disconnected!");
+	close(connfd);
+	client_socket[index] = 0;
+}
+*/
 
 void InsertNewClient(int32_t connfd, Connection &con, unordered_map<string, string> &config) {
 	uint64_t id;

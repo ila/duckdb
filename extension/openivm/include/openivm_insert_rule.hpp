@@ -1,7 +1,7 @@
 #ifndef DUCKDB_OPENIVM_INSERT_RULE_HPP
 #define DUCKDB_OPENIVM_INSERT_RULE_HPP
 
-#include "../../compiler/include/logical_plan_to_string.hpp"
+#include "../../compiler/include/logical_plan_to_sql.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/function/table/read_csv.hpp"
@@ -142,8 +142,10 @@ public:
 							// any other node -> subquery
 							insert_query += " by name ";
 							// this assumes no aliases in the SELECT statement
-							// we call LPTS on the projection
-							string subquery_string = LogicalPlanToString(*con.context, insert_node->children[0]);
+							// we call LPTsql on the projection
+							auto lptsql = LogicalPlanToSql(*con.context, insert_node->children[0]);
+							unique_ptr<IRStruct> ir = lptsql.LogicalPlanToIR();
+							string subquery_string = ir->ToQuery(true);
 							insert_query += subquery_string;
 						}
 						auto r = con.Query(insert_query);
@@ -208,18 +210,27 @@ public:
 					// todo 3 -- throw exception if the plan is too complicated
 					string insert_string =
 					    "insert into " + full_delta_table_name + " select *, false, now() from " + full_table_name;
+					string where_string;
 					// handling the potential filters
 					if (plan->children[0]->type == LogicalOperatorType::LOGICAL_FILTER) {
 						auto filter = dynamic_cast<LogicalFilter *>(plan->children[0].get());
-						// FIXME 2024-11-04 use ToString or do something with ParamsToString?
-						insert_string += " where " + filter->ToString();
+						auto conditions = filter->ParamsToString();
+						for (auto &c : conditions) {
+							if (c.first == "Expressions") {
+								where_string += c.second.c_str();
+							}
+						}
 					} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_GET) {
 						auto get = dynamic_cast<LogicalGet *>(plan->children[0].get());
 						// we only add WHERE if there are table filters
 						if (!get->table_filters.filters.empty()) {
-							// FIXME 2024-11-04 use ToString or do something with ParamsToString?
-							insert_string += " where " + get->ToString();
-							insert_string = insert_string.substr(0, insert_string.find('\n'));
+							where_string += " where ";
+							auto conditions = get->ParamsToString();
+							for (auto &c : conditions) {
+								if (c.first == "Filters") {
+									where_string += c.second.c_str();
+								}
+							}
 						}
 					} else if (plan->children[0]->type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
 						// do nothing?
@@ -252,6 +263,7 @@ public:
 			// updates consist in update + projection (+ filter) + scan
 			auto update_node = dynamic_cast<LogicalUpdate *>(root);
 			auto update_table_name = update_node->table.name;
+
 			if (update_table_name.substr(0, 6) == "delta_") {
 				return;
 			}
@@ -318,7 +330,9 @@ public:
 							where_string += " where ";
 							auto conditions = get->ParamsToString();
 							for (auto &c : conditions) {
-								if (c.first == "Expressions") {
+								// FIXME 2025-06-12: Filters or Expressions? (from a merge conflict)
+								if (c.first == "Filters") {
+//								if (c.first == "Expressions") {
 									where_string += c.second.c_str();
 								}
 							}

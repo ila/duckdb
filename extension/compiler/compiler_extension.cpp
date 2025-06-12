@@ -5,7 +5,7 @@
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/planner.hpp"
-#include "include/logical_plan_to_string.hpp"
+#include "include/logical_plan_to_sql.hpp"
 #include "include/rdda/generate_python_script.hpp"
 
 #include <fstream>
@@ -17,31 +17,29 @@ namespace duckdb {
 
 // table function definitions
 //------------------------------------------------------------------------------
-struct LogicalPlanToStringTestData : public GlobalTableFunctionState {
-	LogicalPlanToStringTestData() : offset(0) {
+struct LogicalPlanToSqlTestData : public GlobalTableFunctionState {
+	LogicalPlanToSqlTestData() : offset(0) {
 	}
 	idx_t offset;
 };
 
-unique_ptr<GlobalTableFunctionState> LogicalPlanToStringTestInit(ClientContext &context,
-                                                                 TableFunctionInitInput &input) {
-	auto result = make_uniq<LogicalPlanToStringTestData>();
+unique_ptr<GlobalTableFunctionState> LogicalPlanToSqlTestInit(ClientContext &context, TableFunctionInitInput &input) {
+	auto result = make_uniq<LogicalPlanToSqlTestData>();
 	return std::move(result);
 }
 
-static unique_ptr<TableRef> LogicalPlanToStringTest(ClientContext &context, TableFunctionBindInput &input) {
+static unique_ptr<TableRef> LogicalPlanToSqlTest(ClientContext &context, TableFunctionBindInput &input) {
 	return nullptr;
 }
 
-struct LogicalPlanToStringTestFunctionData : public TableFunctionData {
-	LogicalPlanToStringTestFunctionData() {
+struct LogicalPlanToSqlTestFunctionData : public TableFunctionData {
+	LogicalPlanToSqlTestFunctionData() {
 	}
 };
 
-static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContext &context,
-                                                                    TableFunctionBindInput &input,
-                                                                    vector<LogicalType> &return_types,
-                                                                    vector<string> &names) {
+static duckdb::unique_ptr<FunctionData> LogicalPlanToSqlTestBind(ClientContext &context, TableFunctionBindInput &input,
+                                                                 vector<LogicalType> &return_types,
+                                                                 vector<string> &names) {
 	// called when the pragma is executed
 	// specifies the output format of the query (columns)
 	// display the outputs (do not remove)
@@ -56,11 +54,14 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContex
 	planner.CreatePlan(statement->Copy());
 	planner.plan->Print();
 
-	string planString = LogicalPlanToString(context, planner.plan);
-	Printer::Print("String: " + planString);
+	LogicalPlanToSql lpts_class = LogicalPlanToSql(context, planner.plan);
+	unique_ptr<IRStruct> ir_struct = lpts_class.LogicalPlanToIR();
+	// Passing true, to print the plan using newlines (for readability).
+	string plan_string = ir_struct->ToQuery(true);
+	Printer::Print("String: " + plan_string);
 
 	// create result set using column bindings returned by the planner
-	auto result = make_uniq<LogicalPlanToStringTestFunctionData>();
+	auto result = make_uniq<LogicalPlanToSqlTestFunctionData>();
 
 	return_types.emplace_back(LogicalTypeId::BOOLEAN);
 	names.emplace_back("Done");
@@ -68,8 +69,8 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToStringTestBind(ClientContex
 	return std::move(result);
 }
 
-static void LogicalPlanToStringTestFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-	auto &data = dynamic_cast<LogicalPlanToStringTestData &>(*data_p.global_state);
+static void LogicalPlanToSqlTestFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	auto &data = dynamic_cast<LogicalPlanToSqlTestData &>(*data_p.global_state);
 	if (data.offset >= 1) {
 		// finished returning values
 		return;
@@ -92,12 +93,12 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// db_config.parser_extensions.push_back(ivm_parser);
 	// db_config.optimizer_extensions.push_back(ivm_rewrite_rule);
 
-	TableFunction lpts_func("LogicalPlanToStringTest", {LogicalType::VARCHAR}, LogicalPlanToStringTestFunction,
-	                        LogicalPlanToStringTestBind, LogicalPlanToStringTestInit);
+	TableFunction lpts_func("LogicalPlanToSqlTest", {LogicalType::VARCHAR}, LogicalPlanToSqlTestFunction,
+	                        LogicalPlanToSqlTestBind, LogicalPlanToSqlTestInit);
 
 	con.BeginTransaction();
 	auto &catalog = Catalog::GetSystemCatalog(*con.context);
-	lpts_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(LogicalPlanToStringTest);
+	lpts_func.bind_replace = reinterpret_cast<table_function_bind_replace_t>(LogicalPlanToSqlTest);
 	lpts_func.name = "lpts_test";
 	lpts_func.named_parameters["query"];
 	CreateTableFunctionInfo lpts_func_info(lpts_func);

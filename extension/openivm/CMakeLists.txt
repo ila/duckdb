@@ -21,7 +21,7 @@ add_library(
   openivm_upsert.cpp
   openivm_rewrite_rule.cpp
   openivm_index_regen.cpp
-  ../compiler/logical_plan_to_string.cpp
+  ../compiler/logical_plan_to_sql.cpp
   ../compiler/compiler_extension.cpp
   ../compiler/openivm/openivm_compile_upsert.cpp)
 
@@ -39,7 +39,7 @@ build_loadable_extension(
   openivm_upsert.cpp
   openivm_rewrite_rule.cpp
   openivm_index_regen.cpp
-  ../compiler/logical_plan_to_string.cpp
+  ../compiler/logical_plan_to_sql.cpp
   ../compiler/compiler_extension.cpp
   ../compiler/openivm/openivm_compile_upsert.cpp)
 
