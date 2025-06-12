@@ -59,7 +59,7 @@ const vector<string> ExtensionHelper::PathComponents() {
 string ExtensionHelper::ExtensionInstallDocumentationLink(const string &extension_name) {
 	auto components = PathComponents();
 
-	string link = "https://duckdb.org/docs/extensions/troubleshooting";
+	string link = "https://duckdb.org/docs/stable/extensions/troubleshooting";
 
 	if (components.size() >= 2) {
 		link += "/?version=" + components[0] + "&platform=" + components[1] + "&extension=" + extension_name;
@@ -118,19 +118,7 @@ string ExtensionHelper::ExtensionDirectory(DatabaseInstance &db, FileSystem &fs)
 	string extension_directory = GetExtensionDirectoryPath(db, fs);
 	{
 		if (!fs.DirectoryExists(extension_directory)) {
-			auto sep = fs.PathSeparator(extension_directory);
-			auto splits = StringUtil::Split(extension_directory, sep);
-			D_ASSERT(!splits.empty());
-			string extension_directory_prefix;
-			if (StringUtil::StartsWith(extension_directory, sep)) {
-				extension_directory_prefix = sep; // this is swallowed by Split otherwise
-			}
-			for (auto &split : splits) {
-				extension_directory_prefix = extension_directory_prefix + split + sep;
-				if (!fs.DirectoryExists(extension_directory_prefix)) {
-					fs.CreateDirectory(extension_directory_prefix);
-				}
-			}
+			fs.CreateDirectoriesRecursive(extension_directory);
 		}
 	}
 	D_ASSERT(fs.DirectoryExists(extension_directory));
@@ -220,11 +208,10 @@ string ExtensionHelper::ExtensionUrlTemplate(optional_ptr<const DatabaseInstance
 	} else {
 		versioned_path = "/${REVISION}/${PLATFORM}/${NAME}.duckdb_extension";
 	}
+	string default_endpoint = ExtensionRepository::DEFAULT_REPOSITORY_URL;
 #ifdef WASM_LOADABLE_EXTENSIONS
-	string default_endpoint = DEFAULT_REPOSITORY;
 	versioned_path = versioned_path + ".wasm";
 #else
-	string default_endpoint = ExtensionRepository::DEFAULT_REPOSITORY_URL;
 	versioned_path = versioned_path + CompressionExtensionFromType(FileCompressionType::GZIP);
 #endif
 	string url_template = repository.path + versioned_path;
@@ -319,7 +306,8 @@ static unique_ptr<ExtensionInstallInfo> DirectInstallExtension(DatabaseInstance 
 	// Throw error on failure
 	if (!exists) {
 		if (!fs.IsRemoteFile(file)) {
-			throw IOException("Failed to copy local extension \"%s\" at PATH \"%s\"\n", extension_name, file);
+			throw IOException("Failed to install local extension \"%s\", no access to the file at PATH \"%s\"\n",
+			                  extension_name, file);
 		}
 		if (StringUtil::StartsWith(file, "https://")) {
 			throw IOException("Failed to install remote extension \"%s\" from url \"%s\"", extension_name, file);
@@ -560,9 +548,6 @@ ExtensionHelper::InstallExtensionInternal(DatabaseInstance &db, FileSystem &fs, 
 #ifdef DUCKDB_DISABLE_EXTENSION_LOAD
 	throw PermissionException("Installing external extensions is disabled through a compile time flag");
 #else
-	if (!db.config.options.enable_external_access) {
-		throw PermissionException("Installing extensions is disabled through configuration");
-	}
 
 	auto extension_name = ApplyExtensionAlias(fs.ExtractBaseName(extension));
 	string local_extension_path = fs.JoinPath(local_path, extension_name + ".duckdb_extension");
