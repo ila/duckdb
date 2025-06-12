@@ -56,8 +56,9 @@ static duckdb::unique_ptr<FunctionData> LogicalPlanToSqlTestBind(ClientContext &
 
 	LogicalPlanToSql lpts_class = LogicalPlanToSql(context, planner.plan);
 	unique_ptr<IRStruct> ir_struct = lpts_class.LogicalPlanToIR();
-	string planString = ir_struct->ToQuery(true);
-	Printer::Print("String: " + planString);
+	// Passing true, to print the plan using newlines (for readability).
+	string plan_string = ir_struct->ToQuery(true);
+	Printer::Print("String: " + plan_string);
 
 	// create result set using column bindings returned by the planner
 	auto result = make_uniq<LogicalPlanToSqlTestFunctionData>();

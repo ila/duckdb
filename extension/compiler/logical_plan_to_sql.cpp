@@ -45,7 +45,7 @@ std::string vec_to_separated_list(vector<std::string> input_list, const std::str
 
 namespace duckdb {
 
-std::string FinalReadNode::ToQuery() {
+string FinalReadNode::ToQuery() {
 	const size_t col_count = final_column_list.size();
 	if (child_cte_column_list.size() != col_count) {
 		throw std::runtime_error("Size mismatch between column lists!");
@@ -64,9 +64,9 @@ std::string FinalReadNode::ToQuery() {
 	sql_str << child_cte_name;
 	return sql_str.str();
 }
-std::string InsertNode::ToQuery() {
+string InsertNode::ToQuery() {
 	// Currently does not support the type with "INSERT ... VALUES.
-	std::stringstream insert_str;
+	stringstream insert_str;
 	insert_str << "INSERT ";
 	switch (action_type) {
 	case OnConflictAction::THROW:
@@ -88,7 +88,7 @@ std::string InsertNode::ToQuery() {
 	insert_str << child_cte_name;
 	return insert_str.str();
 }
-std::string CteNode::ToCteQuery() {
+string CteNode::ToCteQuery() {
 	// Format: "cte_name (col_a, col_b, col_c...) as (select ...)";
 	std::ostringstream cte_str;
 	cte_str << cte_name;
@@ -103,7 +103,7 @@ std::string CteNode::ToCteQuery() {
 	return cte_str.str();
 	// 	return cte_name + " (" + vec_to_separated_list(cte_column_list)  + ") as (" + this->ToQuery() + ")";
 }
-std::string GetNode::ToQuery() {
+string GetNode::ToQuery() {
 	std::ostringstream get_str;
 	get_str << "SELECT ";
 	if (column_names.empty()) {
@@ -127,7 +127,7 @@ std::string GetNode::ToQuery() {
 	// Note: no semicolon at the end; this is handled by the IR function.
 	return get_str.str();
 }
-std::string FilterNode::ToQuery() {
+string FilterNode::ToQuery() {
 	std::ostringstream get_str;
 	get_str << "SELECT * FROM ";
 	get_str << child_cte_name;
@@ -139,7 +139,7 @@ std::string FilterNode::ToQuery() {
 	}
 	return get_str.str();
 }
-std::string ProjectNode::ToQuery() {
+string ProjectNode::ToQuery() {
 	std::ostringstream project_str;
 	project_str << "SELECT ";
 	if (column_names.empty()) {
@@ -152,7 +152,7 @@ std::string ProjectNode::ToQuery() {
 	return project_str.str();
 }
 
-std::string AggregateNode::ToQuery() {
+string AggregateNode::ToQuery() {
 	std::ostringstream aggregate_str;
 	aggregate_str << "SELECT ";
 	if (group_by_columns.empty()) {
@@ -172,7 +172,7 @@ std::string AggregateNode::ToQuery() {
 	}
 	return aggregate_str.str();
 }
-std::string JoinNode::ToQuery() {
+string JoinNode::ToQuery() {
 	std::ostringstream join_str;
 	join_str << "SELECT * FROM ";
 	join_str << left_cte_name;
@@ -200,7 +200,7 @@ std::string JoinNode::ToQuery() {
 	join_str << vec_to_separated_list(join_conditions, " AND ");
 	return join_str.str();
 }
-std::string UnionNode::ToQuery() {
+string UnionNode::ToQuery() {
 	std::ostringstream union_str;
 	union_str << "SELECT * FROM ";
 	union_str << left_cte_name;
@@ -213,7 +213,7 @@ std::string UnionNode::ToQuery() {
 	union_str << right_cte_name;
 	return union_str.str();
 }
-std::string IRStruct::ToQuery(const bool use_newlines) {
+string IRStruct::ToQuery(const bool use_newlines) {
 	std::ostringstream sql_str;
 	// First add all CTEs...
 	if (nodes.empty()) {
@@ -239,11 +239,11 @@ std::string IRStruct::ToQuery(const bool use_newlines) {
 	sql_str << ";";
 	return sql_str.str();
 }
-std::string LogicalPlanToSql::ColStruct::ToUniqueColumnName() const {
+string LogicalPlanToSql::ColStruct::ToUniqueColumnName() const {
 	return "t" + std::to_string(table_index) + "_" + (alias.empty() ? column_name : alias);
 }
 
-std::string LogicalPlanToSql::ExpressionToAliasedString(const unique_ptr<Expression> &expression) const {
+string LogicalPlanToSql::ExpressionToAliasedString(const unique_ptr<Expression> &expression) const {
 	// Maybe needed for the specifics inside an operator.
 	const ExpressionClass e_class = expression->GetExpressionClass();
 	std::ostringstream expr_str;
@@ -326,7 +326,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		vector<string> column_names;
 		vector<string> filters;
 
-		vector<std::string> cte_column_names;
+		vector<string> cte_column_names;
 		/* IMPORTANT! Distinguish ColumnBindings from ColumnIDs:
 		 * -> ColumnBindings are the representation of the columns inside the logical plan
 		 * -> ColumnIds are the order of the columns in the physical table; needed to get the data out of the table.
@@ -341,7 +341,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		for (size_t i = 0; i < col_binds.size(); ++i) {
 			// Get using `i`.
 			const idx_t idx = col_ids[i].GetPrimaryIndex();
-			std::string column_name = plan_as_get.names[idx]; // Using `idx`, see comment above!
+			string column_name = plan_as_get.names[idx]; // Using `idx`, see comment above!
 			const ColumnBinding &cb = col_binds[i];
 			// Populate stuff.
 			column_names.push_back(column_name);
@@ -351,7 +351,6 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 			column_map[cb] = std::move(col_struct);
 			/* End of ColStruct logic */
 		}
-		// todo - test this logic
 		if (!plan_as_get.table_filters.filters.empty()) {
 			for (auto &filter : plan_as_get.table_filters.filters) {
 				filters.push_back(filter.second->ToString(plan_as_get.names[filter.first]));
@@ -370,7 +369,8 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		for (const unique_ptr<Expression> &expression : plan_as_filter.expressions) {
 			conditions.emplace_back(ExpressionToAliasedString(expression));
 		}
-		return make_uniq<FilterNode>(my_index, vector<string>() /* TODO: fill. Not urgent, but would be consistent. */,
+		// NOTE: This code works without filling the CTE's column names, but it may be more consistent to still fill.
+		return make_uniq<FilterNode>(my_index, vector<string>(),
 		                             cte_nodes[children_indices[0]]->cte_name, std::move(conditions));
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
@@ -382,7 +382,6 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		vector<string> column_names;
 		vector<string> cte_column_names;
 		for (size_t i = 0; i < plan_as_projection.expressions.size(); ++i) {
-			// Stuff.
 			const unique_ptr<Expression> &expression = plan_as_projection.expressions[i];
 			const ColumnBinding new_cb = ColumnBinding(table_index, i); // `i`: see note above.
 			if (expression->type == ExpressionType::BOUND_COLUMN_REF) {
@@ -404,13 +403,13 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 				 *  The idea for now: use ExpressionToAliasedString,
 				 *   and implement new Expression types as they are encountered (should be less and less over time).
 				 */
-				std::string expr_str = ExpressionToAliasedString(expression);
-				// std::string expr_str = expression->GetName();
+				string expr_str = ExpressionToAliasedString(expression);
+				// string expr_str = expression->GetName();
 				column_names.emplace_back(expr_str);
 				// Create a bespoke name for this expression.
 				// TODO: A custom alias is introduced here. May not be fully desirable if it reaches output.
 				//  Instead of using a custom alias, check if this code suffices.
-				std::string scalar_alias;
+				string scalar_alias;
 				if (expression->HasAlias()) {
 					scalar_alias = expression->GetAlias();
 				} else {
@@ -425,8 +424,8 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		// Note: aggregate has several table indices!
 		const LogicalAggregate &plan_as_aggregate = subplan->Cast<LogicalAggregate>();
-		vector<std::string> cte_column_names;
-		vector<std::string> group_names;
+		vector<string> cte_column_names;
+		vector<string> group_names;
 		/* For `LogicalAggregate`, the function `GetColumnBindings()` cannot be used in our use case,
 		 *  since the function combines the `groups`, `aggregate`, and `groupings` together.
 		 * Therefore, we need to make our own enumeration (based on `LogicalAggregate`'s) starting from index 0.
@@ -473,15 +472,15 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 					}
 					// To complete `agg_str`, we need to know what columns are in the aggregate type.
 					// These are "child"-expressions to the aggregate expression.
-					vector<std::string> child_expressions;
+					vector<string> child_expressions;
 					for (const unique_ptr<Expression> &agg_child : bound_agg.children) {
-						std::string expr_str = ExpressionToAliasedString(agg_child);
+						string expr_str = ExpressionToAliasedString(agg_child);
 						child_expressions.emplace_back(std::move(expr_str));
 					}
 					agg_str << vec_to_separated_list(child_expressions);
 					agg_str << ")"; // Don't forget to close the parenthesis!
 					// Give the aggregation an alias so that this string above does not have to be repeated.
-					std::string agg_alias = "aggregate_" + std::to_string(i);
+					string agg_alias = "aggregate_" + std::to_string(i);
 					// Finally, Put it all into a ColStruct (which also handles the column vectors below).
 					agg_col_struct = make_uniq<ColStruct>(aggregate_table_idx, agg_str.str(), std::move(agg_alias));
 				} else {
@@ -532,17 +531,17 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 		 *	This logic may be a bit complicated, but is necessary to avoid issues if both sides of the join
 		 *	 use the same column names.
 		 */
-		std::string left_cte_name = cte_nodes[children_indices[0]]->cte_name;
-		std::string right_cte_name = cte_nodes[children_indices[1]]->cte_name;
+		string left_cte_name = cte_nodes[children_indices[0]]->cte_name;
+		string right_cte_name = cte_nodes[children_indices[1]]->cte_name;
 		for (auto &cond : plan_as_join.conditions) {
-			std::string condition_lhs = ExpressionToAliasedString(cond.left);
-			std::string condition_rhs = ExpressionToAliasedString(cond.right);
-			std::string comparison = ExpressionTypeToOperator(cond.comparison);
+			string condition_lhs = ExpressionToAliasedString(cond.left);
+			string condition_rhs = ExpressionToAliasedString(cond.right);
+			string comparison = ExpressionTypeToOperator(cond.comparison);
 			// Put brackets around the join conditions to avoid incorrect queries if there are multiple conditions.
 			join_conditions.emplace_back("(" + condition_lhs + " " + comparison + " " + condition_rhs + ")");
 		}
 		// Finally, get the column_names.
-		vector<std::string> cte_column_names;
+		vector<string> cte_column_names;
 		for (const ColumnBinding &binding : subplan->GetColumnBindings()) {
 			unique_ptr<ColStruct> &col_struct = column_map.at(binding);
 			cte_column_names.push_back(col_struct->ToUniqueColumnName());
