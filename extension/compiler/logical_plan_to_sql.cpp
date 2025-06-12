@@ -30,7 +30,7 @@ namespace {
 using duckdb::vector;
 
 /// Convert a vector of strings into a comma-separated list (i.e. "a, b, c, d., ...").
-std::string vec_to_separated_list(vector<std::string> input_list, const std::string &separator = ", ") {
+std::string VecToSeparatedList(vector<std::string> input_list, const std::string &separator = ", ") {
 	std::ostringstream ret_str;
 	for (size_t i = 0; i < input_list.size(); ++i) {
 		ret_str << input_list[i];
@@ -59,7 +59,7 @@ string FinalReadNode::ToQuery() {
 	std::ostringstream sql_str;
 	sql_str << "SELECT ";
 	// Convert the vector above into a comma-separated column string.
-	sql_str << vec_to_separated_list(std::move(merged_list)); // Move; we don't need it anymore.
+	sql_str << VecToSeparatedList(std::move(merged_list)); // Move; we don't need it anymore.
 	sql_str << " FROM ";
 	sql_str << child_cte_name;
 	return sql_str.str();
@@ -94,14 +94,13 @@ string CteNode::ToCteQuery() {
 	cte_str << cte_name;
 	if (!cte_column_list.empty()) {
 		cte_str << " (";
-		cte_str << vec_to_separated_list(cte_column_list);
+		cte_str << VecToSeparatedList(cte_column_list);
 		cte_str << ")";
 	}
 	cte_str << " AS (";
 	cte_str << this->ToQuery();
 	cte_str << ")";
 	return cte_str.str();
-	// 	return cte_name + " (" + vec_to_separated_list(cte_column_list)  + ") as (" + this->ToQuery() + ")";
 }
 string GetNode::ToQuery() {
 	std::ostringstream get_str;
@@ -109,7 +108,7 @@ string GetNode::ToQuery() {
 	if (column_names.empty()) {
 		get_str << "*";
 	} else {
-		get_str << vec_to_separated_list(column_names);
+		get_str << VecToSeparatedList(column_names);
 	}
 	get_str << " FROM ";
 	// TODO: If a dummy scan (or similar) gets implemented, this logic may need to be changed.
@@ -118,11 +117,9 @@ string GetNode::ToQuery() {
 	get_str << schema;
 	get_str << ".";
 	get_str << table_name;
-	if (table_filters.empty()) {
-		// Add nothing.
-	} else {
+	if (!table_filters.empty()) {
 		get_str << " WHERE ";
-		get_str << vec_to_separated_list(table_filters);
+		get_str << VecToSeparatedList(table_filters);
 	}
 	// Note: no semicolon at the end; this is handled by the IR function.
 	return get_str.str();
@@ -131,11 +128,9 @@ string FilterNode::ToQuery() {
 	std::ostringstream get_str;
 	get_str << "SELECT * FROM ";
 	get_str << child_cte_name;
-	if (conditions.empty()) {
-		// Add nothing.
-	} else {
+	if (!conditions.empty()) {
 		get_str << " WHERE ";
-		get_str << vec_to_separated_list(conditions);
+		get_str << VecToSeparatedList(conditions);
 	}
 	return get_str.str();
 }
@@ -145,7 +140,7 @@ string ProjectNode::ToQuery() {
 	if (column_names.empty()) {
 		project_str << "*";
 	} else {
-		project_str << vec_to_separated_list(column_names);
+		project_str << VecToSeparatedList(column_names);
 	}
 	project_str << " FROM ";
 	project_str << child_cte_name;
@@ -158,17 +153,17 @@ string AggregateNode::ToQuery() {
 	if (group_by_columns.empty()) {
 		// Do nothing.
 	} else {
-		aggregate_str << vec_to_separated_list(group_by_columns);
+		aggregate_str << VecToSeparatedList(group_by_columns);
 		aggregate_str << ", "; // Needed for the aggregate names.
 	}
-	aggregate_str << vec_to_separated_list(aggregate_expressions);
+	aggregate_str << VecToSeparatedList(aggregate_expressions);
 	aggregate_str << " FROM ";
 	aggregate_str << child_cte_name;
 	if (group_by_columns.empty()) {
 		// Do nothing.
 	} else {
 		aggregate_str << " GROUP BY ";
-		aggregate_str << vec_to_separated_list(group_by_columns);
+		aggregate_str << VecToSeparatedList(group_by_columns);
 	}
 	return aggregate_str.str();
 }
@@ -197,7 +192,7 @@ string JoinNode::ToQuery() {
 	join_str << " ON ";
 	// Combine the join conditions using AND.
 	// In theory, OR should also be possible, but this is rare enough to not require support for now.
-	join_str << vec_to_separated_list(join_conditions, " AND ");
+	join_str << VecToSeparatedList(join_conditions, " AND ");
 	return join_str.str();
 }
 string UnionNode::ToQuery() {
@@ -216,9 +211,7 @@ string UnionNode::ToQuery() {
 string IRStruct::ToQuery(const bool use_newlines) {
 	std::ostringstream sql_str;
 	// First add all CTEs...
-	if (nodes.empty()) {
-		// Do nothing.
-	} else {
+	if (!nodes.empty()) {
 		sql_str << "WITH ";
 		for (size_t i = 0; i < nodes.size(); ++i) {
 			sql_str << nodes[i]->ToCteQuery();
@@ -477,7 +470,7 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 						string expr_str = ExpressionToAliasedString(agg_child);
 						child_expressions.emplace_back(std::move(expr_str));
 					}
-					agg_str << vec_to_separated_list(child_expressions);
+					agg_str << VecToSeparatedList(child_expressions);
 					agg_str << ")"; // Don't forget to close the parenthesis!
 					// Give the aggregation an alias so that this string above does not have to be repeated.
 					string agg_alias = "aggregate_" + std::to_string(i);

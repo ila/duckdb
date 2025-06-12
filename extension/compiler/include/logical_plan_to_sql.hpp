@@ -112,9 +112,10 @@ class GetNode : public CteNode {
 
 public:
 	~GetNode() override = default;
-	// Constructor. TODO: Should be explicit or not?
-	GetNode(const size_t index, vector<string> cte_column_names, string _catalog, string _schema, string _table_name,
-	        const size_t _table_index, vector<string> _table_filters, vector<string> _column_names)
+	// Constructor.
+	explicit GetNode(const size_t index, vector<string> cte_column_names, string _catalog, string _schema,
+	                 string _table_name, const size_t _table_index, vector<string> _table_filters,
+	                 vector<string> _column_names)
 	    : CteNode(index, "scan_" + std::to_string(index), std::move(cte_column_names)), catalog(std::move(_catalog)),
 	      schema(std::move(_schema)), table_name(std::move(_table_name)), table_index(_table_index),
 	      table_filters(std::move(_table_filters)), column_names(std::move(_column_names)) {
@@ -234,6 +235,7 @@ class LogicalPlanToSql {
 private:
 	/// Struct with a ColumnBinding that implements `<`, such that using it in a map becomes possible.
 	/// Needed for `column_map`.
+	// Reference: `std::less<Key>` on https://en.cppreference.com/w/cpp/container/map.html
 	struct MappableColumnBinding {
 		ColumnBinding cb;
 		MappableColumnBinding(const ColumnBinding _column_binding) : cb(std::move(_column_binding)) {
