@@ -113,9 +113,8 @@ class GetNode : public CteNode {
 public:
 	~GetNode() override = default;
 	// Constructor. TODO: Should be explicit or not?
-	GetNode(const size_t index, vector<string> cte_column_names, string _catalog, string _schema,
-	        string _table_name, const size_t _table_index, vector<string> _table_filters,
-	        vector<string> _column_names)
+	GetNode(const size_t index, vector<string> cte_column_names, string _catalog, string _schema, string _table_name,
+	        const size_t _table_index, vector<string> _table_filters, vector<string> _column_names)
 	    : CteNode(index, "scan_" + std::to_string(index), std::move(cte_column_names)), catalog(std::move(_catalog)),
 	      schema(std::move(_schema)), table_name(std::move(_table_name)), table_index(_table_index),
 	      table_filters(std::move(_table_filters)), column_names(std::move(_column_names)) {
@@ -132,8 +131,7 @@ class FilterNode : public CteNode {
 public:
 	~FilterNode() override = default;
 	// Constructor.
-	FilterNode(const size_t index, vector<string> cte_column_names, string _child_cte_name,
-	           vector<string> _conditions)
+	FilterNode(const size_t index, vector<string> cte_column_names, string _child_cte_name, vector<string> _conditions)
 	    : CteNode(index, "filter_" + std::to_string(index), std::move(cte_column_names)),
 	      child_cte_name(std::move(_child_cte_name)), conditions(std::move(_conditions)) {
 	}
@@ -188,8 +186,8 @@ class JoinNode : public CteNode {
 public:
 	~JoinNode() override = default;
 	// Constructor.
-	JoinNode(const size_t index, vector<string> cte_column_names, string _left_cte_name,
-	         string _right_cte_name, JoinType _join_type, vector<string> _join_conditions)
+	JoinNode(const size_t index, vector<string> cte_column_names, string _left_cte_name, string _right_cte_name,
+	         JoinType _join_type, vector<string> _join_conditions)
 	    : CteNode(index, "join_" + std::to_string(index), std::move(cte_column_names)),
 	      left_cte_name(std::move(_left_cte_name)), right_cte_name(std::move(_right_cte_name)), join_type(_join_type),
 	      join_conditions(std::move(_join_conditions)) {
@@ -206,8 +204,8 @@ class UnionNode : public CteNode {
 public:
 	~UnionNode() override = default;
 	// Constructor.
-	UnionNode(const size_t index, vector<string> cte_column_names, string _left_cte_name,
-	          string _right_cte_name, const bool union_all)
+	UnionNode(const size_t index, vector<string> cte_column_names, string _left_cte_name, string _right_cte_name,
+	          const bool union_all)
 	    : CteNode(index, "union_" + std::to_string(index), std::move(cte_column_names)),
 	      left_cte_name(std::move(_left_cte_name)), right_cte_name(std::move(_right_cte_name)),
 	      is_union_all(union_all) {

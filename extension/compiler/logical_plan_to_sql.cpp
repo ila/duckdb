@@ -370,8 +370,8 @@ unique_ptr<CteNode> LogicalPlanToSql::CreateCteNode(unique_ptr<LogicalOperator> 
 			conditions.emplace_back(ExpressionToAliasedString(expression));
 		}
 		// NOTE: This code works without filling the CTE's column names, but it may be more consistent to still fill.
-		return make_uniq<FilterNode>(my_index, vector<string>(),
-		                             cte_nodes[children_indices[0]]->cte_name, std::move(conditions));
+		return make_uniq<FilterNode>(my_index, vector<string>(), cte_nodes[children_indices[0]]->cte_name,
+		                             std::move(conditions));
 	}
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		const LogicalProjection &plan_as_projection = subplan->Cast<LogicalProjection>();
