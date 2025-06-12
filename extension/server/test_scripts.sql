@@ -13,9 +13,15 @@ CREATE DECENTRALIZED MATERIALIZED VIEW daily_runs_city AS
     FROM runs
     GROUP BY nickname, city, date
     WINDOW 24
-    TTL 48
-    MINIMUM AGGREGATION 2
-    REFRESH 4;
+    TTL 72
+    MINIMUM AGGREGATION 100
+    REFRESH 24;
+
+CREATE CENTRALIZED MATERIALIZED VIEW daily_steps AS
+    SELECT city, date, SUM(total_steps) AS total_steps
+    FROM daily_runs_city
+    GROUP BY city, date
+    REFRESH 24;
 
 -- todo incrementalize this kind of query
 CREATE CENTRALIZED MATERIALIZED VIEW weekly_runs_city AS
@@ -55,4 +61,6 @@ GROUP BY nickname, city, date;
 
 pragma ivm('daily_runs_city');
 pragma refresh('daily_runs_city');
-pragma flush('daily_runs_city');
+pragma flush('daily_runs_city', 'duckdb');
+pragma flush('daily_runs_city', 'postgres');
+

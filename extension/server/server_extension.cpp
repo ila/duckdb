@@ -105,7 +105,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 	auto rdda_parser = RDDAParserExtension();
 	db_config.parser_extensions.push_back(rdda_parser);
 
-	auto flush = PragmaFunction::PragmaCall("flush", FlushFunction, {LogicalType::VARCHAR});
+	// the first argument is the name of the view to flush
+	// the second is the database - duckdb, postgres, etc.
+	auto flush = PragmaFunction::PragmaCall("flush", FlushFunction, {LogicalType::VARCHAR}, {LogicalType::VARCHAR});
 	ExtensionUtil::RegisterFunction(instance, flush);
 
 	auto run_server = PragmaFunction::PragmaCall("run_server", RunServer, {});

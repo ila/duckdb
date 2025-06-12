@@ -63,10 +63,10 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	}
 
 	auto delta_view_catalog_entry =
-	    catalog.GetEntry(context, CatalogType::TABLE_ENTRY, view_catalog_name, view_schema_name, "delta_" + view_name,
+	    catalog.GetEntry<TableCatalogEntry>(context, view_catalog_name, view_schema_name, "delta_" + view_name,
 	                     OnEntryNotFound::THROW_EXCEPTION, error_context);
 	auto index_delta_view_catalog_entry =
-	    catalog.GetEntry(context, CatalogType::INDEX_ENTRY, view_catalog_name, view_schema_name,
+	    catalog.GetEntry<IndexCatalogEntry>(context, view_catalog_name, view_schema_name,
 	                     view_name + "_ivm_index", OnEntryNotFound::RETURN_NULL, error_context);
 
 	auto view_query_entry = con.Query("select * from _duckdb_ivm_views where view_name = '" + view_name + "';");
@@ -99,7 +99,7 @@ string UpsertDeltaQueries(ClientContext &context, const FunctionParameters &para
 	// aggregates require an upsert query, while simple filters and projections are an insert
 	switch (view_query_type) {
 	case IVMType::AGGREGATE_GROUP: {
-		upsert_query = CompileAggregateGroups(view_name, index_delta_view_catalog_entry, column_names);
+		upsert_query = CompileAggregateGroups(view_name, index_delta_view_catalog_entry.get(), column_names);
 		break;
 	}
 

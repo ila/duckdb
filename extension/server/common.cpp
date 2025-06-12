@@ -11,6 +11,8 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <string>
+#include <filesystem>
+#include <duckdb/common/local_file_system.hpp>
 
 namespace duckdb {
 
@@ -20,7 +22,11 @@ unordered_map<string, string> ParseConfig(string &path, string &config_name) {
 	// if file does not exist, throw exception
 	std::ifstream config_file(path + config_name);
 	if (!config_file) {
-		throw ParserException("Config file not found!");
+		// search for the file in the current directory
+		config_file.open(config_name);
+		if (!config_file) {
+			throw InvalidConfigurationException("Config file not found: " + config_name);
+		}
 	}
 	string line;
 
@@ -46,6 +52,12 @@ void CreateSystemTables(string &path, Connection &con) {
 	// there is currently no way to execute SQL statements in files through the C++ API
 	// so here we go again...
 	std::ifstream input_file(path + "tables.sql");
+	if (!input_file) {
+		input_file.open("tables.sql");
+		if (!input_file) {
+			throw InvalidConfigurationException("System tables file not found: tables.sql");
+		}
+	}
 	string query;
 
 	while (getline(input_file, query)) {

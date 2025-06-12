@@ -16,7 +16,8 @@ add_library(
   ../compiler/rdda/rdda_parse_select.cpp
   rdda_parser_helper.cpp
   flush_function.cpp
-  run_server.cpp)
+  run_server.cpp
+  update_metrics.cpp)
 
 set(PARAMETERS "-warnings")
 build_loadable_extension(
@@ -30,7 +31,8 @@ build_loadable_extension(
   rdda_parser.cpp
   rdda_parser_helper.cpp
   flush_function.cpp
-  run_server.cpp)
+  run_server.cpp
+  update_metrics.cpp)
 
 # find_package(OpenSSL REQUIRED) target_link_libraries(httpfs_loadable_extension
 # ${OPENSSL_LIBRARIES})

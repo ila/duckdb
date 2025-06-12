@@ -1,7 +1,8 @@
 #include "openivm_rewrite_rule.hpp"
 
 // From DuckDB.
-#include "../../postgres_scanner/include/postgres_scanner.hpp"
+// FIXME 2025-06-12: Please check if you still need this import.
+// #include "../../postgres_scanner/include/postgres_scanner.hpp"
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb.hpp"
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
@@ -205,10 +206,10 @@ void IVMRewriteRule::AddInsertNode(ClientContext &context, unique_ptr<LogicalOpe
 	printf("\n---end of insert node output---\n");
 #endif
 
-	auto delta_table_catalog_entry =
-	    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, view_catalog_name, view_schema_name, "delta_" + view_name,
-	                      OnEntryNotFound::RETURN_NULL, QueryErrorContext());
-	optional_ptr<TableCatalogEntry> table = dynamic_cast<TableCatalogEntry *>(delta_table_catalog_entry.get());
+	// throwing an exception here, since the table has to exist (if we reach this point)
+	auto table =
+	    Catalog::GetEntry<TableCatalogEntry>(context, view_catalog_name, view_schema_name, "delta_" + view_name,
+	                      OnEntryNotFound::THROW_EXCEPTION, QueryErrorContext());
 	// create insert node. It is new node, hence it gets a new table_idx
 	// putting an arbitrary index here
 	// todo -- do we even need this insert node on top?
@@ -526,7 +527,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 		{
 			// Get TableCatalogEntry using CatalogEntry. Check whether it is a nullptr first though.
 			// Although cast later, cannot be put into a scope because it is a reference.
-			optional_ptr<CatalogEntry> opt_catalog_entry;
+			optional_ptr<TableCatalogEntry> opt_catalog_entry;
 			{
 				string delta_table;
 				string delta_table_schema;
@@ -534,7 +535,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 				// checking if the table to be scanned exists in DuckDB
 				if (old_get->GetTable().get() == nullptr) {
 					// we are using PostgreSQL (the underlying table does not exist)
-					delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
+					// delta_table = "delta_" + dynamic_cast<PostgresBindData *>(old_get->bind_data.get())->table_name;
 					delta_table_schema = "public";
 					delta_table_catalog = "p"; // todo
 				} else {
@@ -544,7 +545,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 					delta_table_catalog = old_get->GetTable().get()->catalog.GetName();
 				}
 				opt_catalog_entry =
-				    Catalog::GetEntry(context, CatalogType::TABLE_ENTRY, delta_table_catalog, delta_table_schema,
+				    Catalog::GetEntry<TableCatalogEntry>(context, delta_table_catalog, delta_table_schema,
 				                      delta_table, OnEntryNotFound::RETURN_NULL, error_context);
 				if (opt_catalog_entry == nullptr) {
 					// if delta base table does not exist, return error. This also means there are no deltas to compute.
@@ -612,6 +613,7 @@ ModifiedPlan IVMRewriteRule::ModifyPlan(PlanWrapper pw) {
 			 * It is not used beyond the scan's filter. Commended out here for future reference. */
 			// delta_get_node->projection_ids.emplace_back(old_get->projection_ids.size() + 1); // timestamp column
 		}
+		// fixme [ila] - I have no idea what this code does
 		// how to make this code resilient?
 		delta_get_node->ResolveOperatorTypes();
 #ifdef DEBUG

@@ -15,10 +15,13 @@ enum client_messages {
 	new_statistics = 3,
 	new_file = 4,
 	error_non_existing_client = 5,
-	ok = 6
+	ok = 6,
+	update_timestamp_client = 7,
+	flush = 8, // to schedule flushes remotely
+	update_window = 9,
 };
 
-inline string toString(client_messages msg) {
+inline string ToString(client_messages msg) {
 	switch (msg) {
 	case close_connection:
 		return "Close connection";
@@ -34,6 +37,12 @@ inline string toString(client_messages msg) {
 		return "Error non existing client";
 	case ok:
 		return "Ok";
+	case update_timestamp_client:
+		return "Update timestamp client";
+	case flush:
+		return "Flush";
+	case update_window:
+		return "Update window";
 	default:
 		return "Unknown message";
 	}

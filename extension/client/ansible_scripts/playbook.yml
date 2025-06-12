@@ -1,0 +1,79 @@
+---
+- name: Setup EC2 clients
+  hosts: clients
+  gather_facts: no
+
+  tasks:
+    - name: Log start of setup
+      debug:
+        msg: "Starting setup on {{ inventory_hostname }}"
+
+#    - name: Install necessary system packages
+#      become: true
+#      apt:
+#        name:
+#          - gcc
+#          - cmake
+#          - ninja-build
+#          - git
+#          - python3-pip
+#          - python3-venv
+#          - python3-psycopg2
+#          - libpq-dev
+#        state: present
+#        update_cache: yes
+
+    - name: Log after system packages install
+      debug:
+        msg: "System packages and Python modules installed on {{ inventory_hostname }}"
+
+    - name: Clone the repository if it doesn't exist
+      git:
+        repo: 'https://github.com/ila/duckdb.git'
+        dest: /home/ubuntu/duckdb
+        version: master
+        update: yes
+
+    - name: Log after cloning repo
+      debug:
+        msg: "Repository cloned or updated on {{ inventory_hostname }}"
+
+    - name: Checkout to specific branch
+      shell: git checkout rdda
+      args:
+        chdir: /home/ubuntu/duckdb
+
+    - name: Log after checking out branch
+      debug:
+        msg: "Checked out branch 'rdda' on {{ inventory_hostname }}"
+
+    - name: Git pull
+      shell: git pull
+      args:
+        chdir: /home/ubuntu/duckdb
+
+#    - name: Clean up the repository
+#      shell: rm -rf build
+#      args:
+#        chdir: /home/ubuntu/duckdb
+
+#    - name: Build the repository
+#      shell: GEN=ninja BUILD_EXTENSIONS='compiler;client;openivm' make release
+#      args:
+#        chdir: /home/ubuntu/duckdb
+#
+#    - name: Log after build
+#      debug:
+#        msg: "Build completed on {{ inventory_hostname }}"
+
+    - name: Clean up the client folders
+      become: true
+      shell: rm -rf /home/tmp_duckdb/client_*
+
+    - name: Run the Python script
+      become: true
+      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_decentralized.py
+
+    - name: Log after running the script
+      debug:
+        msg: "Python script finished on {{ inventory_hostname }}"

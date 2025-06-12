@@ -25,7 +25,7 @@ struct ClientInfo {
 	std::string nickname;
 	std::string city;
 	int run_count;
-	bool initialize;
+	bool initialized;
 };
 
 std::string GetRandomElement(const std::vector<std::string> &list) {
@@ -38,24 +38,36 @@ ClientInfo LoadOrGenerateClientInfo(const std::string &filename) {
 	ClientInfo info;
 	std::ifstream file(filename);
 	if (file.good()) {
-		file >> info.nickname >> info.city >> info.run_count >> info.initialize;
-		return info;
+		std::string line;
+		if (std::getline(file, line)) {
+			std::stringstream ss(line);
+			std::string token;
+
+			std::getline(ss, info.nickname, ',');
+			std::getline(ss, info.city, ',');
+
+			std::getline(ss, token, ',');
+			info.run_count = std::stoi(token);
+
+			std::getline(ss, token, ',');
+			info.initialized = (token == "1" || token == "true");
+			return info;
+		}
 	}
 
+	// Generate new info
 	info.nickname = "user_" + std::to_string(rand() % 1500000);
 	info.city = GetRandomElement(cities);
 	info.run_count = 0;
-	info.initialize = false;
-
-	std::ofstream out(filename);
-	out << info.nickname << " " << info.city << " " << info.run_count << " " << info.initialize;
+	info.initialized = false;
 
 	return info;
 }
 
+
 void SaveClientInfo(const std::string &filename, const ClientInfo &info) {
 	std::ofstream out(filename);
-	out << info.nickname << " " << info.city << " " << info.run_count << " " << true;
+	out << info.nickname << "," << info.city << "," << info.run_count << "," << info.initialized;
 }
 
 std::string FormatDate(int offset_days) {
@@ -96,21 +108,27 @@ void GenerateCSV(const std::string &filename, const ClientInfo &info) {
 }
 
 void StoreTestData(ClientContext &context, const FunctionParameters &parameters) {
+
+	std::srand(std::time(nullptr));
+
 	const std::string info_file = "client_info.csv";
 	ClientInfo info = LoadOrGenerateClientInfo(info_file);
 
 	std::string filename = "test_data.csv";
 	GenerateCSV(filename, info);
 
-	if (!info.initialize) {
+	if (!info.initialized) {
 		DuckDB db(nullptr);
 		Connection con(db);
-		auto r = con.Query("pragma initialize_client");
-		if (r->HasError()) {
-			std::cerr << "Error while initializing client: " << r->GetError() << "\n";
+		Printer::Print("Initializing client...");
+		con.BeginTransaction();
+		auto e = con.Query("pragma initialize_client");
+		if (e->HasError()) {
+			std::cerr << "Error while initializing client: " << e->GetError() << "\n";
 		} else {
 			std::cout << "Client initialized successfully.\n";
 		}
+		con.Commit();
 	}
 
 	DuckDB runs_db("runs.db");
@@ -121,6 +139,7 @@ void StoreTestData(ClientContext &context, const FunctionParameters &parameters)
 		std::cerr << "Error while inserting data: " << r->GetError() << "\n";
 	} else {
 		std::cout << "Data inserted successfully.\n";
+		info.initialized = true;
 	}
 
 	info.run_count += 1;

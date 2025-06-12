@@ -106,7 +106,7 @@ void GenerateServerRefreshScript(ClientContext &context, const FunctionParameter
 	file << "\t\tif current_time - last_refreshes[i] >= timedelta(hours=windows[i]):\n";
 	file << "\t\t\t# refresh the materialized view\n";
 	file << "\t\t\tcon = duckdb.connect(database = \"" + database_name + "\")\n";
-	file << "\t\t\tpragma_query = f\"PRAGMA flush({views[i]});\"\n";
+	file << "\t\t\tpragma_query = f\"PRAGMA flush({views[i]}, 'duckdb');\"\n";
 	file << "\t\t\tcon.execute(pragma_query)\n";
 	file << "\t\t\tcon.close()\n";
 	file << "\t\t\tprint(f'[{datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\")}] Refreshing view: {views[i]}')\n";

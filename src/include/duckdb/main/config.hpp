@@ -229,7 +229,7 @@ struct DBConfigOptions {
 	//! Directory to store extension binaries in
 	string extension_directory;
 	//! Whether unsigned extensions should be loaded
-	bool allow_unsigned_extensions = false;
+	bool allow_unsigned_extensions = true;
 	//! Whether community extensions should be loaded
 	bool allow_community_extensions = true;
 	//! Whether extensions with missing metadata should be loaded

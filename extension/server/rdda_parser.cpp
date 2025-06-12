@@ -21,6 +21,11 @@
 #include <rdda_parser_helper.hpp>
 #include <stack>
 #include <regex>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
 
 namespace duckdb {
 
@@ -72,9 +77,71 @@ void ExecuteAndWriteQueries(Connection &con, const string &queries, const string
 	}
 }
 
-void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append) {
+string HashQuery(const string &query) {
+	std::hash<std::string> hasher;
+	size_t hash_value = hasher(query);
+
+	std::stringstream ss;
+	ss << std::hex << hash_value;
+	return ss.str().substr(0, 8);  // trim to 8 hex digits
+}
+
+
+void ExecuteCommitLogAndWriteQueries(Connection &con, const string &queries, const string &file_path, const string &view_name, bool append, int run, bool write) {
+	if (queries.empty()) {
+		return;
+	}
+
+	string csv_path = "results_" + view_name + ".csv";
+	string log_path = "log_" + view_name + ".log";
+
+	// Optional: write original queries to .sql
+	if (write) {
+		CompilerExtension::WriteFile(file_path, false, queries);
+    }
+	std::ofstream csv_file(csv_path, run != 0 ? std::ios::app : std::ios::trunc);
+	std::ofstream query_log(log_path, std::ios::trunc);
+
+	if (!csv_file.is_open() || !query_log.is_open()) {
+		throw IOException("Failed to open output file(s)");
+	}
+
+	if (run == 0) {
+		csv_file << "run,query_hash,time_ms\n";
+	}
+
+	auto query_list = StringUtil::Split(queries, ';');
+	for (auto &query : query_list) {
+		StringUtil::Trim(query);
+		if (query.empty()) {
+			continue;
+		}
+
+		auto hash = HashQuery(query);
+		auto start = high_resolution_clock::now();
+
+		con.BeginTransaction();
+		auto r = con.Query(query + ";");
+		con.Commit();
+
+		auto end = high_resolution_clock::now();
+		duration<double, std::milli> elapsed = end - start;
+		int elapsed_ms = static_cast<int>(elapsed.count());
+
+		if (r->HasError()) {
+			throw ParserException("Error executing query [" + query + "]: " + r->GetError());
+		}
+
+		csv_file << run << "," << hash << "," << elapsed_ms << "\n";
+		query_log << "[" << hash << "]\n" << query << "\n\n";
+	}
+	Printer::Print("Finished run " + std::to_string(run) + "...");
+}
+
+
+void ExecuteCommitAndWriteQueries(Connection &con, const string &queries, const string &file_path, bool append, bool write) {
 	// wrapping each query in a transaction to avoid concurrency issues
-	if (!queries.empty()) {
+	if (!queries.empty() && write) {
 		CompilerExtension::WriteFile(file_path, append, queries);
 	}
 	// splitting each query by ;
@@ -122,7 +189,8 @@ string ConstructTable(Connection &con, string view_name, bool view) {
 		    "generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);\n";
 	} else {
 		// remove the last comma and space
-		centralized_table_definition += "rdda_window int, client_id ubigint);\n";
+		centralized_table_definition +=
+		    "rdda_window int, client_id ubigint, responsiveness numeric(5, 2), completeness numeric(5, 2), buffer_size numeric(5, 2));\n";
 	}
 	return centralized_table_definition;
 }

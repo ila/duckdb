@@ -7,7 +7,7 @@ add_extension_definitions()
 find_package(PostgreSQL REQUIRED)
 
 include_directories(include ../../extension/compiler/include
-                    ../../extension/postgres_scanner/include)
+                    ../postgres/include)
 
 add_library(
   openivm_extension STATIC
