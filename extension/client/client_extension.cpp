@@ -136,7 +136,8 @@ static void SendJSON(std::unordered_map<string, string> &config, int32_t sock) {
 	send(sock, buffer, len, 0);
 }
 
-static void LoadInternal(DatabaseInstance &instance) {
+static void LoadInternal(ExtensionLoader &loader) {
+	auto &instance = loader.GetDatabaseInstance();
 	string config_path = "../extension/client/";
 	string config_file = "client.config";
 
@@ -150,17 +151,17 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	// todo - return "false" if error
 	auto initialize_client = PragmaFunction::PragmaCall("initialize_client", InitializeClient, {});
-	ExtensionUtil::RegisterFunction(instance, initialize_client);
+	loader.RegisterFunction(initialize_client);
 
 	auto refresh = PragmaFunction::PragmaCall("refresh", Refresh, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, refresh);
+	loader.RegisterFunction(refresh);
 
 	auto flush = PragmaFunction::PragmaCall("test_runs", StoreTestData, {});
-	ExtensionUtil::RegisterFunction(instance, flush);
+	loader.RegisterFunction(flush);
 }
 
-void ClientExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
+void ClientExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
 }
 std::string ClientExtension::Name() {
 	return "client";
@@ -169,10 +170,6 @@ std::string ClientExtension::Name() {
 } // namespace duckdb
 
 extern "C" {
-
-DUCKDB_EXTENSION_API void client_init(duckdb::DatabaseInstance &db) {
-	LoadInternal(db);
-}
 
 DUCKDB_EXTENSION_API const char *client_version() {
 	return duckdb::DuckDB::LibraryVersion();
