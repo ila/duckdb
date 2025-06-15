@@ -119,6 +119,9 @@ int sqlite3_open_v2(const char *filename, /* Database filename (UTF-8) */
 		if (flags & DUCKDB_UNREDACTED_SECRETS) {
 			config.options.allow_unredacted_secrets = true;
 		}
+		if (flags & DUCKDB_LATEST_STORAGE_VERSION) {
+			config.options.serialization_compatibility = SerializationCompatibility::FromString("latest");
+		}
 
 		config.error_manager->AddCustomError(
 		    ErrorType::UNSIGNED_EXTENSION,
@@ -468,7 +471,7 @@ int sqlite3_exec(sqlite3 *db,                /* The database on which the SQL ex
 				rc = sqlite3_finalize(pStmt);
 				pStmt = nullptr;
 				zSql = zLeftover;
-				while (isspace(zSql[0]))
+				while (StringUtil::CharacterIsSpace(zSql[0]))
 					zSql++;
 				break;
 			} else if (rc != SQLITE_ROW) {
