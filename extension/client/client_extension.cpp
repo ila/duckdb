@@ -21,7 +21,6 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
-#include <duckdb/main/extension_util.hpp>
 
 namespace duckdb {
 

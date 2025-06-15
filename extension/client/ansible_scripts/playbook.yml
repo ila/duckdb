@@ -23,10 +23,10 @@
 #        state: present
 #        update_cache: yes
 
-    - name: Log after system packages install
-      debug:
-        msg: "System packages and Python modules installed on {{ inventory_hostname }}"
-
+#    - name: Log after system packages install
+#      debug:
+#        msg: "System packages and Python modules installed on {{ inventory_hostname }}"
+#
     - name: Clone the repository if it doesn't exist
       git:
         repo: 'https://github.com/ila/duckdb.git'
@@ -52,10 +52,10 @@
       args:
         chdir: /home/ubuntu/duckdb
 
-#    - name: Clean up the repository
-#      shell: rm -rf build
-#      args:
-#        chdir: /home/ubuntu/duckdb
+    - name: Clean up the repository
+      shell: rm -rf build
+      args:
+        chdir: /home/ubuntu/duckdb
 
 #    - name: Build the repository
 #      shell: GEN=ninja BUILD_EXTENSIONS='compiler;client;openivm' make release
@@ -72,7 +72,7 @@
 
     - name: Run the Python script
       become: true
-      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_decentralized.py
+      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_centralized.py
 
     - name: Log after running the script
       debug:

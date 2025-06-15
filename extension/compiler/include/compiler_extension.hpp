@@ -16,7 +16,7 @@ namespace duckdb {
 class CompilerExtension : public Extension {
 public:
 	// this extension does not do anything in practice; it is a collection of functions to parse/compile SQL strings
-	void Load(DuckDB &db) override;
+	void Load(ExtensionLoader &loader) override;
 	string Name() override;
 	static void WriteFile(const string &filename, bool append, const string &compiled_query);
 	static string ReadFile(const string &file_path);

@@ -1,6 +1,5 @@
 #include "duckdb.hpp"
 #include "duckdb/function/pragma_function.hpp"
-#include "duckdb/main/extension_util.hpp"
 #include "openivm_upsert.hpp"
 
 #include <utility>

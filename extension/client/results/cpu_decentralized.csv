@@ -1,0 +1,6 @@
+run,avg_postgres_cpu,peak_postgres_cpu,avg_system_cpu,peak_system_cpu,storage_size_bytes,bytes_received,postgres_found
+0,14.05,115.90,27.19,99.70,5390336,134243807,True
+1,15.00,98.40,29.85,99.70,6561792,161179292,True
+2,14.98,22.90,32.76,100.00,7831552,193683410,True
+3,15.32,23.10,36.12,99.50,9297920,231989149,True
+4,15.44,23.40,39.13,100.00,10698752,268633418,True

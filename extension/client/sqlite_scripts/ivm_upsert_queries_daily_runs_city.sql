@@ -2,13 +2,7 @@
 INSERT INTO delta_daily_runs_city
 SELECT nickname, city, date, SUM(steps) AS total_steps, _duckdb_ivm_multiplicity
 FROM delta_runs
-WHERE _duckdb_ivm_timestamp >= '2025-04-24 09:29:03.284'
 GROUP BY nickname, city, date, _duckdb_ivm_multiplicity;
-
--- Step 2: Update last_update
-UPDATE _duckdb_ivm_delta_tables
-SET last_update = datetime('now')
-WHERE view_name = 'daily_runs_city';
 
 -- Step 3: Insert or replace into daily_runs_city using IVM logic
 INSERT OR REPLACE INTO daily_runs_city
@@ -26,9 +20,6 @@ FROM ivm_cte AS delta
                        AND existing.city = delta.city
                        AND existing.date = delta.date;
 
--- Step 4: Delete zeroed rows
-DELETE FROM daily_runs_city
-WHERE total_steps = 0;
 
 -- Step 5: Clean up deltas
 DELETE FROM delta_daily_runs_city;

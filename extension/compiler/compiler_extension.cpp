@@ -1,7 +1,6 @@
 #include "include/compiler_extension.hpp"
 
 #include "duckdb.hpp"
-#include "duckdb/main/extension_util.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/planner.hpp"
@@ -79,7 +78,9 @@ static void LogicalPlanToStringTestFunction(ClientContext &context, TableFunctio
 
 //------------------------------------------------------------------------------
 
-static void LoadInternal(DatabaseInstance &instance) {
+static void LoadInternal(ExtensionLoader &loader) {
+
+	auto & instance = loader.GetDatabaseInstance();
 
 	// add a compiler extension
 	// auto &db_config = duckdb::DBConfig::GetConfig(instance);
@@ -106,15 +107,15 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	auto generate_server_refresh_script = PragmaFunction::PragmaCall(
 	    "generate_server_refresh_script", GenerateServerRefreshScript, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, generate_server_refresh_script);
+	loader.RegisterFunction(generate_server_refresh_script);
 
 	auto generate_client_refresh_script = PragmaFunction::PragmaCall(
 	    "generate_client_refresh_script", GenerateClientRefreshScript, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, generate_client_refresh_script);
+	loader.RegisterFunction(generate_client_refresh_script);
 }
 
-void CompilerExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
+void CompilerExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
 }
 
 string CompilerExtension::Name() {

@@ -214,7 +214,9 @@ static void DoIVMDemoFunction(ClientContext &context, TableFunctionInput &data_p
 	return;
 }
 
-static void LoadInternal(DatabaseInstance &instance) {
+static void LoadInternal(ExtensionLoader &loader) {
+
+	auto &instance = loader.GetDatabaseInstance();
 
 	// add a parser extension
 	auto &db_config = duckdb::DBConfig::GetConfig(instance);
@@ -304,18 +306,18 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// based on whether we want to specify the catalog and schema
 	auto ivm_options = PragmaFunction::PragmaCall("ivm_options", UpsertDeltaQueries,
 	                                              {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, ivm_options);
+	loader.RegisterFunction(ivm_options);
 	auto ivm = PragmaFunction::PragmaCall("ivm", UpsertDeltaQueries, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, ivm); // default catalog and schema
+	loader.RegisterFunction(ivm); // default catalog and schema
 	// this is when we have two attached databases (so two catalogs and schemas)
 	auto ivm_cross_system = PragmaFunction::PragmaCall(
 	    "ivm_cross_system", UpsertDeltaQueries,
 	    {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, ivm_cross_system);
+	loader.RegisterFunction(ivm_cross_system);
 }
 
-void OpenivmExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
+void OpenivmExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
 }
 std::string OpenivmExtension::Name() {
 	return "openivm";
@@ -324,12 +326,6 @@ std::string OpenivmExtension::Name() {
 } // namespace duckdb
 
 extern "C" {
-
-DUCKDB_EXTENSION_API void ivm_init(duckdb::DatabaseInstance &db) {
-	duckdb::DuckDB db_wrapper(db);
-	db_wrapper.LoadExtension<duckdb::OpenivmExtension>();
-	// LoadInternal(db);
-}
 
 DUCKDB_EXTENSION_API const char *ivm_version() {
 	return duckdb::DuckDB::LibraryVersion();

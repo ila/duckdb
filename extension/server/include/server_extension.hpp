@@ -8,7 +8,7 @@ namespace duckdb {
 
 class ServerExtension : public Extension {
 public:
-	void Load(DuckDB &db) override;
+	void Load(ExtensionLoader &loader) override;
 	string Name() override;
 };
 

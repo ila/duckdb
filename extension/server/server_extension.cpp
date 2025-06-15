@@ -29,7 +29,6 @@
 #include <unistd.h>
 #include <duckdb/catalog/catalog_entry/table_catalog_entry.hpp>
 #include <duckdb/function/table/table_scan.hpp>
-#include <duckdb/main/extension_util.hpp>
 #include <duckdb/parser/parsed_data/create_table_function_info.hpp>
 #include <duckdb/planner/operator/logical_get.hpp>
 
@@ -73,9 +72,11 @@ void ParseJSON(Connection &con, std::unordered_map<string, string> &config, int3
 	appender.EndRow();
 }
 
-static void LoadInternal(DatabaseInstance &instance) {
+static void LoadInternal(ExtensionLoader &loader) {
 	// todo:
 	// send statistics to the server
+
+	auto &instance = loader.GetDatabaseInstance();
 
 	// todo fix the hardcoded path
 	// todo maybe add schema here?
@@ -108,14 +109,14 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// the first argument is the name of the view to flush
 	// the second is the database - duckdb, postgres, etc.
 	auto flush = PragmaFunction::PragmaCall("flush", FlushFunction, {LogicalType::VARCHAR}, {LogicalType::VARCHAR});
-	ExtensionUtil::RegisterFunction(instance, flush);
+	loader.RegisterFunction(flush);
 
 	auto run_server = PragmaFunction::PragmaCall("run_server", RunServer, {});
-	ExtensionUtil::RegisterFunction(instance, run_server);
+	loader.RegisterFunction(run_server);
 }
 
-void ServerExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
+void ServerExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
 }
 string ServerExtension::Name() {
 	return "server";
@@ -124,10 +125,6 @@ string ServerExtension::Name() {
 } // namespace duckdb
 
 extern "C" {
-
-DUCKDB_EXTENSION_API void server_init(duckdb::DatabaseInstance &db) {
-	LoadInternal(db);
-}
 
 DUCKDB_EXTENSION_API const char *server_version() {
 	return duckdb::DuckDB::LibraryVersion();
