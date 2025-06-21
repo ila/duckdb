@@ -9,7 +9,7 @@ CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
 #CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
 
 SOURCE_POSTGRES_DSN = os.environ.get(
-    "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-18-159-115-118.eu-central-1.compute.amazonaws.com"
+    "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
 )
 
 # Set reference time for RDDA windows (change this to a fixed datetime if needed)
