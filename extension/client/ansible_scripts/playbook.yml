@@ -39,7 +39,7 @@
         msg: "Repository cloned or updated on {{ inventory_hostname }}"
 
     - name: Checkout to specific branch
-      shell: git checkout rdda
+      shell: git checkout rdda-stable
       args:
         chdir: /home/ubuntu/duckdb
 
@@ -72,7 +72,7 @@
 
     - name: Run the Python script
       become: true
-      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_decentralized.py
+      command: python3 /home/ubuntu/duckdb/extension/client/test_runs_sqlite_centralized.py
 
     - name: Log after running the script
       debug:
