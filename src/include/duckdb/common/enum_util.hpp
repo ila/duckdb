@@ -178,6 +178,8 @@ enum class FileGlobOptions : uint8_t;
 
 enum class FileLockType : uint8_t;
 
+enum class FileNameSegmentType : uint8_t;
+
 enum class FilterPropagateResult : uint8_t;
 
 enum class ForeignKeyType : uint8_t;
@@ -194,6 +196,8 @@ enum class GateStatus : uint8_t;
 
 enum class HLLStorageType : uint8_t;
 
+enum class HTTPStatusCode : uint16_t;
+
 enum class IndexAppendMode : uint8_t;
 
 enum class IndexConstraintType : uint8_t;
@@ -207,6 +211,10 @@ enum class JoinRefType : uint8_t;
 enum class JoinType : uint8_t;
 
 enum class KeywordCategory : uint8_t;
+
+enum class LambdaSyntax : uint8_t;
+
+enum class LambdaSyntaxType : uint8_t;
 
 enum class LimitNodeType : uint8_t;
 
@@ -247,6 +255,8 @@ enum class OnConflictAction : uint8_t;
 enum class OnCreateConflict : uint8_t;
 
 enum class OnEntryNotFound : uint8_t;
+
+enum class OperatorFinalResultType : uint8_t;
 
 enum class OperatorFinalizeResultType : uint8_t;
 
@@ -297,6 +307,8 @@ enum class QueryResultType : uint8_t;
 enum class RelationType : uint8_t;
 
 enum class RenderMode : uint8_t;
+
+enum class RequestType : uint8_t;
 
 enum class ResultModifierType : uint8_t;
 
@@ -623,6 +635,9 @@ template<>
 const char* EnumUtil::ToChars<FileLockType>(FileLockType value);
 
 template<>
+const char* EnumUtil::ToChars<FileNameSegmentType>(FileNameSegmentType value);
+
+template<>
 const char* EnumUtil::ToChars<FilterPropagateResult>(FilterPropagateResult value);
 
 template<>
@@ -647,6 +662,9 @@ template<>
 const char* EnumUtil::ToChars<HLLStorageType>(HLLStorageType value);
 
 template<>
+const char* EnumUtil::ToChars<HTTPStatusCode>(HTTPStatusCode value);
+
+template<>
 const char* EnumUtil::ToChars<IndexAppendMode>(IndexAppendMode value);
 
 template<>
@@ -666,6 +684,12 @@ const char* EnumUtil::ToChars<JoinType>(JoinType value);
 
 template<>
 const char* EnumUtil::ToChars<KeywordCategory>(KeywordCategory value);
+
+template<>
+const char* EnumUtil::ToChars<LambdaSyntax>(LambdaSyntax value);
+
+template<>
+const char* EnumUtil::ToChars<LambdaSyntaxType>(LambdaSyntaxType value);
 
 template<>
 const char* EnumUtil::ToChars<LimitNodeType>(LimitNodeType value);
@@ -726,6 +750,9 @@ const char* EnumUtil::ToChars<OnCreateConflict>(OnCreateConflict value);
 
 template<>
 const char* EnumUtil::ToChars<OnEntryNotFound>(OnEntryNotFound value);
+
+template<>
+const char* EnumUtil::ToChars<OperatorFinalResultType>(OperatorFinalResultType value);
 
 template<>
 const char* EnumUtil::ToChars<OperatorFinalizeResultType>(OperatorFinalizeResultType value);
@@ -801,6 +828,9 @@ const char* EnumUtil::ToChars<RelationType>(RelationType value);
 
 template<>
 const char* EnumUtil::ToChars<RenderMode>(RenderMode value);
+
+template<>
+const char* EnumUtil::ToChars<RequestType>(RequestType value);
 
 template<>
 const char* EnumUtil::ToChars<ResultModifierType>(ResultModifierType value);
@@ -1179,6 +1209,9 @@ template<>
 FileLockType EnumUtil::FromString<FileLockType>(const char *value);
 
 template<>
+FileNameSegmentType EnumUtil::FromString<FileNameSegmentType>(const char *value);
+
+template<>
 FilterPropagateResult EnumUtil::FromString<FilterPropagateResult>(const char *value);
 
 template<>
@@ -1203,6 +1236,9 @@ template<>
 HLLStorageType EnumUtil::FromString<HLLStorageType>(const char *value);
 
 template<>
+HTTPStatusCode EnumUtil::FromString<HTTPStatusCode>(const char *value);
+
+template<>
 IndexAppendMode EnumUtil::FromString<IndexAppendMode>(const char *value);
 
 template<>
@@ -1222,6 +1258,12 @@ JoinType EnumUtil::FromString<JoinType>(const char *value);
 
 template<>
 KeywordCategory EnumUtil::FromString<KeywordCategory>(const char *value);
+
+template<>
+LambdaSyntax EnumUtil::FromString<LambdaSyntax>(const char *value);
+
+template<>
+LambdaSyntaxType EnumUtil::FromString<LambdaSyntaxType>(const char *value);
 
 template<>
 LimitNodeType EnumUtil::FromString<LimitNodeType>(const char *value);
@@ -1282,6 +1324,9 @@ OnCreateConflict EnumUtil::FromString<OnCreateConflict>(const char *value);
 
 template<>
 OnEntryNotFound EnumUtil::FromString<OnEntryNotFound>(const char *value);
+
+template<>
+OperatorFinalResultType EnumUtil::FromString<OperatorFinalResultType>(const char *value);
 
 template<>
 OperatorFinalizeResultType EnumUtil::FromString<OperatorFinalizeResultType>(const char *value);
@@ -1357,6 +1402,9 @@ RelationType EnumUtil::FromString<RelationType>(const char *value);
 
 template<>
 RenderMode EnumUtil::FromString<RenderMode>(const char *value);
+
+template<>
+RequestType EnumUtil::FromString<RequestType>(const char *value);
 
 template<>
 ResultModifierType EnumUtil::FromString<ResultModifierType>(const char *value);

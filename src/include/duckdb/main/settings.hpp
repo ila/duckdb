@@ -218,6 +218,17 @@ struct ArrowOutputListViewSetting {
 	static Value GetSetting(const ClientContext &context);
 };
 
+struct ArrowOutputVersionSetting {
+	using RETURN_TYPE = string;
+	static constexpr const char *Name = "arrow_output_version";
+	static constexpr const char *Description =
+	    "Whether strings should be produced by DuckDB in Utf8View format instead of Utf8";
+	static constexpr const char *InputType = "VARCHAR";
+	static void SetGlobal(DatabaseInstance *db, DBConfig &config, const Value &parameter);
+	static void ResetGlobal(DatabaseInstance *db, DBConfig &config);
+	static Value GetSetting(const ClientContext &context);
+};
+
 struct AsofLoopJoinThresholdSetting {
 	using RETURN_TYPE = idx_t;
 	static constexpr const char *Name = "asof_loop_join_threshold";
@@ -829,6 +840,17 @@ struct IntegerDivisionSetting {
 	static constexpr const char *Description =
 	    "Whether or not the / operator defaults to integer division, or to floating point division";
 	static constexpr const char *InputType = "BOOLEAN";
+	static void SetLocal(ClientContext &context, const Value &parameter);
+	static void ResetLocal(ClientContext &context);
+	static Value GetSetting(const ClientContext &context);
+};
+
+struct LambdaSyntaxSetting {
+	using RETURN_TYPE = string;
+	static constexpr const char *Name = "lambda_syntax";
+	static constexpr const char *Description =
+	    "Configures the use of the deprecated single arrow operator (->) for lambda functions.";
+	static constexpr const char *InputType = "VARCHAR";
 	static void SetLocal(ClientContext &context, const Value &parameter);
 	static void ResetLocal(ClientContext &context);
 	static Value GetSetting(const ClientContext &context);

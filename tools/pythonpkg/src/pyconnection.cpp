@@ -186,6 +186,7 @@ static void InitializeConnectionMethods(py::class_<DuckDBPyConnection, shared_pt
 	      py::arg("query"), py::arg("parameters") = py::none());
 	m.def("close", &DuckDBPyConnection::Close, "Close the connection");
 	m.def("interrupt", &DuckDBPyConnection::Interrupt, "Interrupt pending operations");
+	m.def("query_progress", &DuckDBPyConnection::QueryProgress, "Query progress of pending operation");
 	m.def("fetchone", &DuckDBPyConnection::FetchOne, "Fetch a single row from a result following execute");
 	m.def("fetchmany", &DuckDBPyConnection::FetchMany, "Fetch the next set of rows from a result following execute",
 	      py::arg("size") = 1);
@@ -937,6 +938,7 @@ static void AcceptableCSVOptions(const string &unkown_parameter) {
 	                                                "comment"
 	                                                "sep",
 	                                                "delimiter",
+	                                                "files_to_sniff",
 	                                                "dtype",
 	                                                "na_values",
 	                                                "skiprows",
@@ -1009,6 +1011,7 @@ unique_ptr<DuckDBPyRelation> DuckDBPyConnection::ReadCSV(const py::object &name_
 	py::object compression = py::none();
 	py::object sep = py::none();
 	py::object delimiter = py::none();
+	py::object files_to_sniff = py::none();
 	py::object dtype = py::none();
 	py::object na_values = py::none();
 	py::object skiprows = py::none();
@@ -1054,6 +1057,8 @@ unique_ptr<DuckDBPyRelation> DuckDBPyConnection::ReadCSV(const py::object &name_
 			sep = kwargs[arg_name.c_str()];
 		} else if (arg_name == "delimiter") {
 			delimiter = kwargs[arg_name.c_str()];
+		} else if (arg_name == "files_to_sniff") {
+			files_to_sniff = kwargs[arg_name.c_str()];
 		} else if (arg_name == "comment") {
 			comment = kwargs[arg_name.c_str()];
 		} else if (arg_name == "thousands") {
@@ -1192,6 +1197,13 @@ unique_ptr<DuckDBPyRelation> DuckDBPyConnection::ReadCSV(const py::object &name_
 		bind_parameters["delim"] = Value(py::str(sep));
 	} else if (has_delimiter) {
 		bind_parameters["delim"] = Value(py::str(delimiter));
+	}
+
+	if (!py::none().is(files_to_sniff)) {
+		if (!py::isinstance<py::int_>(files_to_sniff)) {
+			throw InvalidInputException("read_csv only accepts 'files_to_sniff' as an integer");
+		}
+		bind_parameters["files_to_sniff"] = Value::INTEGER(py::int_(files_to_sniff));
 	}
 
 	if (!py::none().is(names_p)) {
@@ -1817,6 +1829,11 @@ void DuckDBPyConnection::Close() {
 void DuckDBPyConnection::Interrupt() {
 	auto &connection = con.GetConnection();
 	connection.Interrupt();
+}
+
+double DuckDBPyConnection::QueryProgress() {
+	auto &connection = con.GetConnection();
+	return connection.GetQueryProgress();
 }
 
 void DuckDBPyConnection::InstallExtension(const string &extension, bool force_install, const py::object &repository,

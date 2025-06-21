@@ -7,6 +7,7 @@
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/exception/parser_exception.hpp"
 #include "duckdb/common/random_engine.hpp"
+#include "duckdb/original/std/sstream.hpp"
 #include "jaro_winkler.hpp"
 #include "utf8proc_wrapper.hpp"
 
@@ -14,7 +15,6 @@
 #include <cctype>
 #include <iomanip>
 #include <memory>
-#include <sstream>
 #include <stdarg.h>
 #include <string.h>
 #include <stack>
@@ -27,7 +27,7 @@ namespace duckdb {
 
 string StringUtil::GenerateRandomName(idx_t length) {
 	RandomEngine engine;
-	std::stringstream ss;
+	duckdb::stringstream ss;
 	for (idx_t i = 0; i < length; i++) {
 		ss << "0123456789abcdef"[engine.NextRandomInteger(0, 15)];
 	}
@@ -105,7 +105,7 @@ string StringUtil::Repeat(const string &str, idx_t n) {
 namespace string_util_internal {
 
 inline void SkipSpaces(const string &str, idx_t &index) {
-	while (index < str.size() && std::isspace(str[index])) {
+	while (index < str.size() && StringUtil::CharacterIsSpace(str[index])) {
 		index++;
 	}
 }
@@ -136,7 +136,9 @@ inline string TakePossiblyQuotedItem(const string &str, idx_t &index, char delim
 		ConsumeLetter(str, index, quote);
 	} else {
 		TakeWhile(
-		    str, index, [delimiter, quote](char c) { return c != delimiter && c != quote && !std::isspace(c); }, entry);
+		    str, index,
+		    [delimiter, quote](char c) { return c != delimiter && c != quote && !StringUtil::CharacterIsSpace(c); },
+		    entry);
 	}
 
 	return entry;
@@ -342,7 +344,7 @@ idx_t StringUtil::CIFind(vector<string> &vector, const string &search_string) {
 }
 
 vector<string> StringUtil::Split(const string &str, char delimiter) {
-	std::stringstream ss(str);
+	duckdb::stringstream ss(str);
 	vector<string> lines;
 	string temp;
 	while (getline(ss, temp, delimiter)) {
@@ -562,18 +564,20 @@ unique_ptr<ComplexJSON> StringUtil::ParseJSONMap(const string &json, bool ignore
 	yyjson_val *key, *value;
 	while ((key = yyjson_obj_iter_next(&iter))) {
 		value = yyjson_obj_iter_get_val(key);
+		const auto key_val = yyjson_get_str(key);
+		const auto key_len = yyjson_get_len(key);
 		auto type = yyjson_get_type(value);
 		if (type == YYJSON_TYPE_STR) {
 			// Since this is a string, we can directly add the value
-			const auto key_val = yyjson_get_str(key);
-			const auto key_len = yyjson_get_len(key);
 			const auto value_val = yyjson_get_str(value);
 			const auto value_len = yyjson_get_len(value);
 			result->AddObject(string(key_val, key_len), make_uniq<ComplexJSON>(string(value_val, value_len)));
+		} else if (type == YYJSON_TYPE_BOOL) {
+			// boolean values
+			bool bool_val = yyjson_get_bool(value);
+			result->AddObject(string(key_val, key_len), make_uniq<ComplexJSON>(bool_val ? "true" : "false"));
 		} else if (type == YYJSON_TYPE_OBJ) {
 			// We recurse, this is a complex json
-			const auto key_val = yyjson_get_str(key);
-			const auto key_len = yyjson_get_len(key);
 			// Convert the object value to a JSON string and recurse
 			size_t json_str_len;
 			char *json_str = yyjson_val_write(value, 0, &json_str_len);
