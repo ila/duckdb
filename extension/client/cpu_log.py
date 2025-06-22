@@ -320,6 +320,15 @@ if __name__ == "__main__":
     table_name = "rdda_centralized_view_" + params.FLUSH_NAME
 
     try:
+        with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"DELETE FROM {table_name};")
+                conn.commit()
+                print(f"\n[{datetime.now()}] Deleted all rows from {table_name}")
+    except Exception as e:
+        print(f"\n[{datetime.now()}] Error deleting rows from PostgreSQL: {e}")
+
+    try:
         while run < runs:
             print(f"\n--- Starting chunk ---")
             print(f"Measuring for {chunk_interval} minutes...")

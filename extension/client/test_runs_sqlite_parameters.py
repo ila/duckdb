@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 
 
 TMP_DIR = "/home/tmp_duckdb/"
-SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
-CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
-#SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
-#CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
+# SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
+# CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
+SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
+CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
 
 SOURCE_POSTGRES_DSN = os.environ.get(
     "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
@@ -41,7 +41,7 @@ UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh
 FLUSH_NAME = "runs"
 UPDATE_WINDOW_NAME = "rdda_centralized_view_runs"
 CENTRALIZED = False
-RUNS_PER_CLIENT = 3  # Number of data points per client
+RUNS_PER_CLIENT = 10  # Number of data points per client
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
