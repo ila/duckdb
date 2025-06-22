@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 
 
 TMP_DIR = "/home/tmp_duckdb/"
-# SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
-# CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
-SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
-CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
+SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
+CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
+#SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
+#CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
 
 SOURCE_POSTGRES_DSN = os.environ.get(
     "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
