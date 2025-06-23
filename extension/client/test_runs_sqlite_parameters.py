@@ -29,7 +29,7 @@ CHUNK_SIZE = 100 # Number of clients to process in each chunk
 INITIAL_CLIENTS = 2000 # Initial number of clients to simulate
 CLIENT_DISPATCH_INTERVAL = 5 # Interval in seconds to wait before dispatching new clients
 SLEEP_INTERVAL = 5 # Additional interval in seconds to sleep between dispatches
-FLUSH_INTERVAL = 15 # Interval in minutes to flush the database
+FLUSH_INTERVAL = 10 # Interval in minutes to flush the database
 MAX_RUNS = 5 # Maximum number of runs to simulate
 
 # Refresh parameters (note: it takes around 3 min to initialize 2000 clients)
@@ -38,10 +38,10 @@ NUM_CHUNKS = 1 # Number of refreshes per window
 UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh (or wait for the next window)
 
 # Parameters for flush and CPU analysis
-FLUSH_NAME = "runs"
-UPDATE_WINDOW_NAME = "rdda_centralized_view_runs"
-CENTRALIZED = False
-RUNS_PER_CLIENT = 100  # Number of data points per client
+FLUSH_NAME = "daily_runs_city"
+UPDATE_WINDOW_NAME = "rdda_centralized_view_daily_runs_city"
+CENTRALIZED = True
+RUNS_PER_CLIENT = 1  # Number of data points per client
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
