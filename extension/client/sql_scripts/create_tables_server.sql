@@ -42,11 +42,9 @@ insert or replace into sidra_parser.sidra_current_window values ('centralized_da
 create table if not exists _duckdb_ivm_views (view_name varchar primary key, sql_string varchar, type tinyint, last_update timestamp);
 create table if not exists _duckdb_ivm_delta_tables (view_name varchar, table_name varchar, last_update timestamp, primary key(view_name, table_name));
 
--- postgres tables
-create table if not exists sidra_client.d_sidra_centralized_view_daily_steps_user as select *, true as _duckdb_ivm_multiplicity, now() as _duckdb_ivm_timestamp
+-- delta tables
+create table if not exists d_centralized_daily_steps_user as select *, true as _duckdb_ivm_multiplicity, now() as _duckdb_ivm_timestamp
 from sidra_client.sidra_centralized_view_daily_steps_users limit 0;
-
--- duckdb tables
 create table if not exists d_daily_steps_club as select *, true as _duckdb_ivm_multiplicity, now() as _duckdb_ivm_timestamp
 from daily_steps_club limit 0;
 

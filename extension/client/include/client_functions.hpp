@@ -1,7 +1,3 @@
-//
-// Created by ila on 2/24/25.
-//
-
 #ifndef CLIENT_FUNCTIONS_HPP
 #define CLIENT_FUNCTIONS_HPP
 

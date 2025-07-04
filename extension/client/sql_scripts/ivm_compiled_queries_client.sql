@@ -10,11 +10,6 @@ CREATE TABLE activity_metrics
     heartbeat_rate INTEGER
 );
 
-todo tomorrow
-     write readme
-     fix flush scripts (add d tables)
-     add clubs data
-
 -- Create materialized view table (valid in SQLite)
 CREATE TABLE daily_steps_user AS
 SELECT nickname, city, club, date, sum

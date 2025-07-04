@@ -156,12 +156,12 @@ def main():
 
             # Case 1: update window every chunk (rare)
             if params.UPDATE_WINDOW_EVERY_REFRESH:
-                update_window(params.UPDATE_WINDOW_NAME, centralized)
+                update_window("sidra_centralized_view_" + params.FLUSH_NAME, centralized)
 
             # Case 2: update only at the end of each full refresh interval (for chunked non-centralized mode)
             if refresh and not centralized and not params.UPDATE_WINDOW_EVERY_REFRESH:
                 if (run + 1) % params.NUM_CHUNKS == 0:
-                    update_window(params.UPDATE_WINDOW_NAME, centralized)
+                    update_window("sidra_centralized_view_" + params.FLUSH_NAME, centralized)
                     run += 1
                     print(f"✔️  Cycle {run / params.NUM_CHUNKS - 1} complete.\n")
                 else:
@@ -170,7 +170,7 @@ def main():
                 # Case 3: centralized or non-refresh (always one flush per run)
                 run += 1
                 if not refresh:
-                    update_window(params.UPDATE_WINDOW_NAME, centralized)
+                    update_window("sidra_centralized_view_" + params.FLUSH_NAME, centralized)
                 print(f"✔️  Cycle {run - 1} complete.\n")
 
     except KeyboardInterrupt:

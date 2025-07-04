@@ -94,7 +94,7 @@ def generate_csv(path, nickname, city, club, date):
             os.remove(path)
         with open(path, 'a') as f:
             writer = csv.writer(f)
-            for _ in range(params.RUNS_PER_CLIENT):
+            for _ in range(params.ROWS_PER_CLIENT):
                 writer.writerow([
                     nickname, city, club, date, format_time(),
                     format_time(), random.randint(500, 10500),

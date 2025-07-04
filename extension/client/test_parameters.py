@@ -1,19 +1,21 @@
 import os
 from datetime import datetime, timedelta
 
+HOST = "ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
+USER = "sidra"
+DBNAME = "sidra_client"
+PASSWORD = "test"
 
 TMP_DIR = "/home/tmp_duckdb/"
-SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sqlite_scripts"
+SOURCE_SQLITE_SCRIPTS = "/home/ubuntu/duckdb/extension/client/sql_scripts"
 CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
-#SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sqlite_scripts"
+#SOURCE_SQLITE_SCRIPTS = "/home/ila/Code/duckdb/extension/client/sql_scripts"
 #CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
 
 SOURCE_POSTGRES_DSN = os.environ.get(
-    "PG_DSN", "dbname=sidra_client user=ubuntu password=test host=ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
-)
+    "PG_DSN", "dbname=" + DBNAME + " user=" + USER + " host=" + HOST + " password=" + PASSWORD)
 
 # Set reference time for sidra windows (change this to a fixed datetime if needed)
-# REFERENCE_TIME = datetime(2024, 1, 1)
 REFERENCE_TIME = datetime.now()
 WINDOW_DURATION_HOURS = 24
 
@@ -39,9 +41,8 @@ UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh
 
 # Parameters for flush and CPU analysis
 FLUSH_NAME = "daily_steps_user"
-UPDATE_WINDOW_NAME = "sidra_centralized_view_daily_steps_user"
 CENTRALIZED = True
-RUNS_PER_CLIENT = 1  # Number of data points per client
+ROWS_PER_CLIENT = 1  # Number of data points per client
 
 SKEWED = False # Uniform distribution of clients across cities
 
