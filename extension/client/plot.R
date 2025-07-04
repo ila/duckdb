@@ -71,14 +71,14 @@ summarize_queries_to_latex <- function(df) {
 # Replace this with your actual data frames
 centralized_1 <- read.csv("results/results_runs_1.csv")
 centralized_3 <- read.csv("results/results_runs_3.csv")
-decentralized <- read.csv("results/results_daily_runs_city.csv")
-decentralized_upsert <- read.csv("results/results_daily_runs_city_upsert_min_agg_100_all.csv")
-decentralized_min_agg <- read.csv("results/results_daily_runs_city_min_agg_100_all.csv")
-decentralized_min_agg_90 <- read.csv("results/results_daily_runs_city_min_agg_100_90.csv")
-decentralized_refresh_4 <- read.csv("results/results_daily_runs_city_refresh_4_min_agg_100.csv")
-decentralized_refresh_2 <- read.csv("results/results_daily_runs_city_refresh_2_min_agg_100.csv")
-decentralized_window_4 <- read.csv("results/results_daily_runs_city_window_6_min_agg_100.csv")
-decentralized_window_2 <- read.csv("results/results_daily_runs_city_window_12_min_agg_100.csv")
+decentralized <- read.csv("results/results_daily_steps_user.csv")
+decentralized_upsert <- read.csv("results/results_daily_steps_user_upsert_min_agg_100_all.csv")
+decentralized_min_agg <- read.csv("results/results_daily_steps_user_min_agg_100_all.csv")
+decentralized_min_agg_90 <- read.csv("results/results_daily_steps_user_min_agg_100_90.csv")
+decentralized_refresh_4 <- read.csv("results/results_daily_steps_user_refresh_4_min_agg_100.csv")
+decentralized_refresh_2 <- read.csv("results/results_daily_steps_user_refresh_2_min_agg_100.csv")
+decentralized_window_4 <- read.csv("results/results_daily_steps_user_window_6_min_agg_100.csv")
+decentralized_window_2 <- read.csv("results/results_daily_steps_user_window_12_min_agg_100.csv")
 
 # cpu data
 cpu_decentralized <- read.csv("results/cpu_decentralized.csv")

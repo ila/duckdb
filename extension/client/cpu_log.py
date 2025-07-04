@@ -5,7 +5,7 @@ import json
 import psycopg2
 from collections import defaultdict
 from datetime import datetime
-import test_runs_sqlite_parameters as params
+import test_parameters as params
 
 OUTPUT_FILE = "cpu_pg_usage_log.csv"
 SAMPLE_INTERVAL = 1  # seconds
@@ -317,7 +317,7 @@ if __name__ == "__main__":
     if refresh and not params.CENTRALIZED:
         runs *= params.NUM_CHUNKS
 
-    table_name = "rdda_centralized_view_" + params.FLUSH_NAME
+    table_name = "sidra_centralized_view_" + params.FLUSH_NAME
 
     try:
         with psycopg2.connect(params.SOURCE_POSTGRES_DSN) as conn:

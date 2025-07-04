@@ -10,7 +10,7 @@ import struct
 import json
 from datetime import datetime, timedelta
 from psycopg2 import DatabaseError, OperationalError
-import test_runs_sqlite_parameters as params
+import test_parameters as params
 
 # Common utility functions
 def chunk_clients(client_list, size):
@@ -18,6 +18,8 @@ def chunk_clients(client_list, size):
     for i in range(0, len(client_list), size):
         yield client_list[i:i + size]
 
+def get_random_club():
+    return random.choice(params.CLUBS)
 def get_random_city():
     return random.choice(params.CITIES)
 
@@ -62,28 +64,31 @@ def generate_client_info(path):
     if os.path.exists(path):
         try:
             with open(path, 'r') as f:
-                nickname, city, run_count, initialized = f.read().split(",")
-                return nickname, city, int(run_count), initialized == 'True'
+                nickname, city, club, run_count, initialized = f.read().split(",")
+                return nickname, city, club, int(run_count), initialized == 'True'
         except Exception as e:
             print(f"Error reading client info from {path}: {str(e)}")
             traceback.print_exc()
             raise
     nickname = f"user_{random.randint(0, 1500000)}"
-    # city = get_random_city_skewed()
-    city = get_random_city()
+    if params.SKEWED:
+        city = get_random_city_skewed()
+    else:
+        city = get_random_city()
+    club = get_random_club()
     run_count = 0
     initialized = False
-    return nickname, city, run_count, initialized
+    return nickname, city, club, run_count, initialized
 
-def save_client_info(path, nickname, city, run_count, initialized):
+def save_client_info(path, nickname, city, club, run_count, initialized):
     try:
         with open(path, 'w') as f:
-            f.write(f"{nickname},{city},{run_count},{initialized}")
+            f.write(f"{nickname},{city},{club},{run_count},{initialized}")
     except Exception as e:
         print(f"Error saving client info to {path}: {str(e)}")
         traceback.print_exc()
 
-def generate_csv(path, nickname, city, date):
+def generate_csv(path, nickname, city, club, date):
     try:
         if os.path.exists(path):
             os.remove(path)
@@ -91,7 +96,7 @@ def generate_csv(path, nickname, city, date):
             writer = csv.writer(f)
             for _ in range(params.RUNS_PER_CLIENT):
                 writer.writerow([
-                    nickname, city, date, format_time(),
+                    nickname, city, club, date, format_time(),
                     format_time(), random.randint(500, 10500),
                     random.randint(60, 140)
                 ])

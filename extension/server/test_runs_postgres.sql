@@ -1,1 +1,1 @@
-create table rdda_centralized_view_daily_runs_city (nickname varchar, city varchar, date date, total_steps hugeint, generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);
+create table rdda_centralized_view_daily_steps_user (nickname varchar, city varchar, date date, total_steps hugeint, generation timestamptz, arrival timestamptz, rdda_window int, client_id ubigint, action tinyint);

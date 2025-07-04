@@ -94,7 +94,7 @@ ParserExtensionPlanResult IVMParserExtension::IVMPlanFunction(ParserExtensionInf
 			db_path = db_path_value.ToString();
 		}
 		string compiled_file_path = db_path + "/ivm_compiled_queries_" + view_name + ".sql";
-		string system_tables_path = db_path + "/ivm_system_tables.sql";
+		string system_tables_path = db_path + "/ivm_system_tables_client.sql";
 		// we need a separate index file because it is faster to create the index after the materialized view
 		auto index_file_path = db_path + "/ivm_index_" + view_name + ".sql";
 

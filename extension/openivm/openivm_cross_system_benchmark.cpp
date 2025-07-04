@@ -90,7 +90,7 @@ void RunIVMCrossSystemBenchmark(double scale_factor, int percentage_insertions, 
 		string query_groups = "SELECT group_index, SUM(group_value) AS total_value FROM groups GROUP BY group_index;";
 		PQexec(conn, query_groups.c_str()); // to warm cache (will take a while)
 
-		auto system_queries = duckdb::CompilerExtension::ReadFile("data/ivm_system_tables.sql");
+		auto system_queries = duckdb::CompilerExtension::ReadFile("data/ivm_system_tables_client.sql");
 		auto ddl_queries = duckdb::CompilerExtension::ReadFile("data/ivm_compiled_queries_query_groups.sql");
 		auto index_queries = duckdb::CompilerExtension::ReadFile("data/ivm_index_query_groups.sql");
 
@@ -251,7 +251,7 @@ void RunIVMCrossSystemBenchmark(double scale_factor, int percentage_insertions, 
 		string materialized_view = "CREATE MATERIALIZED VIEW query_groups AS " + query_groups;
 		con.Query(materialized_view);
 
-		auto system_queries = duckdb::CompilerExtension::ReadFile("data/ivm_system_tables.sql");
+		auto system_queries = duckdb::CompilerExtension::ReadFile("data/ivm_system_tables_client.sql");
 		auto ddl_queries = duckdb::CompilerExtension::ReadFile("data/ivm_compiled_queries_query_groups.sql");
 		auto index_queries = duckdb::CompilerExtension::ReadFile("data/ivm_index_query_groups.sql");
 

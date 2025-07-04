@@ -82,7 +82,7 @@ void RunIVMGroupsBenchmark(int tuples, int insertions, int updates, int deletes)
 			throw InternalException("Failed to create materialized view: %s", r->GetError().c_str());
 		}
 
-		auto system_queries = duckdb::CompilerExtension::ReadFile("data/ivm_system_tables.sql");
+		auto system_queries = duckdb::CompilerExtension::ReadFile("data/ivm_system_tables_client.sql");
 		auto ddl_queries = duckdb::CompilerExtension::ReadFile("data/ivm_compiled_queries_query_groups.sql");
 		auto index_queries = duckdb::CompilerExtension::ReadFile("data/ivm_index_query_groups.sql");
 

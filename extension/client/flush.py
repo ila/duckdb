@@ -14,12 +14,12 @@ import socket
 import struct
 
 
-import test_runs_sqlite_parameters as params
+import test_parameters as params
 
 # note: this requires postgres installed, role and database created ("ubuntu" in this case)
 # setting postgresql.conf with 100 max clients and listening on all addresses
 # also pg_hba.conf with "host    all             all             0.0.0.0/0               md5"
-# the database is rdda_client
+# the database is sidra_client
 
 def parse_client_config(folder_path):
     config_path = "/home/ila/Code/duckdb/extension/client/client.config"

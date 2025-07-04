@@ -9,10 +9,10 @@ CLIENT_CONFIG = "/home/ubuntu/duckdb/extension/client/"
 #CLIENT_CONFIG = "/home/ila/Code/duckdb/extension/client/"
 
 SOURCE_POSTGRES_DSN = os.environ.get(
-    "PG_DSN", "dbname=rdda_client user=ubuntu password=test host=ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
+    "PG_DSN", "dbname=sidra_client user=ubuntu password=test host=ec2-52-14-100-33.us-east-2.compute.amazonaws.com"
 )
 
-# Set reference time for RDDA windows (change this to a fixed datetime if needed)
+# Set reference time for sidra windows (change this to a fixed datetime if needed)
 # REFERENCE_TIME = datetime(2024, 1, 1)
 REFERENCE_TIME = datetime.now()
 WINDOW_DURATION_HOURS = 24
@@ -38,10 +38,12 @@ NUM_CHUNKS = 1 # Number of refreshes per window
 UPDATE_WINDOW_EVERY_REFRESH = False # Whether to update the window every refresh (or wait for the next window)
 
 # Parameters for flush and CPU analysis
-FLUSH_NAME = "daily_runs_city"
-UPDATE_WINDOW_NAME = "rdda_centralized_view_daily_runs_city"
+FLUSH_NAME = "daily_steps_user"
+UPDATE_WINDOW_NAME = "sidra_centralized_view_daily_steps_user"
 CENTRALIZED = True
 RUNS_PER_CLIENT = 1  # Number of data points per client
+
+SKEWED = False # Uniform distribution of clients across cities
 
 CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
@@ -84,5 +86,14 @@ CITIES = [
     "Bellevue", "West Valley City", "Columbia", "Olathe", "Sterling Heights",
     "New Haven", "Miramar", "Waco", "Thousand Oaks", "Cedar Rapids",
     "Charleston", "Visalia", "Topeka", "Elizabeth"
+]
+
+CLUBS = [
+    "Club A", "Club B", "Club C", "Club D", "Club E",
+    "Club F", "Club G", "Club H", "Club I", "Club J",
+    "Club K", "Club L", "Club M", "Club N", "Club O",
+    "Club P", "Club Q", "Club R", "Club S", "Club T",
+    "Club U", "Club V", "Club W", "Club X", "Club Y",
+    "Club Z"
 ]
 

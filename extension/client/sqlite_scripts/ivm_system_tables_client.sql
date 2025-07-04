@@ -30,14 +30,14 @@ CREATE TABLE IF NOT EXISTS _duckdb_ivm_delta_tables
 
 INSERT
 OR REPLACE INTO _duckdb_ivm_views VALUES (
-    'daily_runs_city',
-    'select nickname, city, date, sum(steps) as total_steps from runs group by nickname, city, date',
+    'daily_steps_user',
+    'select nickname, city, club, date, sum(steps) as total_steps from activity_metrics group by nickname, city, club, date',
     0,
-    CURRENT_TIMESTAMP  -- Changed from now
+    CURRENT_TIMESTAMP  -- Changed from now()
 );
 
 INSERT INTO _duckdb_ivm_delta_tables
-VALUES ('daily_runs_city',
-        'delta_runs',
-        CURRENT_TIMESTAMP -- Changed from now
+VALUES ('daily_steps_user',
+        'delta_activity_metrics',
+        CURRENT_TIMESTAMP -- Changed from now()
        );
