@@ -119,6 +119,8 @@ ParquetWriteLocalState::ParquetWriteLocalState(ClientContext &context, const vec
 
 static const char *AdaptiveCodecName(duckdb_parquet::CompressionCodec::type codec) {
 	switch (codec) {
+	case duckdb_parquet::CompressionCodec::UNCOMPRESSED:
+		return "UNCOMPRESSED";
 	case duckdb_parquet::CompressionCodec::SNAPPY:
 		return "SNAPPY";
 	case duckdb_parquet::CompressionCodec::ZSTD:
@@ -133,6 +135,9 @@ static duckdb_parquet::CompressionCodec::type ChooseAdaptiveCodec(const LogicalT
 	case LogicalTypeId::VARCHAR:
 	case LogicalTypeId::BLOB:
 		return duckdb_parquet::CompressionCodec::ZSTD;
+	case LogicalTypeId::FLOAT:
+	case LogicalTypeId::DOUBLE:
+		return duckdb_parquet::CompressionCodec::UNCOMPRESSED;
 	default:
 		return duckdb_parquet::CompressionCodec::SNAPPY;
 	}
@@ -154,7 +159,7 @@ static void ConfigureAdaptiveCompression(ParquetWriteBindData &bind_data, const 
 		bind_data.column_codecs.push_back(codec);
 		codec_entries.push_back(names[col_idx] + "=" + AdaptiveCodecName(codec));
 	}
-	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_policy", "type_based_v1");
+	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_policy", "type_based_v2");
 	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_map", StringUtil::Join(codec_entries, ";"));
 }
 
