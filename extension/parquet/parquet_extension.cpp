@@ -63,6 +63,8 @@ struct ParquetWriteBindData : public TableFunctionData {
 	vector<LogicalType> sql_types;
 	vector<string> column_names;
 	duckdb_parquet::CompressionCodec::type codec = duckdb_parquet::CompressionCodec::SNAPPY;
+	bool adaptive_compression = false;
+	vector<duckdb_parquet::CompressionCodec::type> column_codecs;
 	vector<pair<string, string>> kv_metadata;
 	idx_t row_group_size = DEFAULT_ROW_GROUP_SIZE;
 	idx_t row_group_size_bytes = NumericLimits<idx_t>::Maximum();
@@ -113,6 +115,47 @@ ParquetWriteLocalState::ParquetWriteLocalState(ClientContext &context, const vec
     : buffer(context, types) {
 	buffer.SetPartitionIndex(0); // Makes the buffer manager less likely to spill this data
 	buffer.InitializeAppend(append_state);
+}
+
+static const char *AdaptiveCodecName(duckdb_parquet::CompressionCodec::type codec) {
+	switch (codec) {
+	case duckdb_parquet::CompressionCodec::SNAPPY:
+		return "SNAPPY";
+	case duckdb_parquet::CompressionCodec::ZSTD:
+		return "ZSTD";
+	default:
+		throw InternalException("Unexpected adaptive Parquet compression codec");
+	}
+}
+
+static duckdb_parquet::CompressionCodec::type ChooseAdaptiveCodec(const LogicalType &type) {
+	switch (type.id()) {
+	case LogicalTypeId::VARCHAR:
+	case LogicalTypeId::BLOB:
+		return duckdb_parquet::CompressionCodec::ZSTD;
+	default:
+		return duckdb_parquet::CompressionCodec::SNAPPY;
+	}
+}
+
+static void ConfigureAdaptiveCompression(ParquetWriteBindData &bind_data, const vector<string> &names,
+                                         const vector<LogicalType> &sql_types) {
+	bind_data.column_codecs.reserve(sql_types.size());
+	vector<string> codec_entries;
+	codec_entries.reserve(sql_types.size());
+	for (idx_t col_idx = 0; col_idx < sql_types.size(); col_idx++) {
+		if (sql_types[col_idx].IsNested() || sql_types[col_idx].id() == LogicalTypeId::VARIANT) {
+			throw BinderException(
+			    "Adaptive Parquet compression currently only supports top-level primitive columns; column \"%s\" has "
+			    "type %s",
+			    names[col_idx], sql_types[col_idx]);
+		}
+		auto codec = ChooseAdaptiveCodec(sql_types[col_idx]);
+		bind_data.column_codecs.push_back(codec);
+		codec_entries.push_back(names[col_idx] + "=" + AdaptiveCodecName(codec));
+	}
+	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_policy", "type_v1");
+	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_map", StringUtil::Join(codec_entries, ";"));
 }
 
 static void ParquetListCopyOptions(ClientContext &context, CopyOptionsInput &input) {
@@ -181,9 +224,12 @@ static unique_ptr<FunctionData> ParquetWriteBind(ClientContext &context, CopyFun
 				/* LZ4 is technically another compression scheme, but deprecated and arrow also uses them
 				 * interchangeably */
 				bind_data->codec = duckdb_parquet::CompressionCodec::LZ4_RAW;
+			} else if (roption == "adaptive") {
+				bind_data->adaptive_compression = true;
 			} else {
 				throw BinderException(
-				    "Expected %s argument to be any of [uncompressed, brotli, gzip, snappy, lz4, lz4_raw or zstd]",
+				    "Expected %s argument to be any of [uncompressed, brotli, gzip, snappy, lz4, lz4_raw, zstd or "
+				    "adaptive]",
 				    loption);
 			}
 		} else if (loption == "field_ids") {
@@ -337,8 +383,16 @@ static unique_ptr<FunctionData> ParquetWriteBind(ClientContext &context, CopyFun
 		}
 	}
 
-	if (compression_level_set && bind_data->codec != CompressionCodec::ZSTD) {
+	if (bind_data->adaptive_compression && bind_data->parquet_version != ParquetVersion::V1) {
+		throw BinderException("Adaptive Parquet compression currently only supports PARQUET_VERSION v1");
+	}
+
+	if (compression_level_set && !bind_data->adaptive_compression && bind_data->codec != CompressionCodec::ZSTD) {
 		throw BinderException("Compression level is only supported for the ZSTD compression codec");
+	}
+
+	if (bind_data->adaptive_compression) {
+		ConfigureAdaptiveCompression(*bind_data, names, sql_types);
 	}
 
 	bind_data->sql_types = sql_types;
@@ -359,6 +413,7 @@ static unique_ptr<GlobalFunctionData> ParquetWriteInitializeGlobal(ClientContext
 	    parquet_bind.string_dictionary_page_size_limit, parquet_bind.enable_bloom_filters,
 	    parquet_bind.bloom_filter_false_positive_ratio, parquet_bind.compression_level, parquet_bind.parquet_version,
 	    parquet_bind.geoparquet_version);
+	global_state->writer->SetColumnCodecs(parquet_bind.column_codecs);
 	return std::move(global_state);
 }
 
@@ -615,6 +670,7 @@ static void ParquetCopySerialize(Serializer &serializer, const FunctionData &bin
 	                                    default_value.geoparquet_version);
 	serializer.WritePropertyWithDefault<ShreddingType>(117, "shredding_types", bind_data.shredding_types,
 	                                                   default_value.shredding_types);
+	serializer.WritePropertyWithDefault(118, "column_codecs", bind_data.column_codecs, default_value.column_codecs);
 }
 
 static unique_ptr<FunctionData> ParquetCopyDeserialize(Deserializer &deserializer, CopyFunction &function) {
@@ -650,6 +706,8 @@ static unique_ptr<FunctionData> ParquetCopyDeserialize(Deserializer &deserialize
 	    deserializer.ReadPropertyWithExplicitDefault(116, "geoparquet_version", default_value.geoparquet_version);
 	data->shredding_types =
 	    deserializer.ReadPropertyWithExplicitDefault<ShreddingType>(117, "shredding_types", ShreddingType());
+	data->column_codecs = deserializer.ReadPropertyWithExplicitDefault<vector<duckdb_parquet::CompressionCodec::type>>(
+	    118, "column_codecs", default_value.column_codecs);
 
 	return std::move(data);
 }

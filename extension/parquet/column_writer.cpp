@@ -120,7 +120,7 @@ ColumnWriterState::~ColumnWriterState() {
 
 void ColumnWriter::CompressPage(MemoryStream &temp_writer, size_t &compressed_size, data_ptr_t &compressed_data,
                                 AllocatedData &compressed_buf) {
-	switch (writer.GetCodec()) {
+	switch (writer.GetCodec(schema_path)) {
 	case CompressionCodec::UNCOMPRESSED:
 		compressed_size = temp_writer.GetPosition();
 		compressed_data = temp_writer.GetData();

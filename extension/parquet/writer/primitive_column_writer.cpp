@@ -24,7 +24,7 @@ unique_ptr<ColumnWriterState> PrimitiveColumnWriter::InitializeWriteState(duckdb
 void PrimitiveColumnWriter::RegisterToRowGroup(duckdb_parquet::RowGroup &row_group) {
 	duckdb_parquet::ColumnChunk column_chunk;
 	column_chunk.__isset.meta_data = true;
-	column_chunk.meta_data.codec = writer.GetCodec();
+	column_chunk.meta_data.codec = writer.GetCodec(schema_path);
 	column_chunk.meta_data.path_in_schema = schema_path;
 	column_chunk.meta_data.num_values = 0;
 	column_chunk.meta_data.type = writer.GetType(SchemaIndex());

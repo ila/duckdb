@@ -134,6 +134,8 @@ public:
 	duckdb_parquet::CompressionCodec::type GetCodec() {
 		return codec;
 	}
+	duckdb_parquet::CompressionCodec::type GetCodec(const vector<string> &schema_path) const;
+	void SetColumnCodecs(vector<duckdb_parquet::CompressionCodec::type> column_codecs);
 	duckdb_parquet::Type::type GetType(idx_t schema_idx) {
 		return file_meta_data.schema[schema_idx].type;
 	}
@@ -199,6 +201,7 @@ private:
 	vector<LogicalType> sql_types;
 	vector<string> column_names;
 	duckdb_parquet::CompressionCodec::type codec;
+	vector<duckdb_parquet::CompressionCodec::type> column_codecs;
 	ChildFieldIDs field_ids;
 	ShreddingType shredding_types;
 	shared_ptr<ParquetEncryptionConfig> encryption_config;

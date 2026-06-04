@@ -442,6 +442,28 @@ ParquetWriter::ParquetWriter(ClientContext &context, FileSystem &fs, string file
 ParquetWriter::~ParquetWriter() {
 }
 
+CompressionCodec::type ParquetWriter::GetCodec(const vector<string> &schema_path) const {
+	if (column_codecs.empty()) {
+		return codec;
+	}
+	if (schema_path.empty()) {
+		throw InternalException("Parquet writer: missing schema path for adaptive compression");
+	}
+	for (idx_t col_idx = 0; col_idx < column_names.size(); col_idx++) {
+		if (StringUtil::CIEquals(column_names[col_idx], schema_path[0])) {
+			return column_codecs[col_idx];
+		}
+	}
+	throw InternalException("Parquet writer: no adaptive compression codec for column \"%s\"", schema_path[0]);
+}
+
+void ParquetWriter::SetColumnCodecs(vector<CompressionCodec::type> column_codecs_p) {
+	if (!column_codecs_p.empty() && column_codecs_p.size() != column_names.size()) {
+		throw InternalException("Parquet writer: adaptive compression codec count does not match column count");
+	}
+	column_codecs = std::move(column_codecs_p);
+}
+
 void ParquetWriter::AnalyzeSchema(ColumnDataCollection &buffer, vector<unique_ptr<ColumnWriter>> &column_writers) {
 	D_ASSERT(buffer.ColumnCount() == column_writers.size());
 	vector<unique_ptr<ParquetAnalyzeSchemaState>> states;
