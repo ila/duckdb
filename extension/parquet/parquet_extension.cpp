@@ -154,7 +154,7 @@ static void ConfigureAdaptiveCompression(ParquetWriteBindData &bind_data, const 
 		bind_data.column_codecs.push_back(codec);
 		codec_entries.push_back(names[col_idx] + "=" + AdaptiveCodecName(codec));
 	}
-	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_policy", "type_v1");
+	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_policy", "type_based_v1");
 	bind_data.kv_metadata.emplace_back("adaptive_parquet.codec_map", StringUtil::Join(codec_entries, ";"));
 }
 
@@ -381,10 +381,6 @@ static unique_ptr<FunctionData> ParquetWriteBind(ClientContext &context, CopyFun
 			throw BinderException("ROW_GROUP_SIZE_BYTES does not work while preserving insertion order. Use \"SET "
 			                      "preserve_insertion_order=false;\" to disable preserving insertion order.");
 		}
-	}
-
-	if (bind_data->adaptive_compression && bind_data->parquet_version != ParquetVersion::V1) {
-		throw BinderException("Adaptive Parquet compression currently only supports PARQUET_VERSION v1");
 	}
 
 	if (compression_level_set && !bind_data->adaptive_compression && bind_data->codec != CompressionCodec::ZSTD) {
